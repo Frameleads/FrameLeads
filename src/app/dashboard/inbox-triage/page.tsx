@@ -1,6 +1,7 @@
 
 import TriageCommandCenter from "./TriageCommandCenter";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
 
 export default async function InboxTriagePage() {
 
@@ -8,6 +9,8 @@ export default async function InboxTriagePage() {
     where: { status: 'PENDING' },
     orderBy: { createdAt: 'asc' }
   });
+  const cookieStore = cookies();
+  const tier = cookieStore.get('tier')?.value || 'CORE';
 
-  return <TriageCommandCenter initialData={nextSignal} />;
+  return <TriageCommandCenter initialData={nextSignal} userTier={tier} />;
 }

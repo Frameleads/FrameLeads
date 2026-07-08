@@ -4,16 +4,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { Loader2 } from 'lucide-react';
 
-export default function TriageCommandCenter({ initialData }: { initialData: any }) {
+export default function TriageCommandCenter({ initialData, userTier }: { initialData: any, userTier: string }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
   
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
-
-  // THE SLEDGEHAMMER FIX: Explicitly typing as string so the compiler allows the 'CORE' check
-  const userTier: string = 'ENTERPRISE';
 
   const [draftText, setDraftText] = useState(
     initialData?.aiDraft || "Placeholder Claude Sonnet response... AI architecture connecting."
