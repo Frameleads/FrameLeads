@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { Loader2 } from 'lucide-react';
 
 export default function TriageCommandCenter({ initialData }: { initialData: any }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -11,19 +12,36 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
 
+  const userTier = 'ENTERPRISE';
+
   const [draftText, setDraftText] = useState(
     initialData?.aiDraft || "Placeholder Claude Sonnet response... AI architecture connecting."
   );
 
-  const handleRegenerate = () => {
+  const handleRegenerate = async () => {
     setIsGenerating(true);
-    // Simulate Claude Sonnet API latency
-    setTimeout(() => {
-      setDraftText(
-        "I completely understand the hesitation. A standard Zapier deployment would indeed be risky for your deal flow.\n\nHowever, our architecture operates differently. We don't route data between APIs; we map it directly to a unified schema before it reaches the sequence layer. This eliminates the brittleness and manual routing errors you experienced last quarter.\n\nI can have our lead engineer walk you through the exact schema mapping for your CRM tomorrow morning. Let me know if you are open to that."
-      );
+    try {
+      const res = await fetch('/api/triage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          inboundSignal: initialData?.rawEmail || '',
+          timestamp: Date.now()
+        }),
+        cache: 'no-store'
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.reply) {
+          setDraftText(data.reply);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
       setIsGenerating(false);
-    }, 1500);
+    }
   };
 
   const handleApprove = async () => {
@@ -73,18 +91,47 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
     );
   }
 
+  // The "CORE" Tier Lock Screen
+  if (userTier === 'CORE') {
+    return (
+      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
+        {/* Blurred background representation */}
+        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none filter blur-xl">
+           <div className="bg-[#121212] w-full h-full border border-gray-800 p-8 rounded-lg shadow-2xl"></div>
+        </div>
+        <div className="relative z-10 w-20 h-20 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
+          <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+          </svg>
+        </div>
+        <h2 className="relative z-10 text-2xl font-bold text-white tracking-wide mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+          RESTRICTED ACCESS
+        </h2>
+        <p className="relative z-10 text-gray-500 max-w-md mb-8 leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+          Inbox Triage is restricted to Enterprise Infrastructure. Upgrade to unlock autonomous objection handling.
+        </p>
+        <button 
+          onClick={() => {}}
+          className="relative z-10 h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
+        >
+          Upgrade Infrastructure
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-gray-200 p-8 font-sans">
       
       {/* Top Navigation / Status Bar */}
-      <div className="flex justify-between items-center mb-12 border-b border-gray-800 pb-6">
+      <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-12 border-b border-gray-800 pb-6 gap-4 md:gap-0">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-wide" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             EXECUTIVE OVERRIDE QUEUE
           </h1>
           <p className="text-gray-500 mt-1 text-sm">1 High-Priority Event Requires Judgment</p>
         </div>
-        <div className="flex items-center space-x-4 text-sm font-medium">
+        <div className="flex flex-row items-center gap-3 space-x-0 md:space-x-4 text-sm font-medium">
           <span className="px-3 py-1 bg-red-900/30 text-red-500 rounded border border-red-900/50 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             Risk: {initialData?.intentRisk || 'High'}
           </span>
@@ -149,7 +196,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
             </div>
 
             {/* AI Draft & Edit Toggle */}
-            <div className="flex-grow flex flex-col mb-8 relative">
+            <div className="flex-grow flex flex-col mb-8 pb-20 relative">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xs text-gray-500 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>Draft Response</h2>
                 
@@ -164,46 +211,71 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
               </div>
 
               {isEditing ? (
-                <textarea 
-                  className="w-full flex-grow bg-[#0a0a0a] border border-orange-600/50 rounded p-6 text-gray-200 text-base leading-relaxed focus:outline-none focus:ring-1 focus:ring-orange-600 transition-all resize-none"
-                  value={draftText}
-                  onChange={(e) => setDraftText(e.target.value)}
-                  style={{ fontFamily: 'Space Grotesk, sans-serif' }}
-                />
+                <div className="flex flex-col flex-grow">
+                  {typeof draftText === 'object' && draftText !== null && (draftText as any).subject && (
+                    <div className="text-xs font-bold text-gray-400 mb-2">Subject: {(draftText as any).subject}</div>
+                  )}
+                  <textarea 
+                    className="w-full flex-grow max-h-[300px] overflow-y-auto bg-[#0a0a0a] border border-orange-600/50 rounded p-6 text-gray-200 text-base leading-relaxed focus:outline-none focus:ring-1 focus:ring-orange-600 transition-all resize-none"
+                    value={typeof draftText === 'object' && draftText !== null ? (draftText as any).body || '' : typeof draftText === 'string' ? draftText : String(draftText)}
+                    onChange={(e) => {
+                      if (typeof draftText === 'object' && draftText !== null) {
+                        setDraftText({ ...draftText, body: e.target.value });
+                      } else {
+                        setDraftText(e.target.value);
+                      }
+                    }}
+                    style={{ fontFamily: 'Space Grotesk, sans-serif' }}
+                  />
+                </div>
               ) : (
                 <div 
-                  className={`w-full flex-grow bg-[#0a0a0a] border border-gray-800 rounded p-6 text-gray-200 text-base leading-relaxed whitespace-pre-wrap transition-opacity duration-300 ${isGenerating ? 'opacity-30' : 'opacity-100'}`}
+                  className={`w-full flex-grow max-h-[300px] overflow-y-auto bg-[#0a0a0a] border border-gray-800 rounded p-6 text-gray-200 text-base leading-relaxed whitespace-pre-wrap transition-opacity duration-300 ${isGenerating ? 'opacity-30' : 'opacity-100'}`}
                   style={{ fontFamily: 'Space Grotesk, sans-serif' }}
                 >
-                  {draftText}
+                  {typeof draftText === 'object' && draftText !== null ? (
+                    <>
+                      {(draftText as any).subject && (
+                        <div className="text-xs font-bold text-gray-400 mb-2">Subject: {(draftText as any).subject}</div>
+                      )}
+                      {(draftText as any).body || ''}
+                    </>
+                  ) : typeof draftText === 'string' ? (
+                    draftText
+                  ) : (
+                    String(draftText)
+                  )}
                 </div>
               )}
             </div>
 
             {/* Action Bar */}
-            <div className="flex justify-between items-center pt-6 border-t border-gray-800">
+            <div className="flex flex-col md:flex-row justify-between items-center pt-6 border-t border-gray-800 gap-3 md:gap-0 w-full absolute bottom-0 left-0 right-0 px-10 pb-10 bg-[#121212]">
               <button 
                 onClick={() => setIsCleared(true)} 
                 disabled={isGenerating || isSending} 
-                className="text-gray-500 hover:text-red-400 text-sm font-medium transition-colors disabled:opacity-50"
+                className="w-full md:w-auto text-gray-500 hover:text-red-400 text-sm font-medium transition-colors disabled:opacity-50 pb-2 md:pb-0"
               >
                 Reject {"&"} Archive
               </button>
               
-              <div className="flex items-center space-x-4">
+              <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
                 <button 
                   onClick={handleRegenerate}
                   disabled={isGenerating || isSending}
-                  className="px-6 py-3 bg-transparent border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 rounded font-medium text-sm whitespace-nowrap transition-all disabled:opacity-50"
+                  className="w-full md:w-auto px-6 py-3 bg-transparent border border-gray-700 text-gray-300 hover:text-white hover:border-gray-500 rounded font-medium text-sm whitespace-nowrap transition-all disabled:opacity-50"
                 >
                   {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
                 </button>
                 <button 
                   onClick={handleApprove}
                   disabled={isGenerating || isSending}
-                  className="px-8 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold text-sm whitespace-nowrap shadow-[0_0_15px_rgba(234,88,12,0.2)] transition-all disabled:opacity-50"
+                  className="w-full md:w-auto px-6 py-3 bg-orange-600 hover:bg-orange-500 text-white rounded font-medium text-sm whitespace-nowrap shadow-[0_0_15px_rgba(234,88,12,0.2)] transition-all disabled:opacity-50 flex justify-center items-center"
                 >
-                  {isSending ? 'Deploying...' : <>Approve {"&"} Send</>}
+                  {isSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  ) : null}
+                  {isSending ? 'Sending...' : 'Approve & Send'}
                 </button>
               </div>
             </div>

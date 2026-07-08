@@ -240,7 +240,7 @@ export default function IngestionPage() {
     setIsProcessing(true);
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/generate`, {
+      const res = await fetch(`/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -251,8 +251,15 @@ export default function IngestionPage() {
         throw new Error(`API returned ${res.status}: ${body}`);
       }
 
-      // Success — store response in sessionStorage for the sandbox page
+      // Safely parse the response
       const data = await res.json();
+      
+      // Strict payload validation
+      if (!data || !data.leads || !Array.isArray(data.leads)) {
+        throw new Error("Invalid generation payload: Missing 'leads' data array from backend.");
+      }
+
+      // Success — store response in sessionStorage for the sandbox page
       sessionStorage.setItem("frameleads_batch", JSON.stringify(data));
 
       // Route to sandbox
