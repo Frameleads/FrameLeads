@@ -9,7 +9,7 @@ export default async function InboxTriagePage() {
     where: { status: 'PENDING' },
     orderBy: { createdAt: 'asc' }
   });
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const tier = cookieStore.get('tier')?.value || 'CORE';
 
   return <TriageCommandCenter initialData={nextSignal} userTier={tier} />;
