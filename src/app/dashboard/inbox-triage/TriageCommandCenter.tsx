@@ -13,7 +13,7 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
   const [isCleared, setIsCleared] = useState(!initialData);
 
   const [draftText, setDraftText] = useState(
-    initialData?.aiDraft || "Placeholder Claude Sonnet response... AI architecture connecting."
+    initialData?.aiDraft || "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
   );
 
   const handleRegenerate = async () => {
