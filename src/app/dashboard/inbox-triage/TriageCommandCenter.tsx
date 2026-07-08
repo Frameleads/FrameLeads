@@ -12,7 +12,8 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
 
-  const userTier = 'ENTERPRISE';
+  // THE SLEDGEHAMMER FIX: Explicitly typing as string so the compiler allows the 'CORE' check
+  const userTier: string = 'ENTERPRISE';
 
   const [draftText, setDraftText] = useState(
     initialData?.aiDraft || "Placeholder Claude Sonnet response... AI architecture connecting."
