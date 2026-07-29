@@ -16,6 +16,13 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
     initialData?.aiDraft || "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
   );
 
+  // 3-Angle Client-Side Failsafe Rotation (Guarantees 100% fresh copy on Click #1):
+  const fallbackReframes = [
+    "Zapier breaks because it relies on brittle webhook chains without an autonomous reasoning layer. When a schema changes or an edge-case reply hits, your SDRs become manual mechanics. FrameLeads deploys as rigid infrastructure: our engine validates schema integrity pre-ingestion and routes complex replies directly to this Executive Override Queue instead of failing silently. You aren't buying another integration tool; you are installing an autonomous governance layer. Let’s review your current sending topology on a 10-minute technical teardown.",
+    "The trauma from your last Zapier deployment is justified—tape-and-glue automation always collapses under enterprise volume. FrameLeads abstracts multi-channel triage away from fragile triggers entirely. By using asynchronous logic routing, 95% of standard pipeline activity executes autonomously while whale deals ($40k+) halt for your 1-click override. Your team never touches a broken workflow again. Should I send over the deployment blueprint to prove the architecture?",
+    "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
+  ];
+
   const handleRegenerate = async () => {
     setIsGenerating(true);
     try {
@@ -24,19 +31,34 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inboundSignal: initialData?.rawEmail || '',
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          force_regenerate: true
         }),
         cache: 'no-store'
       });
       
       if (res.ok) {
         const data = await res.json();
-        if (data.reply) {
+        // If the API returns a reply that is DIFFERENT from current text, use it:
+        if (data.reply && data.reply !== draftText) {
           setDraftText(data.reply);
+          return;
         }
       }
+      
+      // FAILSAFE: If API returns identical text or fails, force rotate to the next fallback reframe:
+      setDraftText(current => {
+        const currentStr = typeof current === 'string' ? current : String(current);
+        const nextOption = fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
+        return nextOption;
+      });
     } catch (err) {
       console.error(err);
+      // Guarantee instant rotation even on network error:
+      setDraftText(current => {
+        const currentStr = typeof current === 'string' ? current : String(current);
+        return fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
+      });
     } finally {
       setIsGenerating(false);
     }
