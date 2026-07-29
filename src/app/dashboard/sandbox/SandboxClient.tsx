@@ -193,22 +193,33 @@ useEffect(() => {
       return;
     }
     
-    // THIS IS THE CRITICAL LINE THAT WAS DELETED:
-    // It strips the text and forces the UI into the "Generating Copy..." spinner
+    // 1. Create a clean stripped lead so the backend is FORCED to generate fresh copy
+    const strippedLead = {
+      ...selectedLead,
+      generation_status: "queued",
+      generated_email: null,
+      generated_linkedin: null,
+      generated_script: null,
+      generated_whatsapp: null,
+      force_regenerate: true
+    };
+
+    // 2. Update frontend UI to show the loading spinner immediately
     setLeads(current => current.map(l => 
-      l.lead_id === selectedLead.lead_id 
-        ? { ...l, generated_email: null, generation_status: "queued" } 
-        : l
+      l.lead_id === selectedLead.lead_id ? strippedLead : l
     ));
 
     try {
       const payload = {
         batch_id: batchId || `regen_${Date.now()}`,
-        leads: [selectedLead],
+        leads: [strippedLead], // <-- Send the clean stripped lead, NOT the old completed lead!
         timestamp: Date.now(),
         creditsUsed: 500 - creditsRemaining,
-        tier: isDemoAdmin ? 'ENTERPRISE' : userTier
+        tier: isDemoAdmin ? 'ENTERPRISE' : userTier,
+        force_regenerate: true,
+        regenerate: true
       };
+      
       const res = await fetch(`/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
