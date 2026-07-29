@@ -186,7 +186,6 @@ useEffect(() => {
   };
 
   const handleRegenerate = async () => {
-    // 1. Add !isDemoAdmin to your early returns
     if (!selectedLead || (userTier === 'CORE' && isPaywallActive && !isDemoAdmin)) return;
     
     if (userTier === 'CORE' && creditsRemaining <= 0 && !isDemoAdmin) {
@@ -194,7 +193,13 @@ useEffect(() => {
       return;
     }
     
-    // ... keep your setLeads loading state as normal ...
+    // THIS IS THE CRITICAL LINE THAT WAS DELETED:
+    // It strips the text and forces the UI into the "Generating Copy..." spinner
+    setLeads(current => current.map(l => 
+      l.lead_id === selectedLead.lead_id 
+        ? { ...l, generated_email: null, generation_status: "queued" } 
+        : l
+    ));
 
     try {
       const payload = {
@@ -202,7 +207,6 @@ useEffect(() => {
         leads: [selectedLead],
         timestamp: Date.now(),
         creditsUsed: 500 - creditsRemaining,
-        // 2. Pass ENTERPRISE to backend if you are recording with ?demo=true
         tier: isDemoAdmin ? 'ENTERPRISE' : userTier
       };
       const res = await fetch(`/api/generate`, {
@@ -212,7 +216,6 @@ useEffect(() => {
         cache: 'no-store'
       });
       
-      // 3. Prevent backend 403 or LIMIT_REACHED from popping the modal if isDemoAdmin is true
       if (res.status === 403 && !isDemoAdmin) {
         setIsPaywallActive(true);
         return;
