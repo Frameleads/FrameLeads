@@ -81,12 +81,21 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"email" | "linkedin" | "script" | "whatsapp">("email");
   const [copySuccess, setCopySuccess] = useState(false);
-  const [creditsRemaining, setCreditsRemaining] = useState(4);
+  const [creditsRemaining, setCreditsRemaining] = useState(500);
   const [isPaywallActive, setIsPaywallActive] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 // ── Admin Recording Bypass (?demo=true in browser URL) ──
-  const isDemoAdmin = typeof window !== "undefined" && 
-    new URLSearchParams(window.location.search).get("demo") === "true";
+  const isDemoAdmin = typeof window !== "undefined" && (
+  new URLSearchParams(window.location.search).get("demo") === "true" ||
+  localStorage.getItem("frameleads_admin_demo") === "true"
+);
+
+// Save admin flag to localStorage if "?demo=true" is ever seen in the URL:
+useEffect(() => {
+  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("demo") === "true") {
+    localStorage.setItem("frameleads_admin_demo", "true");
+  }
+}, []);
 
   // Paywall Trigger Fix: evaluate updated state immediately after limit breach
   useEffect(() => {
