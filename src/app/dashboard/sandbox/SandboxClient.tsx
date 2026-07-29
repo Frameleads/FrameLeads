@@ -84,13 +84,16 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [creditsRemaining, setCreditsRemaining] = useState(4);
   const [isPaywallActive, setIsPaywallActive] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+// ── Admin Recording Bypass (?demo=true in browser URL) ──
+  const isDemoAdmin = typeof window !== "undefined" && 
+    new URLSearchParams(window.location.search).get("demo") === "true";
 
   // Paywall Trigger Fix: evaluate updated state immediately after limit breach
   useEffect(() => {
-    if (userTier === 'CORE' && creditsRemaining <= 0) {
+    if (userTier === 'CORE' && creditsRemaining <= 0 && !isDemoAdmin) {
       setIsPaywallActive(true);
     }
-  }, [creditsRemaining, userTier]);
+  }, [creditsRemaining, userTier, isDemoAdmin]);
 
   // ── Load initial batch from sessionStorage ────────────────────────
 
@@ -174,27 +177,24 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   };
 
   const handleRegenerate = async () => {
-    if (!selectedLead || (userTier === 'CORE' && isPaywallActive)) return;
+    // 1. Add !isDemoAdmin to your early returns
+    if (!selectedLead || (userTier === 'CORE' && isPaywallActive && !isDemoAdmin)) return;
     
-    if (userTier === 'CORE' && creditsRemaining <= 0) {
+    if (userTier === 'CORE' && creditsRemaining <= 0 && !isDemoAdmin) {
       setIsPaywallActive(true);
       return;
     }
     
-    // Strip generated data to force the UI into a loading state
-    setLeads(current => current.map(l => 
-      l.lead_id === selectedLead.lead_id 
-        ? { ...l, generated_email: null, generation_status: "queued" } 
-        : l
-    ));
+    // ... keep your setLeads loading state as normal ...
 
     try {
       const payload = {
         batch_id: batchId || `regen_${Date.now()}`,
         leads: [selectedLead],
         timestamp: Date.now(),
-        creditsUsed: 500 - creditsRemaining, // For backend simulation
-        tier: userTier
+        creditsUsed: 500 - creditsRemaining,
+        // 2. Pass ENTERPRISE to backend if you are recording with ?demo=true
+        tier: isDemoAdmin ? 'ENTERPRISE' : userTier
       };
       const res = await fetch(`/api/generate`, {
         method: "POST",
@@ -203,14 +203,15 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
         cache: 'no-store'
       });
       
-      if (res.status === 403) {
+      // 3. Prevent backend 403 or LIMIT_REACHED from popping the modal if isDemoAdmin is true
+      if (res.status === 403 && !isDemoAdmin) {
         setIsPaywallActive(true);
         return;
       }
 
       if (res.ok) {
         const data = await res.json();
-        if (data.error === 'LIMIT_REACHED') {
+        if (data.error === 'LIMIT_REACHED' && !isDemoAdmin) {
           setIsPaywallActive(true);
           return;
         }
@@ -293,7 +294,7 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
 
   return (
     <div className="flex gap-6 h-[calc(100vh-8rem)] relative">
-      {isPaywallActive && (
+      {!isDemoAdmin && isPaywallActive && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md rounded-2xl">
           <div className="bg-card border border-border shadow-2xl p-8 rounded-2xl max-w-lg text-center flex flex-col items-center">
             <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
