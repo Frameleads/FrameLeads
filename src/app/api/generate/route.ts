@@ -38,7 +38,6 @@ export async function POST(req: Request) {
   try {
     const { leads, batch_id, timestamp, creditsUsed, tier } = await req.json();
 
-    // TODO: Increment user generation count in DB
     if (tier !== 'ENTERPRISE' && creditsUsed >= 500) {
       return NextResponse.json({ error: 'LIMIT_REACHED' }, { status: 403 });
     }
@@ -54,14 +53,14 @@ export async function POST(req: Request) {
     if (apiKey) {
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash",
+        model: "gemini-3.6-flash", // <-- Using the newest stable Flash flagship
         systemInstruction: SYSTEM_PROMPT,
         generationConfig: {
           temperature: 0.7,
+          responseMimeType: "application/json", // <-- Enforces clean JSON syntax from the API
         }
       });
 
-      // Process leads in parallel using Gemini
       processedLeads = await Promise.all(
         leads.map(async (lead: any, index: number) => {
           try {
@@ -89,15 +88,14 @@ Context: We provide autonomous AI acquisition infrastructure.`;
               deployment_status: "pending"
             };
           } catch (e) {
-            console.error("Gemini Generation Error for lead:", e);
-            // Fallback for single lead failure
+            console.error(`Gemini Generation Error on lead [${lead.company_name}]:`, e);
             return getMockLead(lead, index);
           }
         })
       );
     } else {
-      // Fallback: No API Key, use visceral mock
-      await new Promise(r => setTimeout(r, 2000));
+      console.warn("GEMINI_API_KEY is missing from Vercel environment variables! Falling back to mock copy.");
+      await new Promise(r => setTimeout(r, 1500));
       processedLeads = leads.map((lead: any, index: number) => getMockLead(lead, index));
     }
 
