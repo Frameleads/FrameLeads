@@ -57,8 +57,8 @@ export async function GET(request: Request) {
     }
   });
 
-  // 4. Mint Session with Dynamic Tier
-  const response = NextResponse.redirect(new URL("/dashboard/ingestion", request.url));
+  // 4. Mint Session with Dynamic Tier -> REDIRECTS TO WELCOME PORTAL
+  const response = NextResponse.redirect(new URL("/welcome", request.url));
   response.cookies.set("frameleads_session", accessToken, { httpOnly: true, path: "/" });
   response.cookies.set("tier", user.tier, { path: "/" }); 
   
