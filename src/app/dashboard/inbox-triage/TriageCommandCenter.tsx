@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Info } from 'lucide-react';
 
 export default function TriageCommandCenter({ initialData, userTier }: { initialData: any, userTier: string }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -12,9 +12,9 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
 
-  // Added explicit <any> type annotation for TypeScript strict mode:
+  // FINDING 1 FIX: Authoritative governance default string replaces contradictory autonomy text:
   const [draftText, setDraftText] = useState<any>(
-    initialData?.aiDraft || "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
+    initialData?.aiDraft || "Zapier breaks because it relies on brittle webhook chains without an autonomous reasoning layer. When a schema changes or an edge-case reply hits, your SDRs become manual mechanics. FrameLeads deploys as rigid infrastructure: our engine validates schema integrity pre-ingestion and routes complex replies directly to this Executive Override Queue instead of failing silently. You aren't buying another integration tool; you are installing an autonomous governance layer. Let’s review your current sending topology on a 10-minute technical teardown."
   );
 
   // 3-Angle Client-Side Failsafe Rotation (Guarantees 100% fresh copy on Click #1):
@@ -40,14 +40,12 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
       
       if (res.ok) {
         const data = await res.json();
-        // If the API returns a reply that is DIFFERENT from current text, use it:
         if (data.reply && data.reply !== draftText) {
           setDraftText(data.reply);
           return;
         }
       }
       
-      // FAILSAFE: Explicitly typed (current: any) to satisfy TypeScript build linter:
       setDraftText((current: any) => {
         const currentStr = typeof current === 'string' ? current : String(current);
         const nextOption = fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
@@ -55,7 +53,6 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
       });
     } catch (err) {
       console.error(err);
-      // Guarantee instant rotation even on network error:
       setDraftText((current: any) => {
         const currentStr = typeof current === 'string' ? current : String(current);
         return fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
@@ -68,7 +65,6 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
   const handleApprove = async () => {
     setIsSending(true);
     try {
-      // 1. Sanitize payload so backend receives clean strings regardless of edit state:
       const finalBody = typeof draftText === 'object' && draftText !== null
         ? (draftText as any).body || ''
         : String(draftText);
@@ -87,7 +83,6 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
         timestamp: Date.now()
       };
 
-      // 2. Transmit approved draft to backend execution route:
       const res = await fetch('/api/triage/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +133,6 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
   if (userTier === 'CORE') {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
-        {/* Blurred background representation */}
         <div className="absolute inset-0 z-0 opacity-20 pointer-events-none filter blur-xl">
            <div className="bg-[#121212] w-full h-full border border-gray-800 p-8 rounded-lg shadow-2xl"></div>
         </div>
@@ -290,6 +284,12 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
                   )}
                 </div>
               )}
+
+              {/* FINDING 2 UI NOTE: Clinical footer reminding CEOs they own the CTA preference */}
+              <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 italic" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-600/80 inline-block"></span>
+                CTA defaults to your Campaign Context preference. Edit this draft anytime before approving.
+              </div>
             </div>
 
             {/* Action Bar */}
