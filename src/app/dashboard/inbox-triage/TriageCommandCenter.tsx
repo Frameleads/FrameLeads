@@ -12,7 +12,8 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
 
-  const [draftText, setDraftText] = useState(
+  // Added explicit <any> type annotation for TypeScript strict mode:
+  const [draftText, setDraftText] = useState<any>(
     initialData?.aiDraft || "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
   );
 
@@ -46,8 +47,8 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
         }
       }
       
-      // FAILSAFE: If API returns identical text or fails, force rotate to the next fallback reframe:
-      setDraftText(current => {
+      // FAILSAFE: Explicitly typed (current: any) to satisfy TypeScript build linter:
+      setDraftText((current: any) => {
         const currentStr = typeof current === 'string' ? current : String(current);
         const nextOption = fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
         return nextOption;
@@ -55,7 +56,7 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
     } catch (err) {
       console.error(err);
       // Guarantee instant rotation even on network error:
-      setDraftText(current => {
+      setDraftText((current: any) => {
         const currentStr = typeof current === 'string' ? current : String(current);
         return fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
       });
