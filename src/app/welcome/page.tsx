@@ -64,9 +64,9 @@ export default function WelcomePortalPage() {
           </h1>
         </div>
 
-        {/* Visceral Pain / Worldview Slogan */}
+        {/* Visceral Pain / Worldview Slogan (Aligned to singular $40k deal) */}
         <p className="max-w-2xl text-base sm:text-lg text-gray-400 mt-6 mb-10 leading-relaxed font-normal" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Stop renting SDR memory and triaging edge-cases manually. Initialize your campaign context once, deploy across 4 channels, and let the Executive Override Queue protect your $40k deals.
+          Stop renting SDR memory and triaging edge-cases manually. Initialize your campaign context once, deploy across 4 channels, and let the Executive Override Queue protect a $40k deal.
         </p>
 
         {/* Primary Action Button */}
@@ -79,9 +79,9 @@ export default function WelcomePortalPage() {
           <ArrowRight className="w-5 h-5 transition-transform duration-200 group-hover:translate-x-1" />
         </button>
 
-        {/* Micro Trust Note Below CTA */}
+        {/* Micro Trust Note Below CTA (Includes Pain 3: No Brittle Zapier Chains) */}
         <p className="mt-6 text-xs text-gray-600 tracking-wider uppercase font-mono">
-          NO MANUAL ROUTING REQUIRED  •  INSTANT OMNICHANNEL SYNTHESIS
+          NO MANUAL ROUTING REQUIRED  •  NO BRITTLE ZAPIER CHAINS  •  INSTANT OMNICHANNEL SYNTHESIS
         </p>
 
       </main>
