@@ -8,6 +8,7 @@ export default function CampaignPage() {
   const [companyName, setCompanyName] = useState("");
   const [valueProposition, setValueProposition] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
+  const [preferredCtaStyle, setPreferredCtaStyle] = useState("Self-Serve Audit Link");
   const [showSuccess, setShowSuccess] = useState(false);
 
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function CampaignPage() {
         setCompanyName(parsed.company_name || "");
         setValueProposition(parsed.value_proposition || "");
         setTargetAudience(parsed.target_audience || "");
+        setPreferredCtaStyle(parsed.preferred_cta_style || "Self-Serve Audit Link");
       } catch {
         // ignore parse errors
       }
@@ -32,6 +34,7 @@ export default function CampaignPage() {
       company_name: companyName,
       value_proposition: valueProposition,
       target_audience: targetAudience,
+      preferred_cta_style: preferredCtaStyle,
     };
     localStorage.setItem("campaign_context", JSON.stringify(payload));
     
@@ -63,7 +66,7 @@ export default function CampaignPage() {
         {/* The DOM Rebuild */}
         <div className="flex flex-col gap-8 md:grid md:grid-cols-2 pb-24 overflow-y-auto bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-5 md:p-8">
           
-          {/* Block 1 */}
+          {/* Block 1: Company Name */}
           <div className="w-full md:col-span-2 flex flex-col gap-2">
             <label className="block text-lg font-medium text-gray-200">
               Your Company Name
@@ -77,7 +80,7 @@ export default function CampaignPage() {
             />
           </div>
 
-          {/* Block 2 */}
+          {/* Block 2: Value Proposition */}
           <div className="w-full flex flex-col gap-2">
             <label className="block text-lg font-medium text-gray-200">
               Value Proposition
@@ -93,7 +96,7 @@ export default function CampaignPage() {
             />
           </div>
 
-          {/* Block 3 */}
+          {/* Block 3: Target Audience */}
           <div className="w-full flex flex-col gap-2">
             <label className="block text-lg font-medium text-gray-200">
               Target Audience
@@ -109,7 +112,35 @@ export default function CampaignPage() {
             />
           </div>
 
-          {/* Block 4 */}
+          {/* Block 4: Preferred CTA Style (NEW) */}
+          <div className="w-full md:col-span-2 flex flex-col gap-2 border-t border-border/50 pt-6">
+            <label className="block text-lg font-medium text-gray-200">
+              Preferred CTA Style
+            </label>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              Defines how generated copy closes across Email, LinkedIn, and Inbox Triage.
+            </p>
+            <select
+              value={preferredCtaStyle}
+              onChange={(e) => setPreferredCtaStyle(e.target.value)}
+              className={`w-full md:w-2/3 p-4 text-sm leading-relaxed cursor-pointer ${inputClasses}`}
+            >
+              <option value="Self-Serve Audit Link" className="bg-[#121212] text-white">
+                Self-Serve Audit Link (Default - Low Commitment)
+              </option>
+              <option value="Call / Diagnostic" className="bg-[#121212] text-white">
+                Call / Diagnostic (15-Min Walkthrough)
+              </option>
+              <option value="Send a Memo or Resource" className="bg-[#121212] text-white">
+                Send a Memo or Resource (Async Teardown PDF)
+              </option>
+              <option value="Custom" className="bg-[#121212] text-white">
+                Custom (Use Campaign Context Rules)
+              </option>
+            </select>
+          </div>
+
+          {/* Block 5: Save Action */}
           <div className="w-full md:col-span-2 flex justify-end mt-4">
             <div className="flex items-center gap-4">
               {showSuccess && (
