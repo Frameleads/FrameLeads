@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import EnterpriseFeatureLocked from "@/components/EnterpriseFeatureLocked";
 import Link from "next/link";
 import {
   Shield,
@@ -173,11 +174,16 @@ function ChartEmptyState({ label }: { label: string }) {
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function GovernanceDashboard({ userTier }: { userTier: string }) {
+export default function GovernanceDashboard() {
   const [metrics, setMetrics] = useState<GovernanceMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [tier, setTier] = useState<string | null>(null);
+  
+  useEffect(() => {
+    setTier(localStorage.getItem('userTier') || 'CORE');
+  }, []);
 
   const fetchMetrics = async () => {
     setLoading(true);
@@ -230,36 +236,6 @@ export default function GovernanceDashboard({ userTier }: { userTier: string }) 
     );
   }
 
-  // ── Paywall State ───────────────────────────────────────────────────
-  if (userTier !== "ENTERPRISE") {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
-        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none filter blur-xl">
-           <div className="bg-[#121212] w-full h-full border border-gray-800 p-8 rounded-lg shadow-2xl"></div>
-        </div>
-        <div className="relative z-10 w-20 h-20 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
-          <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
-        <h2 className="relative z-10 text-2xl font-bold text-white tracking-wide mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-          ENTERPRISE FEATURE LOCKED
-        </h2>
-        <p className="relative z-10 text-gray-500 max-w-md mb-8 leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          The Governance Dashboard and automated Fragility Digest are exclusively available on the Enterprise Tier to protect high-ticket pipelines.
-        </p>
-        <a
-          href="https://whop.com/checkout/plan_vYopYzyoqunDb"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="relative z-10 h-12 px-8 flex items-center justify-center rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
-        >
-          Upgrade to Enterprise
-        </a>
-      </div>
-    );
-  }
-
   if (!metrics) return null;
 
   const memoryTier = getMemoryTier(metrics.institutionalMemory.score);
@@ -274,7 +250,9 @@ export default function GovernanceDashboard({ userTier }: { userTier: string }) 
     (d) => d.avgLatencyMin > 0
   );
 
-  return (
+  if (tier === null) return null; // Prevent hydration flicker
+
+  const pageContent = (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 lg:px-0">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8 md:mb-10">
@@ -566,4 +544,25 @@ export default function GovernanceDashboard({ userTier }: { userTier: string }) 
       </div>
     </div>
   );
+
+  if (tier !== "ENTERPRISE") {
+    return (
+      <>
+        {/* 1. The Actual Real UI rendered in background, but frozen */}
+        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
+          {pageContent}
+        </div>
+        
+        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
+        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
+          <EnterpriseFeatureLocked
+            featureName="Governance Dashboard"
+            description="The Governance Dashboard and automated Fragility Digest are exclusively available on the Enterprise Tier to protect high-ticket pipelines."
+          />
+        </div>
+      </>
+    );
+  }
+
+  return pageContent;
 }

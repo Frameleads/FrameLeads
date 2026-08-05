@@ -117,7 +117,7 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-background">
       {/* ─── Mobile Top Bar (visible < md) ─────────────────────────── */}
-      <div className="fixed top-0 left-0 right-0 z-40 h-16 border-b border-border/50 bg-card/80 backdrop-blur-xl flex items-center justify-between px-4 md:hidden">
+      <div className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-border/50 bg-card/80 backdrop-blur-xl flex items-center justify-between px-4 md:hidden">
         <div className="flex items-center gap-3">
           <div className="bg-[#1A1A1A] border border-[#242424] p-1.5 rounded-lg">
             <Zap className="text-[#FF5A1F] w-4 h-4" />
@@ -151,7 +151,7 @@ export default function DashboardLayout({
       )}
 
       {/* ─── Desktop Sidebar (visible >= md) ──────────────────────── */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 z-30 w-72 border-r border-border/50 bg-card/30 backdrop-blur-xl flex-col">
+      <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-72 border-r border-border/50 bg-card/30 backdrop-blur-xl flex-col">
         {SidebarContent}
       </aside>
 

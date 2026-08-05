@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import EnterpriseFeatureLocked from "@/components/EnterpriseFeatureLocked";
 import { 
   Rocket, 
   Key, 
@@ -22,6 +23,11 @@ export default function DeployPage() {
   const [isDeploying, setIsDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [tier, setTier] = useState<string | null>(null);
+
+  useEffect(() => {
+    setTier(localStorage.getItem('userTier') || 'CORE');
+  }, []);
 
   useEffect(() => {
     try {
@@ -69,9 +75,15 @@ export default function DeployPage() {
     }
   };
 
-  // ── Empty State (No Batch) ──────────────────────────────────────────
+  // ── Deploy Form ───────────────────────────────────────────────────
 
-  if (!batchId) {
+  if (tier === null) return null; // Prevent hydration flicker
+
+  // For CORE tier, force-render the form (with a placeholder batchId if
+  // none exists) so the real UI is visible behind the paywall blur.
+  const displayBatchId = batchId || (tier === "CORE" ? "batch_demo_preview" : null);
+
+  if (!displayBatchId) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
         <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-8">
@@ -91,9 +103,7 @@ export default function DeployPage() {
     );
   }
 
-  // ── Deploy Form ───────────────────────────────────────────────────
-
-  return (
+  const pageContent = (
     <div className="max-w-5xl mx-auto space-y-8 px-4 md:px-0">
       <div className="mb-10 md:mb-12">
         <h1 className="text-4xl font-bold tracking-tight flex items-center gap-4 font-heading">
@@ -125,7 +135,7 @@ export default function DeployPage() {
           <Inbox className="w-5 h-5 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium">Active Batch</p>
-            <p className="text-xs text-muted-foreground font-mono mt-0.5">{batchId}</p>
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">{displayBatchId}</p>
           </div>
         </div>
 
@@ -182,4 +192,25 @@ export default function DeployPage() {
       </div>
     </div>
   );
+
+  if (tier === "CORE") {
+    return (
+      <>
+        {/* 1. The Actual Real UI rendered in background, but frozen */}
+        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
+          {pageContent}
+        </div>
+
+        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
+        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
+          <EnterpriseFeatureLocked
+            featureName="Deploy to Smartlead"
+            description="Autonomous campaign deployment is exclusively available on the Enterprise Tier. Upgrade to push AI-generated outreach directly into your Smartlead campaigns."
+          />
+        </div>
+      </>
+    );
+  }
+
+  return pageContent;
 }

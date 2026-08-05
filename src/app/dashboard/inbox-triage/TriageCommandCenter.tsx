@@ -1,14 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Loader2, Info } from 'lucide-react';
+import EnterpriseFeatureLocked from '@/components/EnterpriseFeatureLocked';
 
-export default function TriageCommandCenter({ initialData, userTier }: { initialData: any, userTier: string }) {
+export default function TriageCommandCenter({ initialData }: { initialData: any }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [tier, setTier] = useState<string | null>(null);
   
+  useEffect(() => {
+    setTier(localStorage.getItem('userTier') || 'CORE');
+  }, []);
+
   // If initialData is null, the queue is empty
   const [isCleared, setIsCleared] = useState(!initialData);
 
@@ -104,8 +110,12 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
     }
   };
 
+  if (tier === null) return null; // Prevent hydration flicker
+
   // The "Inbox Zero" Success State
-  if (isCleared) {
+  // For CORE users behind the paywall, the triage content still renders
+  // in the background so the blur has populated UI to display.
+  if (isCleared && tier !== 'CORE') {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8">
         <div className="w-16 h-16 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
@@ -129,35 +139,7 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
     );
   }
 
-  // The "CORE" Tier Lock Screen
-  if (userTier === 'CORE') {
-    return (
-      <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8 relative overflow-hidden">
-        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none filter blur-xl">
-           <div className="bg-[#121212] w-full h-full border border-gray-800 p-8 rounded-lg shadow-2xl"></div>
-        </div>
-        <div className="relative z-10 w-20 h-20 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
-          <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-          </svg>
-        </div>
-        <h2 className="relative z-10 text-2xl font-bold text-white tracking-wide mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-          RESTRICTED ACCESS
-        </h2>
-        <p className="relative z-10 text-gray-500 max-w-md mb-8 leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Inbox Triage is restricted to Enterprise Infrastructure. Upgrade to unlock autonomous objection handling.
-        </p>
-        <button 
-          onClick={() => {}}
-          className="relative z-10 h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
-        >
-          Upgrade Infrastructure
-        </button>
-      </div>
-    );
-  }
-
-  return (
+  const pageContent = (
     <div className="min-h-screen bg-[#0a0a0a] text-gray-200 p-8 font-sans">
       
       {/* Top Navigation / Status Bar */}
@@ -328,4 +310,25 @@ export default function TriageCommandCenter({ initialData, userTier }: { initial
       </div>
     </div>
   );
+
+  if (tier === 'CORE') {
+    return (
+      <>
+        {/* 1. The Actual Real UI rendered in background, but frozen */}
+        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
+          {pageContent}
+        </div>
+        
+        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
+        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
+          <EnterpriseFeatureLocked
+            featureName="Inbox Triage"
+            description="Autonomous objection handling and signal-triggered draft generation are exclusively available on the Enterprise Tier."
+          />
+        </div>
+      </>
+    );
+  }
+
+  return pageContent;
 }
