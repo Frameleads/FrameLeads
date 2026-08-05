@@ -16,11 +16,11 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
   }, []);
 
   // If initialData is null, the queue is empty
-  const [isCleared, setIsCleared] = useState(!initialData);
+  const [isCleared, setIsCleared] = useState(false);
 
   // FINDING 1 FIX: Authoritative governance default string replaces contradictory autonomy text:
   const [draftText, setDraftText] = useState<any>(
-    initialData?.aiDraft || "Michael, completely understand the hesitation—handing the keys to an unconstrained AI is exactly how agencies burn their primary domains. That is why we built the Velvet Rope Protocol. FrameLeads doesn't blindly send; it routes standard inquiries autonomously, but the moment it detects a high-value objection like yours, it pauses the automation and kicks the draft to your desk for human approval. Your domain reputation remains mathematically protected. Are you open to a 10-minute technical teardown this Thursday to see the governance engine in action?"
+    "Michael, completely understand the hesitation—handing the keys to an unconstrained AI is exactly how agencies burn their primary domains. That is why we built the Velvet Rope Protocol. FrameLeads doesn't blindly send; it routes standard inquiries autonomously, but the moment it detects a high-value objection like yours, it pauses the automation and kicks the draft to your desk for human approval. Your domain reputation remains mathematically protected. Are you open to a 10-minute technical teardown this Thursday to see the governance engine in action?"
   );
 
   // 3-Angle Client-Side Failsafe Rotation (Guarantees 100% fresh copy on Click #1):
@@ -37,7 +37,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          inboundSignal: initialData?.rawEmail || '',
+          inboundSignal: "Akram, the architecture looks solid, but my engineering team has concerns about handing over our primary domain reputation to an autonomous AI agent. How does FrameLeads prevent the AI from hallucinating a response and burning a high-ticket relationship? We need guarantees before moving forward.",
           timestamp: Date.now(),
           force_regenerate: true
         }),
@@ -80,9 +80,9 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
         : 'Re: Integration timeline';
 
       const payload = {
-        signalId: initialData?.id || 'demo_signal_michael_blazon',
-        prospectName: initialData?.prospectName || 'Michael',
-        prospectEmail: initialData?.prospectEmail || 'michael@blazonagency.com',
+        signalId: 'demo_signal_michael_blazon',
+        prospectName: 'Michael',
+        prospectEmail: 'michael@blazonagency.com',
         subject: finalSubject,
         finalText: finalBody,
         status: 'APPROVED',
@@ -152,10 +152,10 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
         </div>
         <div className="flex flex-row items-center gap-3 space-x-0 md:space-x-4 text-sm font-medium">
           <span className="px-3 py-1 bg-red-900/30 text-red-500 rounded border border-red-900/50 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            Risk: {initialData?.intentRisk || 'High'}
+            Risk: High
           </span>
           <span className="px-3 py-1 bg-gray-800 text-gray-300 rounded border border-gray-700 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            Signal: {initialData?.intentType || 'OBJECTION_SECURITY'}
+            Signal: OBJECTION_SECURITY
           </span>
         </div>
       </div>
@@ -169,18 +169,18 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
           <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg shadow-2xl">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
-              <h3 className="text-xl font-semibold text-white">{initialData?.prospectName || 'Michael'}</h3>
-              <p className="text-gray-400">{initialData?.prospectContext || 'Blazon Agency'}</p>
+              <h3 className="text-xl font-semibold text-white">Michael</h3>
+              <p className="text-gray-400">Blazon Agency</p>
             </div>
             
             <div className="grid grid-cols-2 gap-4 border-t border-gray-800 pt-6">
               <div>
                 <p className="text-xs text-gray-500 uppercase">Pipeline Value</p>
-                <p className="text-lg font-medium text-white mt-1">${initialData?.pipelineValue ? initialData.pipelineValue.toLocaleString() : '60,000'} ARR</p>
+                <p className="text-lg font-medium text-white mt-1">$60,000 ARR</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase">Deal Stage</p>
-                <p className="text-lg font-medium text-white mt-1">{initialData?.dealStage || 'High-Intent Reply'}</p>
+                <p className="text-lg font-medium text-white mt-1">High-Intent Reply</p>
               </div>
             </div>
           </div>
@@ -189,9 +189,9 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
           <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg flex-grow">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              <p className="text-gray-500 mb-4">Received: {initialData?.createdAt ? new Date(initialData.createdAt).toLocaleString() : 'Today, 8:14 AM'}</p>
+              <p className="text-gray-500 mb-4">Received: Today, 8:14 AM</p>
               <div className="whitespace-pre-wrap">
-                {initialData?.rawEmail || "Akram, the architecture looks solid, but my engineering team has concerns about handing over our primary domain reputation to an autonomous AI agent. How does FrameLeads prevent the AI from hallucinating a response and burning a high-ticket relationship? We need guarantees before moving forward."}
+                {"Akram, the architecture looks solid, but my engineering team has concerns about handing over our primary domain reputation to an autonomous AI agent. How does FrameLeads prevent the AI from hallucinating a response and burning a high-ticket relationship? We need guarantees before moving forward."}
               </div>
             </div>
           </div>
