@@ -20,12 +20,12 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
 
   // FINDING 1 FIX: Authoritative governance default string replaces contradictory autonomy text:
   const [draftText, setDraftText] = useState<any>(
-    initialData?.aiDraft || "Zapier breaks because it relies on brittle webhook chains without an autonomous reasoning layer. When a schema changes or an edge-case reply hits, your SDRs become manual mechanics. FrameLeads deploys as rigid infrastructure: our engine validates schema integrity pre-ingestion and routes complex replies directly to this Executive Override Queue instead of failing silently. You aren't buying another integration tool; you are installing an autonomous governance layer. Let’s review your current sending topology on a 10-minute technical teardown."
+    initialData?.aiDraft || "Michael, completely understand the hesitation—handing the keys to an unconstrained AI is exactly how agencies burn their primary domains. That is why we built the Velvet Rope Protocol. FrameLeads doesn't blindly send; it routes standard inquiries autonomously, but the moment it detects a high-value objection like yours, it pauses the automation and kicks the draft to your desk for human approval. Your domain reputation remains mathematically protected. Are you open to a 10-minute technical teardown this Thursday to see the governance engine in action?"
   );
 
   // 3-Angle Client-Side Failsafe Rotation (Guarantees 100% fresh copy on Click #1):
   const fallbackReframes = [
-    "Zapier breaks because it relies on brittle webhook chains without an autonomous reasoning layer. When a schema changes or an edge-case reply hits, your SDRs become manual mechanics. FrameLeads deploys as rigid infrastructure: our engine validates schema integrity pre-ingestion and routes complex replies directly to this Executive Override Queue instead of failing silently. You aren't buying another integration tool; you are installing an autonomous governance layer. Let’s review your current sending topology on a 10-minute technical teardown.",
+    "Michael, completely understand the hesitation—handing the keys to an unconstrained AI is exactly how agencies burn their primary domains. That is why we built the Velvet Rope Protocol. FrameLeads doesn't blindly send; it routes standard inquiries autonomously, but the moment it detects a high-value objection like yours, it pauses the automation and kicks the draft to your desk for human approval. Your domain reputation remains mathematically protected. Are you open to a 10-minute technical teardown this Thursday to see the governance engine in action?",
     "The trauma from your last Zapier deployment is justified—tape-and-glue automation always collapses under enterprise volume. FrameLeads abstracts multi-channel triage away from fragile triggers entirely. By using asynchronous logic routing, 95% of standard pipeline activity executes autonomously while whale deals ($40k+) halt for your 1-click override. Your team never touches a broken workflow again. Should I send over the deployment blueprint to prove the architecture?",
     "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
   ];
@@ -80,9 +80,9 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
         : 'Re: Integration timeline';
 
       const payload = {
-        signalId: initialData?.id || 'demo_signal_marcus_vance',
-        prospectName: initialData?.prospectName || 'Marcus Vance',
-        prospectEmail: initialData?.prospectEmail || 'marcus@nexussystems.io',
+        signalId: initialData?.id || 'demo_signal_michael_blazon',
+        prospectName: initialData?.prospectName || 'Michael',
+        prospectEmail: initialData?.prospectEmail || 'michael@blazonagency.com',
         subject: finalSubject,
         finalText: finalBody,
         status: 'APPROVED',
@@ -155,7 +155,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
             Risk: {initialData?.intentRisk || 'High'}
           </span>
           <span className="px-3 py-1 bg-gray-800 text-gray-300 rounded border border-gray-700 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            Type: {initialData?.intentType || 'Objection'}
+            Signal: {initialData?.intentType || 'OBJECTION_SECURITY'}
           </span>
         </div>
       </div>
@@ -169,18 +169,18 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
           <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg shadow-2xl">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
-              <h3 className="text-xl font-semibold text-white">{initialData?.prospectName || 'Marcus Vance'}</h3>
-              <p className="text-gray-400">{initialData?.prospectContext || 'Chief Operations Officer @ Nexus Systems'}</p>
+              <h3 className="text-xl font-semibold text-white">{initialData?.prospectName || 'Michael'}</h3>
+              <p className="text-gray-400">{initialData?.prospectContext || 'Blazon Agency'}</p>
             </div>
             
             <div className="grid grid-cols-2 gap-4 border-t border-gray-800 pt-6">
               <div>
                 <p className="text-xs text-gray-500 uppercase">Pipeline Value</p>
-                <p className="text-lg font-medium text-white mt-1">${initialData?.pipelineValue ? initialData.pipelineValue.toLocaleString() : '45,000'} ARR</p>
+                <p className="text-lg font-medium text-white mt-1">${initialData?.pipelineValue ? initialData.pipelineValue.toLocaleString() : '60,000'} ARR</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase">Deal Stage</p>
-                <p className="text-lg font-medium text-white mt-1">{initialData?.dealStage || 'Technical Review'}</p>
+                <p className="text-lg font-medium text-white mt-1">{initialData?.dealStage || 'High-Intent Reply'}</p>
               </div>
             </div>
           </div>
@@ -191,7 +191,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">Received: {initialData?.createdAt ? new Date(initialData.createdAt).toLocaleString() : 'Today, 8:14 AM'}</p>
               <div className="whitespace-pre-wrap">
-                {initialData?.rawEmail || "Akram,\n\nThe team reviewed the proposal. The functionality looks solid, but I'm highly concerned about the integration timeline.\n\nWe got burned on our last Zapier-heavy automation stack and I can't afford another quarter of our SDRs manually fixing routing errors. Why should I trust this deployment will be any different?\n\n- Marcus"}
+                {initialData?.rawEmail || "Akram, the architecture looks solid, but my engineering team has concerns about handing over our primary domain reputation to an autonomous AI agent. How does FrameLeads prevent the AI from hallucinating a response and burning a high-ticket relationship? We need guarantees before moving forward."}
               </div>
             </div>
           </div>
@@ -210,7 +210,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
               <p className="text-sm text-gray-400 italic">
                 {isGenerating 
                   ? "Re-evaluating context vectors. Generating structural reframe..." 
-                  : "Intent classified as structural objection (integration fear). Addressed the Zapier trauma directly. Re-framed our platform as native schema mapping, not routing, to immediately re-establish technical authority."}
+                  : "Intent classified as structural objection (Security/Hallucination fear). Addressed the domain reputation concern directly. Re-framed platform as governed infrastructure (Velvet Rope Protocol), emphasizing that AI never sends unsupervised on high-stakes deals. Positioned for a technical teardown call."}
               </p>
             </div>
 
