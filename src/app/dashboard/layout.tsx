@@ -13,9 +13,16 @@ import {
   LogOut,
   Menu,
   X,
+  LayoutTemplate,
+  Shield,
 } from "lucide-react";
 
 const navItems = [
+  {
+    label: "Onboarding",
+    href: "/dashboard/onboarding",
+    icon: LayoutTemplate,
+  },
   {
     label: "Campaign",
     href: "/dashboard/campaign",
@@ -40,6 +47,11 @@ const navItems = [
     label: "Inbox Triage",
     href: "/dashboard/inbox-triage",
     icon: MessageSquareReply,
+  },
+  {
+    label: "Governance",
+    href: "/dashboard/governance",
+    icon: Shield,
   },
 ];
 

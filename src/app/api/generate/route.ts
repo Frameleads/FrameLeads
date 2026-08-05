@@ -4,6 +4,13 @@ export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import {
+  validateGeneratedChannels,
+  forceCompliance,
+  MAX_RETRIES,
+  OUTBOUND_WORD_LIMIT,
+  type PipelineContext,
+} from '@/lib/word-count-gate';
 
 const SYSTEM_PROMPT = `You are an elite Systems Architect speaking to funded founders and lean CEOs. Your tone is candid, authoritative, and relies on 'tough love.' You are a mentor diagnosing a fatal flaw. Absolutely no generic marketing clichés, no clickbait hooks, and no soft/safe language.
 
@@ -90,11 +97,60 @@ Company: ${lead.company_name || 'Unknown'}
 Context: We provide autonomous AI acquisition infrastructure.
 Preferred CTA Style: "${preferredCtaStyle}"
 Unique Generation Seed: ${uniqueSeed}
-CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. Focus specifically through this architectural lens: "${randomAngle}". End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}".`;
-            
-            const result = await model.generateContent(prompt);
-            const responseText = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-            const generated = JSON.parse(responseText);
+CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. Focus specifically through this architectural lens: "${randomAngle}". End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}".
+WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This is a hard constraint.`;
+
+            // ── WORD-COUNT GATE: Retry loop ─────────────────────────
+            // The LLM cannot be trusted to respect word limits via
+            // prompt instructions alone. We physically validate the
+            // output and retry up to MAX_RETRIES times if any channel
+            // exceeds the limit. After retries are exhausted, we
+            // force-truncate as a last resort.
+            //
+            // SCOPE ISOLATION: context is hardcoded to 'outbound'.
+            // This gate NEVER runs with context === 'triage'.
+            // ─────────────────────────────────────────────────────────
+            const pipelineContext: PipelineContext = 'outbound';
+            let generated: any = null;
+            let attempt = 0;
+            let lastValidation = null;
+
+            while (attempt <= MAX_RETRIES) {
+              const retryPrompt = attempt === 0
+                ? prompt
+                : `${prompt}\n\nPREVIOUS ATTEMPT EXCEEDED WORD LIMITS. You MUST keep each channel body STRICTLY under ${OUTBOUND_WORD_LIMIT} words. Be more concise.`;
+
+              const result = await model.generateContent(retryPrompt);
+              const responseText = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+              generated = JSON.parse(responseText);
+
+              // Validate all four channels against the word-count gate
+              lastValidation = validateGeneratedChannels(generated, pipelineContext);
+
+              if (lastValidation.allPassed) {
+                // All channels are within the word limit — break out.
+                break;
+              }
+
+              // Log the violation for observability
+              console.warn(
+                `[WORD-COUNT GATE] Attempt ${attempt + 1}/${MAX_RETRIES + 1} FAILED for ${lead.company_name}. ` +
+                `Email: ${lastValidation.email.wordCount}w, ` +
+                `LinkedIn: ${lastValidation.linkedin.wordCount}w, ` +
+                `ColdCall: ${lastValidation.coldCall.wordCount}w, ` +
+                `WhatsApp: ${lastValidation.whatsapp.wordCount}w`
+              );
+
+              attempt++;
+            }
+
+            // If all retries exhausted and still failing, force-truncate.
+            if (lastValidation && !lastValidation.allPassed) {
+              console.warn(
+                `[WORD-COUNT GATE] All retries exhausted for ${lead.company_name}. Force-truncating to ${OUTBOUND_WORD_LIMIT} words.`
+              );
+              generated = forceCompliance(generated);
+            }
 
             return {
               lead_id: lead.lead_id || `lead_gen_${index}_${Date.now()}`,

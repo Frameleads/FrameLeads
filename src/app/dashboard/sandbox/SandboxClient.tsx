@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Inbox,
   Radio,
+  Shield,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -74,6 +75,11 @@ const POLL_INTERVAL_MS = 3_000;
 // ── Component ───────────────────────────────────────────────────────
 
 export default function SandboxClient({ userTier }: { userTier: string }) {
+  // Temporarily force CORE for UI testing
+  userTier = "CORE";
+  const CORE_LEAD_LIMIT = 500;
+  const [leadsGenerated, setLeadsGenerated] = useState(0);
+
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [batchId, setBatchId] = useState<string | null>(null);
@@ -81,9 +87,13 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"email" | "linkedin" | "script" | "whatsapp">("email");
   const [copySuccess, setCopySuccess] = useState(false);
-  const [creditsRemaining, setCreditsRemaining] = useState(500);
   const [isPaywallActive, setIsPaywallActive] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("frameleads_leads_generated");
+    if (stored) setLeadsGenerated(parseInt(stored, 10) || 0);
+  }, []);
 // ── Admin Recording Bypass (?demo=true in browser URL) ──
   const isDemoAdmin = typeof window !== "undefined" && (
   new URLSearchParams(window.location.search).get("demo") === "true" ||
@@ -99,10 +109,10 @@ useEffect(() => {
 
   // Paywall Trigger Fix: evaluate updated state immediately after limit breach
   useEffect(() => {
-    if (userTier === 'CORE' && creditsRemaining <= 0 && !isDemoAdmin) {
+    if (userTier === 'CORE' && leadsGenerated >= CORE_LEAD_LIMIT && !isDemoAdmin) {
       setIsPaywallActive(true);
     }
-  }, [creditsRemaining, userTier, isDemoAdmin]);
+  }, [leadsGenerated, userTier, isDemoAdmin]);
 
   // ── Load initial batch from sessionStorage ────────────────────────
 
@@ -188,7 +198,7 @@ useEffect(() => {
   const handleRegenerate = async () => {
     if (!selectedLead || (userTier === 'CORE' && isPaywallActive && !isDemoAdmin)) return;
     
-    if (userTier === 'CORE' && creditsRemaining <= 0 && !isDemoAdmin) {
+    if (userTier === 'CORE' && leadsGenerated >= CORE_LEAD_LIMIT && !isDemoAdmin) {
       setIsPaywallActive(true);
       return;
     }
@@ -214,7 +224,7 @@ useEffect(() => {
         batch_id: batchId || `regen_${Date.now()}`,
         leads: [strippedLead], // <-- Send the clean stripped lead, NOT the old completed lead!
         timestamp: Date.now(),
-        creditsUsed: 500 - creditsRemaining,
+        creditsUsed: leadsGenerated,
         tier: isDemoAdmin ? 'ENTERPRISE' : userTier,
         force_regenerate: true,
         regenerate: true
@@ -245,7 +255,11 @@ useEffect(() => {
         ));
         
         data.leads.forEach(() => {
-          setCreditsRemaining(prev => Math.max(0, prev - 1));
+          setLeadsGenerated(prev => {
+            const next = prev + 1;
+            localStorage.setItem("frameleads_leads_generated", String(next));
+            return next;
+          });
         });
       }
     } catch (e) {
@@ -316,7 +330,7 @@ useEffect(() => {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="flex gap-6 h-[calc(100vh-8rem)] relative">
+    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)] relative">
       {!isDemoAdmin && isPaywallActive && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md rounded-2xl">
           <div className="bg-card border border-border shadow-2xl p-8 rounded-2xl max-w-lg text-center flex flex-col items-center">
@@ -337,19 +351,38 @@ useEffect(() => {
         </div>
       )}
       
-      {/* Left Panel — Lead Table */}
-      <div className="w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden">
+      {/* Left Panel Column */}
+      <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0">
+        
+        {/* Core Tier Quota Header */}
+        {userTier === 'CORE' && (
+          <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 flex items-center justify-between shadow-lg shadow-primary/5">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/20 rounded-lg">
+                <Shield className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-white">Monthly Quota</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{leadsGenerated} of {CORE_LEAD_LIMIT} leads generated</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xl font-bold text-primary font-heading">
+                {Math.max(0, CORE_LEAD_LIMIT - leadsGenerated)}
+              </p>
+              <p className="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">Remaining</p>
+            </div>
+          </div>
+        )}
+
+        {/* Left Panel — Lead Table */}
+        <div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden flex-1">
         <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-medium font-heading">Leads</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               {completedCount} of {leads.length} leads generated
             </p>
-            {userTier === 'CORE' && (
-              <p className="text-xs font-semibold text-primary mt-1">
-                Infrastructure Bandwidth: {creditsRemaining} / 500 Remaining
-              </p>
-            )}
           </div>
           {isPolling && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-blue-400 bg-blue-400/10 border-blue-400/20 animate-pulse">
@@ -390,10 +423,11 @@ useEffect(() => {
             );
           })}
         </div>
+        </div>
       </div>
 
       {/* Right Panel — AI Copy Editor */}
-      <div className="w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden">
+      <div className="w-full lg:w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden min-h-[400px] lg:min-h-0">
         <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between w-full gap-2 pr-4">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />

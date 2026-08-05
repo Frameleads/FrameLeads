@@ -11,6 +11,7 @@ model InboundSignal {
   id              String   @id @default(uuid())
   prospectName    String
   prospectContext String
+  prospectEmail   String?
   pipelineValue   Int
   dealStage       String
   rawEmail        String
@@ -19,7 +20,61 @@ model InboundSignal {
   aiDraft         String
   status          String   @default("PENDING")
   createdAt       DateTime @default(now())
+
+  // ── Phase 4: Signal Ingestion Metadata ─────────────────────────
+  // These fields distinguish signal-triggered entries from manual
+  // triage entries so the UI can priority-sort the queue.
+  isHighPriority  Boolean  @default(false)
+  sourceType      String   @default("MANUAL")
+  signalType      String?
+
+  // ── Phase 5: Governance Analytics ──────────────────────────────
+  // Timestamp of when a human approved/rejected this signal.
+  // Used to calculate Time-to-Approval metrics.
+  approvedAt      DateTime?
+
+  @@index([status, isHighPriority])
+  @@index([createdAt])
 }
+
+// ── Phase 5: Institutional Memory ────────────────────────────────────
+// Custom objection-handling rules and negative CTAs saved by the user.
+// Each rule represents a reusable playbook entry that the AI references
+// during triage draft generation. The count of these rules is the
+// "Institutional Memory Score" — a measure of how much tribal knowledge
+// has been codified into the system.
+
+model GovernanceRule {
+  id          String   @id @default(cuid())
+  userId      String
+  ruleType    String   @default("objection_override")
+  trigger     String
+  response    String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, isActive])
+}
+
+// ── Phase 4: API Key Authentication ──────────────────────────────────
+// Each user gets one or more API keys for authenticating webhook
+// requests from external tools (Clay, Phantombuster, custom scrapers).
+// Keys are hashed at rest; the raw key is shown only once at creation.
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  keyHash     String   @unique
+  label       String   @default("Default")
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([keyHash])
+  @@index([userId])
+}
+
 
 model User {
   id        String   @id @default(cuid())
@@ -28,4 +83,43 @@ model User {
   tier      String   @default("CORE")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // ── Phase 3: Deployment Armor ──────────────────────────────────
+  // A user's root brand domain (e.g., "company.com") is stored here
+  // so the Domain Armor validator can block outbound from root domains.
+  rootBrandDomain String?
+
+  inboxes   SendingInbox[]
+}
+
+// ── Phase 3: Sending Infrastructure ──────────────────────────────────
+// Each connected sending inbox tracks its email address, daily send
+// volume, and governance status. The OutboundLog records every
+// individual email dispatched for rate-limit enforcement.
+
+model SendingInbox {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  emailAddress String
+  displayName  String?
+  status       String  @default("active")
+  createdAt    DateTime @default(now())
+
+  outboundLogs OutboundLog[]
+
+  @@index([userId])
+  @@index([emailAddress])
+}
+
+model OutboundLog {
+  id          String   @id @default(cuid())
+  inboxId     String
+  inbox       SendingInbox @relation(fields: [inboxId], references: [id])
+  leadId      String
+  channel     String   @default("email")
+  status      String   @default("sent")
+  sentAt      DateTime @default(now())
+
+  @@index([inboxId, sentAt])
 }

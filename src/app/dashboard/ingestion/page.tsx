@@ -10,6 +10,7 @@ import {
   Check,
   Loader2,
   AlertCircle,
+  Shield,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -75,6 +76,29 @@ export default function IngestionPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaignContext, setCampaignContext] = useState<any>(null);
+
+  // ── Core Tier Quota Tracking ──────────────────────────────────────
+  // Core tier users are limited to 500 total leads generated.
+  // The count is persisted in localStorage so it survives page reloads.
+  // Enterprise tier users have no limit.
+  const CORE_LEAD_LIMIT = 500;
+  const [leadsGenerated, setLeadsGenerated] = useState(0);
+  const [userTier, setUserTier] = useState("CORE");
+
+  useEffect(() => {
+    // Read the tier from the cookie
+    const cookies = document.cookie.split(";").reduce((acc, c) => {
+      const [key, val] = c.trim().split("=");
+      if (key && val) acc[key] = val;
+      return acc;
+    }, {} as Record<string, string>);
+    // Temporarily hardcoded to CORE for testing
+    setUserTier("CORE"); // cookies["tier"] || "CORE"
+
+    // Read cumulative lead count from localStorage
+    const stored = localStorage.getItem("frameleads_leads_generated");
+    if (stored) setLeadsGenerated(parseInt(stored, 10) || 0);
+  }, []);
 
   // ── Load Campaign Context ───────────────────────────────────────────
 
@@ -229,6 +253,22 @@ export default function IngestionPage() {
       return;
     }
 
+    // ── Core Tier Quota Gate ──────────────────────────────────────────
+    // Block the batch if it would push the user over the 500-lead limit.
+    // Enterprise tier users bypass this check entirely.
+    if (userTier === "CORE") {
+      const newTotal = leadsGenerated + validLeads.length;
+      if (newTotal > CORE_LEAD_LIMIT) {
+        const remaining = Math.max(0, CORE_LEAD_LIMIT - leadsGenerated);
+        setError(
+          `Core tier limit: ${CORE_LEAD_LIMIT} leads. You've generated ${leadsGenerated} so far. ` +
+          `This batch has ${validLeads.length} leads, but you only have ${remaining} remaining. ` +
+          `Upgrade to Enterprise for unlimited generation.`
+        );
+        return;
+      }
+    }
+
     const payload: BatchPayload = {
       batch_id: `batch_${Date.now()}`,
       status: "processing",
@@ -262,6 +302,13 @@ export default function IngestionPage() {
       // Success — store response in sessionStorage for the sandbox page
       sessionStorage.setItem("frameleads_batch", JSON.stringify(data));
 
+      // Update cumulative lead count for Core tier quota tracking
+      if (userTier === "CORE") {
+        const newCount = leadsGenerated + validLeads.length;
+        setLeadsGenerated(newCount);
+        localStorage.setItem("frameleads_leads_generated", String(newCount));
+      }
+
       // Route to sandbox
       router.push("/dashboard/sandbox");
     } catch (err) {
@@ -286,7 +333,7 @@ export default function IngestionPage() {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 px-4 md:px-0">
+    <div className="max-w-5xl mx-auto space-y-8 px-4 sm:px-6 md:px-8 lg:px-0">
       <div className="mb-10 md:mb-12">
         <h1 className="text-4xl font-bold tracking-tight font-heading">
           Data Ingestion
@@ -294,6 +341,17 @@ export default function IngestionPage() {
         <p className="text-lg text-muted-foreground mt-3 leading-relaxed">
           Upload your lead list and map columns to the FrameLeads schema.
         </p>
+        {userTier === "CORE" && (
+          <div className="flex items-center gap-2 mt-3">
+            <Shield className="w-4 h-4 text-primary" />
+            <span className="text-sm font-medium text-primary">
+              {leadsGenerated} of {CORE_LEAD_LIMIT} leads generated
+            </span>
+            <span className="text-xs text-muted-foreground">
+              · {Math.max(0, CORE_LEAD_LIMIT - leadsGenerated)} remaining
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Error Banner */}

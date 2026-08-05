@@ -2,19 +2,87 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Settings2, CheckCircle2 } from "lucide-react";
+import { Save, Settings2, CheckCircle2, ChevronDown } from "lucide-react";
+
+// ── CTA Style Options ─────────────────────────────────────────────────
+// Each CTA style maps to a specific closing technique injected into the
+// LLM system prompt at generation time. The "Wedge Offer" is unique: it
+// requires a secondary input because the user must define THEIR specific
+// audit/resource name. This prevents the AI from hallucinating a generic
+// offer and forces domain-specific positioning.
+// ───────────────────────────────────────────────────────────────────────
+
+type CtaStyleKey =
+  | "self_serve_audit"
+  | "call_diagnostic"
+  | "send_memo"
+  | "wedge_offer"
+  | "custom";
+
+interface CtaOption {
+  key: CtaStyleKey;
+  label: string;
+  description: string;
+  /** If true, reveals a secondary input field for the user to define specifics. */
+  requiresDetail: boolean;
+}
+
+const CTA_OPTIONS: CtaOption[] = [
+  {
+    key: "self_serve_audit",
+    label: "Self-Serve Audit Link",
+    description: "Default — Low commitment. Drops a link to a self-serve diagnostic.",
+    requiresDetail: false,
+  },
+  {
+    key: "call_diagnostic",
+    label: "Call / Diagnostic",
+    description: "15-minute walkthrough. Higher intent, higher friction.",
+    requiresDetail: false,
+  },
+  {
+    key: "send_memo",
+    label: "Send a Memo or Resource",
+    description: "Async teardown PDF. Positions authority without requiring a live meeting.",
+    requiresDetail: false,
+  },
+  {
+    key: "wedge_offer",
+    label: "Wedge Offer (Audit/Resource)",
+    description: "Position a specific audit, playbook, or resource as the entry point. You must define the offer below.",
+    requiresDetail: true,
+  },
+  {
+    key: "custom",
+    label: "Custom",
+    description: "Use Campaign Context rules. The AI will infer the close from your value proposition.",
+    requiresDetail: false,
+  },
+];
+
+// ── Component ───────────────────────────────────────────────────────
 
 export default function CampaignPage() {
   const [companyName, setCompanyName] = useState("");
   const [valueProposition, setValueProposition] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
-  const [preferredCtaStyle, setPreferredCtaStyle] = useState("Self-Serve Audit Link");
+  // ────────────────────────────────────────────────────────────────────
+  // PHASE 1 UPDATE: CTA is now stored as a structured key, not a raw
+  // string. This allows the downstream generation pipeline to branch
+  // on `ctaStyleKey` and conditionally inject the `wedgeOfferDetail`
+  // into the system prompt ONLY when the user has explicitly defined it.
+  // ────────────────────────────────────────────────────────────────────
+  const [ctaStyleKey, setCtaStyleKey] = useState<CtaStyleKey>("self_serve_audit");
+  const [wedgeOfferDetail, setWedgeOfferDetail] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
 
   const router = useRouter();
 
+  // The currently selected CTA option object (derived state, not stored)
+  const selectedCta = CTA_OPTIONS.find((o) => o.key === ctaStyleKey)!;
+
   useEffect(() => {
-    // Load existing context
+    // Load existing context — backward compatible with the old string format.
     const stored = localStorage.getItem("campaign_context");
     if (stored) {
       try {
@@ -22,7 +90,19 @@ export default function CampaignPage() {
         setCompanyName(parsed.company_name || "");
         setValueProposition(parsed.value_proposition || "");
         setTargetAudience(parsed.target_audience || "");
-        setPreferredCtaStyle(parsed.preferred_cta_style || "Self-Serve Audit Link");
+
+        // Migration: if the old format stored `preferred_cta_style` as a raw
+        // label string, attempt to match it to the new key-based system.
+        if (parsed.cta_style_key) {
+          setCtaStyleKey(parsed.cta_style_key);
+          setWedgeOfferDetail(parsed.wedge_offer_detail || "");
+        } else if (parsed.preferred_cta_style) {
+          const legacy = parsed.preferred_cta_style.toLowerCase();
+          const match = CTA_OPTIONS.find((o) =>
+            legacy.includes(o.label.toLowerCase().slice(0, 10))
+          );
+          setCtaStyleKey(match?.key || "self_serve_audit");
+        }
       } catch {
         // ignore parse errors
       }
@@ -30,14 +110,24 @@ export default function CampaignPage() {
   }, []);
 
   const handleSave = () => {
+    // ────────────────────────────────────────────────────────────────
+    // PAYLOAD STRUCTURE: The downstream LLM prompt builder reads
+    // `cta_style_key` to determine which closing framework to inject.
+    // If key === "wedge_offer", it also reads `wedge_offer_detail`
+    // to insert the user's specific offer name into the prompt.
+    // The legacy `preferred_cta_style` field is preserved for
+    // backward compatibility with any existing prompt templates.
+    // ────────────────────────────────────────────────────────────────
     const payload = {
       company_name: companyName,
       value_proposition: valueProposition,
       target_audience: targetAudience,
-      preferred_cta_style: preferredCtaStyle,
+      preferred_cta_style: selectedCta.label,
+      cta_style_key: ctaStyleKey,
+      wedge_offer_detail: ctaStyleKey === "wedge_offer" ? wedgeOfferDetail : "",
     };
     localStorage.setItem("campaign_context", JSON.stringify(payload));
-    
+
     setShowSuccess(true);
     setTimeout(() => {
       setShowSuccess(false);
@@ -112,7 +202,21 @@ export default function CampaignPage() {
             />
           </div>
 
-          {/* Block 4: Preferred CTA Style (NEW) */}
+          {/* ─────────────────────────────────────────────────────────────
+              Block 4: CTA Style Selector (PHASE 1 UPDATE)
+              
+              UX CONSTRAINT: The "Wedge Offer" option is deliberately NOT
+              the default. New users should start with "Self-Serve Audit"
+              which requires zero configuration. The Wedge Offer secondary
+              input only renders when explicitly selected, preventing
+              cognitive overload for first-time users.
+              
+              DATA CONSTRAINT: `wedge_offer_detail` is per-campaign state,
+              NOT a global setting. Different campaigns can have different
+              wedge offers. This is stored in localStorage alongside the
+              campaign context and cleared if the user switches away from
+              the Wedge Offer CTA type.
+          ───────────────────────────────────────────────────────────────── */}
           <div className="w-full md:col-span-2 flex flex-col gap-2 border-t border-border/50 pt-6">
             <label className="block text-lg font-medium text-gray-200">
               Preferred CTA Style
@@ -120,24 +224,67 @@ export default function CampaignPage() {
             <p className="text-sm text-gray-500 leading-relaxed">
               Defines how generated copy closes across Email, LinkedIn, and Inbox Triage.
             </p>
-            <select
-              value={preferredCtaStyle}
-              onChange={(e) => setPreferredCtaStyle(e.target.value)}
-              className={`w-full md:w-2/3 p-4 text-sm leading-relaxed cursor-pointer ${inputClasses}`}
-            >
-              <option value="Self-Serve Audit Link" className="bg-[#121212] text-white">
-                Self-Serve Audit Link (Default - Low Commitment)
-              </option>
-              <option value="Call / Diagnostic" className="bg-[#121212] text-white">
-                Call / Diagnostic (15-Min Walkthrough)
-              </option>
-              <option value="Send a Memo or Resource" className="bg-[#121212] text-white">
-                Send a Memo or Resource (Async Teardown PDF)
-              </option>
-              <option value="Custom" className="bg-[#121212] text-white">
-                Custom (Use Campaign Context Rules)
-              </option>
-            </select>
+            <div className="relative w-full md:w-2/3">
+              <select
+                value={ctaStyleKey}
+                onChange={(e) => {
+                  const newKey = e.target.value as CtaStyleKey;
+                  setCtaStyleKey(newKey);
+                  // Clear wedge offer detail when switching AWAY from wedge offer
+                  // to prevent stale data from leaking into future prompts.
+                  if (newKey !== "wedge_offer") {
+                    setWedgeOfferDetail("");
+                  }
+                }}
+                className={`w-full p-4 text-sm leading-relaxed cursor-pointer appearance-none pr-10 ${inputClasses}`}
+              >
+                {CTA_OPTIONS.map((opt) => (
+                  <option key={opt.key} value={opt.key} className="bg-[#121212] text-white">
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+            </div>
+
+            {/* CTA Description — dynamically updates based on selection */}
+            <p className="text-xs text-gray-500 mt-1 italic">
+              {selectedCta.description}
+            </p>
+
+            {/* ───────────────────────────────────────────────────────────
+                CONDITIONAL SECONDARY INPUT: Wedge Offer Detail
+                
+                This field ONLY renders when the user explicitly selects
+                "Wedge Offer (Audit/Resource)". It forces the user to
+                define their specific offer name so the AI has a concrete
+                asset to reference in the CTA rather than hallucinating
+                a generic "free audit" that doesn't exist.
+                
+                Examples:
+                - "Outbound Fragility Audit"
+                - "Pipeline Governance Playbook"  
+                - "Revenue Architecture Teardown"
+            ─────────────────────────────────────────────────────────────── */}
+            {selectedCta.requiresDetail && (
+              <div className="mt-4 p-4 rounded-xl border border-[#FF5A1F]/30 bg-[#FF5A1F]/5 flex flex-col gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A1F] animate-pulse" />
+                  Define Your Wedge Offer
+                </label>
+                <p className="text-xs text-gray-500 leading-relaxed">
+                  What specific audit, playbook, or resource will you offer as the entry point?
+                  The AI will reference this exact name in every generated CTA.
+                </p>
+                <input
+                  type="text"
+                  value={wedgeOfferDetail}
+                  onChange={(e) => setWedgeOfferDetail(e.target.value)}
+                  placeholder='e.g. "Outbound Fragility Audit"'
+                  className={`w-full p-3 text-sm leading-relaxed ${inputClasses} border-[#FF5A1F]/20 focus:ring-[#FF5A1F]`}
+                />
+              </div>
+            )}
           </div>
 
           {/* Block 5: Save Action */}
@@ -151,7 +298,14 @@ export default function CampaignPage() {
               )}
               <button
                 onClick={handleSave}
-                disabled={!companyName || !valueProposition || !targetAudience}
+                disabled={
+                  !companyName ||
+                  !valueProposition ||
+                  !targetAudience ||
+                  // Block save if Wedge Offer is selected but the detail field is empty.
+                  // This prevents the AI from receiving an empty wedge offer instruction.
+                  (ctaStyleKey === "wedge_offer" && !wedgeOfferDetail.trim())
+                }
                 className="flex items-center justify-center gap-2.5 bg-primary text-primary-foreground hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all duration-200 px-8 h-12 rounded-xl text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save className="w-5 h-5" />
