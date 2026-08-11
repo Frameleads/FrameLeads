@@ -16,26 +16,32 @@ const SYSTEM_PROMPT = `You are an elite Systems Architect speaking to funded fou
 
 You must sell indirectly by shifting their worldview and positioning our framework as inevitable.
 
+CRITICAL PSYCHOLOGICAL DIRECTIVES (The 4 Weapons):
+1. Reactance Disarmament: Make the prospect feel completely safe to reject you. When they feel in control, defensive walls drop.
+2. The Curiosity Gap: State the massive outcome (abstracting triage), but withhold the exact mechanism. Keep them guessing.
+3. The Identity Shift (Pride): Speak to the identity they aspire to—the 'systems architect' who builds leverage, not the 'operator/employee' who does manual grunt work.
+4. The No-Oriented Permission CTA: Never ask for a "Yes." Ask if they are against seeing the solution (e.g., "Would you be against...", "Would it be a terrible idea...").
+
 YOUR 4-STEP COGNITIVE ARCHITECTURE (The Logic):
-The Observation (Visceral Pain Language): Speak their exact pain language. Call out a specific operational hemorrhage (e.g., bandwidth leaks, manual triage consuming executive hours).
+The Observation (Identity & Pain): Challenge their identity. Call out a specific operational hemorrhage that is treating their executive bandwidth like minimum-wage operator labor.
 The Worldview Shift: Expose the reality that their current hacks (Zapier routing, hiring more SDRs) are active liabilities that compound management load.
-The Inevitability: Position our autonomous acquisition infrastructure as the only logical evolution. We do not advise; we architect absolute, logic-driven systems.
-The CTA (The Last Slide): End with a blunt, low-friction call to action that matches the user's Preferred CTA Style exactly.
+The Inevitability (Curiosity Gap): Position our autonomous acquisition infrastructure as the only logical evolution without explaining exactly 'how' it works.
+The CTA (No-Oriented): End with a blunt, low-friction, no-oriented call to action that matches the user's Preferred CTA Style exactly.
 
 THE MULTI-CHANNEL CONSTRAINTS & FEW-SHOT EXAMPLES (The Output):
-You must generate 4 variations of this logic adapted for 4 specific channels. DO NOT COPY THESE EXAMPLES VERBATIM. You are strictly forbidden from copy-pasting the text below. You must use them strictly as structural blueprints to write ORIGINAL copy based on the specific lead's actual business context. Match their tone, length, and cadence, but write fresh copy:
+You must generate 4 variations of this logic adapted for 4 specific channels. DO NOT COPY THESE EXAMPLES VERBATIM. You must use them strictly as structural blueprints to write ORIGINAL copy based on the specific lead's actual business context:
 
 1. Email (The Masterpiece - Follows the 4 steps perfectly):
-Example: 'Multi-channel pipeline at [Company] is running on coordination overhead, not infrastructure. When qualified leads arrive faster than your SDR team can sequence across channels simultaneously, the result is predictable: pipeline fragility. Leads age out between handoffs. Hiring more SDRs compounds the management load without resolving the underlying architecture gap. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away from human coordination entirely — logic-driven routing, asynchronous nurture, zero alert fatigue. Your standard of qualification doesn't get diluted; it gets systematized. Want me to send the diagnostic breakdown?'
+Example: 'Founders build infrastructure; operators babysit inboxes. Right now, the multi-channel pipeline at [Company] is running on human coordination overhead. When qualified leads arrive faster than your team can sequence them, leads age out between handoffs. Hiring more SDRs just compounds the management load. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away entirely — logic-driven routing, zero alert fatigue, and flawless data hygiene. Would you be entirely against me sending over a brief architecture diagnostic to show you the framework? If it’s not a fit, feel free to toss it.'
 
 2. LinkedIn (The Scannable Hook - Compress pain into a list, max 40 words):
-Example: '[Company]'s multi-channel pipeline is hitting a coordination ceiling — leads aging out between SDR handoffs, CRM fragmentation, conversion plateauing. FrameLeads architects autonomous acquisition infrastructure that eliminates the triage overhead. Worth a 15-min read?'
+Example: 'Founders architect systems; employees run them. [Company]'s multi-channel pipeline is hitting a coordination ceiling—leads aging out between handoffs and CRM fragmentation. We architected a way to abstract that triage entirely. Would you be opposed to seeing the framework?'
 
 3. Cold Call (The Pattern Interrupt - Clinical timeframe request):
-Example: '[Name], I was reviewing [Company]'s outreach architecture and identified a specific pipeline fragility pattern — qualified leads decaying between handoffs because the coordination layer is human-dependent. I've put together a short diagnostic on how to abstract that triage into autonomous infrastructure — is now a reasonable 90 seconds to walk you through the core finding?'
+Example: '[Name], I was reviewing [Company]'s outreach architecture and noticed a specific bottleneck where your cognitive capital is being burned on manual triage. We built a framework to abstract that coordination layer into autonomous infrastructure. Would it be a ridiculous idea to take 90 seconds to walk you through the core logic? You can hang up if it misses the mark.'
 
 4. WhatsApp (The Trojan Horse - Max 2 sentences, ask to email them):
-Example: '[Name] — I was just analyzing [Company]'s architecture and noticed a specific bottleneck where your cognitive capital is hard-capping agency scale. I wrote a brief diagnostic on how to abstract that into productized infrastructure; mind if I shoot the document to your work email?'
+Example: '[Name] — noticed [Company]'s outbound scaling speed is bottlenecked by manual operator triage rather than system architecture. We built a productized infrastructure to fix this; would you be against me shooting the document to your work email?'
 
 OUTPUT FORMAT:
 Return the response strictly as a JSON object:
@@ -43,7 +49,7 @@ Return the response strictly as a JSON object:
 
 // 5 Distinct Architectural Lenses to Guarantee 100% Unique Variations on Every Click:
 const REGEN_ANGLES = [
-  "Lens 1 (Executive Bandwidth): Focus heavily on how manual SDR triage drains founder cognitive capacity and executive hours.",
+  "Lens 1 (Executive Bandwidth): Focus heavily on how manual SDR triage drains founder cognitive capacity and acts like operator labor.",
   "Lens 2 (Pipeline Fragility): Focus heavily on how qualified leads decay and lose intent during the gap between CRM handoffs.",
   "Lens 3 (Unit Economics): Focus heavily on why hiring more headcount compounds management overhead without solving the bottleneck.",
   "Lens 4 (Infrastructure vs Hacks): Focus heavily on why tape-and-glue Zapier/Make workflows fail silently at enterprise volume.",
@@ -97,19 +103,10 @@ Company: ${lead.company_name || 'Unknown'}
 Context: We provide autonomous AI acquisition infrastructure.
 Preferred CTA Style: "${preferredCtaStyle}"
 Unique Generation Seed: ${uniqueSeed}
-CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. Focus specifically through this architectural lens: "${randomAngle}". End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}".
+CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. Focus specifically through this architectural lens: "${randomAngle}". End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}". Ensure you use a No-Oriented/Permission-based question.
 WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This is a hard constraint.`;
 
             // ── WORD-COUNT GATE: Retry loop ─────────────────────────
-            // The LLM cannot be trusted to respect word limits via
-            // prompt instructions alone. We physically validate the
-            // output and retry up to MAX_RETRIES times if any channel
-            // exceeds the limit. After retries are exhausted, we
-            // force-truncate as a last resort.
-            //
-            // SCOPE ISOLATION: context is hardcoded to 'outbound'.
-            // This gate NEVER runs with context === 'triage'.
-            // ─────────────────────────────────────────────────────────
             const pipelineContext: PipelineContext = 'outbound';
             let generated: any = null;
             let attempt = 0;
@@ -124,15 +121,12 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               const responseText = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
               generated = JSON.parse(responseText);
 
-              // Validate all four channels against the word-count gate
               lastValidation = validateGeneratedChannels(generated, pipelineContext);
 
               if (lastValidation.allPassed) {
-                // All channels are within the word limit — break out.
                 break;
               }
 
-              // Log the violation for observability
               console.warn(
                 `[WORD-COUNT GATE] Attempt ${attempt + 1}/${MAX_RETRIES + 1} FAILED for ${lead.company_name}. ` +
                 `Email: ${lastValidation.email.wordCount}w, ` +
@@ -144,7 +138,6 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               attempt++;
             }
 
-            // If all retries exhausted and still failing, force-truncate.
             if (lastValidation && !lastValidation.allPassed) {
               console.warn(
                 `[WORD-COUNT GATE] All retries exhausted for ${lead.company_name}. Force-truncating to ${OUTBOUND_WORD_LIMIT} words.`
@@ -196,32 +189,32 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
   }
 }
 
-// Upgraded with adaptive CTA closing logic based on preferredCtaStyle:
+// Upgraded with No-Oriented CTA closing logic and Identity Shift:
 function getMockLead(lead: any, index: number, ctaStyle: string = 'Self-Serve Audit Link') {
   const company = lead.company_name || "your company";
   const name = lead.first_name || "Founder";
 
-  let closingCta = "Want to run your outbound through our 2-minute self-serve fragility audit to inspect the logic?";
+  let closingCta = "Would you be opposed to running your outbound through our 2-minute self-serve fragility audit to inspect the logic?";
   if (ctaStyle === 'Call / Diagnostic') {
-    closingCta = "Worth a 15-minute diagnostic call to review your current sending topology?";
+    closingCta = "Would you be entirely against a 15-minute diagnostic call to review your current sending topology? If you hate the logic, we hang up.";
   } else if (ctaStyle === 'Send a Memo or Resource') {
-    closingCta = "Should I drop the 4-page architecture memo in your inbox so you can review the logic offline?";
+    closingCta = "Would it be a terrible idea if I dropped the 4-page architecture memo in your inbox so you can review the logic offline?";
   }
 
   const variants = [
     {
       subject: "coordination overhead",
-      email: `Multi-channel pipeline at ${company} is running on coordination overhead, not infrastructure. When qualified leads arrive faster than your SDR team can sequence across channels simultaneously, the result is predictable: pipeline fragility. Leads age out between handoffs. Hiring more SDRs compounds the management load without resolving the underlying architecture gap. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away from human coordination entirely — logic-driven routing, asynchronous nurture, zero alert fatigue. ${closingCta}`,
-      linkedin: `${company}'s multi-channel pipeline is hitting a coordination ceiling — leads aging out between SDR handoffs, CRM fragmentation, conversion plateauing. FrameLeads architects autonomous acquisition infrastructure that eliminates the triage overhead. ${closingCta}`,
+      email: `Founders build infrastructure; operators babysit inboxes. Right now, the multi-channel pipeline at ${company} is running on human coordination overhead. When qualified leads arrive faster than your SDR team can sequence across channels simultaneously, the result is predictable: pipeline fragility. Leads age out between handoffs. Hiring more SDRs compounds the management load without resolving the underlying architecture gap. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away from human coordination entirely — logic-driven routing, asynchronous nurture, zero alert fatigue. ${closingCta}`,
+      linkedin: `Founders architect systems; employees run them. ${company}'s multi-channel pipeline is hitting a coordination ceiling — leads aging out between SDR handoffs, CRM fragmentation, conversion plateauing. FrameLeads architects autonomous acquisition infrastructure that eliminates the triage overhead. ${closingCta}`,
       coldCall: `${name}, I was reviewing ${company}'s outreach architecture and identified a specific pipeline fragility pattern — qualified leads decaying between handoffs because the coordination layer is human-dependent. I've put together a short diagnostic on how to abstract that triage into autonomous infrastructure. ${closingCta}`,
       whatsapp: `${name} — I was just analyzing ${company}'s architecture and noticed a specific bottleneck where your cognitive capital is hard-capping agency scale. I mapped out how to abstract that into productized infrastructure. ${closingCta}`
     },
     {
       subject: "bandwidth hemorrhage",
-      email: `Managing acquisition triage manually at ${company} is an active liability. Every hour your team spends routing edge-case replies and auditing CRM handoffs is cognitive capital stolen from strategy. Taping Zapier workflows together only creates silent failures at scale. FrameLeads replaces human coordination with autonomous acquisition infrastructure — triaging intent, drafting objection overrides, and pushing clean data without manual intervention. ${closingCta}`,
-      linkedin: `Manual lead triage at ${company} is burning executive bandwidth. We engineer autonomous acquisition infrastructure that routes and qualifies outbound leads with zero coordination overhead. ${closingCta}`,
+      email: `Managing acquisition triage manually at ${company} is treating executive bandwidth like operator labor. Every hour your team spends routing edge-case replies and auditing CRM handoffs is cognitive capital stolen from strategy. Taping Zapier workflows together only creates silent failures at scale. FrameLeads replaces human coordination with autonomous acquisition infrastructure — triaging intent, drafting objection overrides, and pushing clean data without manual intervention. ${closingCta}`,
+      linkedin: `Manual lead triage at ${company} is burning executive bandwidth on operator tasks. We engineer autonomous acquisition infrastructure that routes and qualifies outbound leads with zero coordination overhead. ${closingCta}`,
       coldCall: `${name}, quick clinical question — how many hours a week is your team losing to manual lead routing and CRM handoff friction at ${company}? We architected an autonomous layer that eliminates that overhead entirely. ${closingCta}`,
-      whatsapp: `${name} — noticed ${company}'s outbound scaling speed is bottlenecked by manual triage. Built a brief technical teardown on automating that workflow. ${closingCta}`
+      whatsapp: `${name} — noticed ${company}'s outbound scaling speed is bottlenecked by manual triage instead of autonomous infrastructure. ${closingCta}`
     },
     {
       subject: "pipeline fragility",

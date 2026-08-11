@@ -12,6 +12,8 @@ import {
   Inbox,
   Radio,
   Shield,
+  Edit2,
+  Check
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -88,6 +90,8 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [activeTab, setActiveTab] = useState<"email" | "linkedin" | "script" | "whatsapp">("email");
   const [copySuccess, setCopySuccess] = useState(false);
   const [isPaywallActive, setIsPaywallActive] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftText, setDraftText] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -189,6 +193,62 @@ useEffect(() => {
   // ── Handlers ──────────────────────────────────────────────────────
 
   const selectedLead = leads.find((l) => l.lead_id === selectedId);
+
+  const getActiveText = useCallback(() => {
+    if (!selectedLead) return "";
+    let channelObj: any = null;
+    if (activeTab === "email") channelObj = selectedLead.generated_email;
+    if (activeTab === "linkedin") channelObj = selectedLead.generated_linkedin;
+    if (activeTab === "script") channelObj = selectedLead.generated_script;
+    if (activeTab === "whatsapp") channelObj = selectedLead.generated_whatsapp;
+    
+    if (!channelObj) return "";
+    if (typeof channelObj === 'string') {
+      try {
+        const parsed = JSON.parse(channelObj);
+        return parsed.body || "";
+      } catch {
+        return channelObj;
+      }
+    }
+    return channelObj.body || "";
+  }, [selectedLead, activeTab]);
+
+  useEffect(() => {
+    setIsEditing(false);
+  }, [activeTab, selectedId]);
+
+  const handleEditToggle = () => {
+    if (isEditing) {
+      if (!selectedLead) return;
+      const updateChannel = (channelObj: any, newBody: string) => {
+        if (!channelObj) return { body: newBody };
+        if (typeof channelObj === 'string') {
+          try {
+            const parsed = JSON.parse(channelObj);
+            return { ...parsed, body: newBody };
+          } catch {
+            return { body: newBody };
+          }
+        }
+        return { ...channelObj, body: newBody };
+      };
+
+      setLeads(current => current.map(l => {
+        if (l.lead_id !== selectedId) return l;
+        const updated = { ...l };
+        if (activeTab === "email") updated.generated_email = updateChannel(l.generated_email, draftText) as any;
+        if (activeTab === "linkedin") updated.generated_linkedin = updateChannel(l.generated_linkedin, draftText) as any;
+        if (activeTab === "script") updated.generated_script = updateChannel(l.generated_script, draftText) as any;
+        if (activeTab === "whatsapp") updated.generated_whatsapp = updateChannel(l.generated_whatsapp, draftText) as any;
+        return updated;
+      }));
+      setIsEditing(false);
+    } else {
+      setDraftText(getActiveText());
+      setIsEditing(true);
+    }
+  };
 
   const handleSelect = (lead: Lead) => {
     setSelectedId(lead.lead_id);
@@ -440,6 +500,17 @@ useEffect(() => {
           <div className="flex items-center gap-2 shrink-0">
             <button
               className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
+              title={isEditing ? "Save Edits" : "Edit Copy"}
+              onClick={handleEditToggle}
+            >
+              {isEditing ? (
+                <Check className="w-4 h-4 text-green-400" />
+              ) : (
+                <Edit2 className="w-4 h-4" />
+              )}
+            </button>
+            <button
+              className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
               title="Copy to clipboard"
               onClick={handleCopy}
             >
@@ -495,8 +566,23 @@ useEffect(() => {
         <div className="flex-1 p-6 overflow-y-auto">
           {selectedLead?.generated_email ? (
             <div className="w-full h-full whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-transparent focus:outline-none">
-              {(() => {
-                // The JSON Parser: Construct the message object locally from the backend payload mapping
+              {isEditing ? (
+                <div className="flex flex-col h-full">
+                  {activeTab === "email" && (selectedLead.generated_email as any)?.subject && (
+                    <div className="text-xs font-bold text-gray-400 mb-2">
+                      Subject: {(selectedLead.generated_email as any).subject}
+                    </div>
+                  )}
+                  <textarea
+                    value={draftText}
+                    onChange={(e) => setDraftText(e.target.value)}
+                    className="w-full h-64 bg-zinc-900/50 border border-zinc-800 rounded-lg p-4 text-zinc-300 focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
+                    placeholder="Modify the AI-generated copy..."
+                  />
+                </div>
+              ) : (
+                (() => {
+                  // The JSON Parser: Construct the message object locally from the backend payload mapping
                 let message = {
                   email: selectedLead.generated_email,
                   linkedin: selectedLead.generated_linkedin,
@@ -529,7 +615,8 @@ useEffect(() => {
                 }
 
                 return null;
-              })()}
+                })()
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center">

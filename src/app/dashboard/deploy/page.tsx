@@ -24,6 +24,8 @@ export default function DeployPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [tier, setTier] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<'smartlead' | 'instantly'>('smartlead');
+  const [activeBatch, setActiveBatch] = useState<any>(null);
 
   useEffect(() => {
     setTier(localStorage.getItem('userTier') || 'CORE');
@@ -34,6 +36,7 @@ export default function DeployPage() {
       const stored = sessionStorage.getItem("frameleads_batch");
       if (stored) {
         const batch = JSON.parse(stored);
+        setActiveBatch(batch);
         if (batch.batch_id) {
           setBatchId(batch.batch_id);
         }
@@ -51,23 +54,27 @@ export default function DeployPage() {
     setIsDeploying(true);
 
     try {
+      console.log("Deploy Payload:", { platform, api_key: apiKey, campaign_id: campaignId, batch_id: activeBatch?.batch_id, leads: activeBatch?.leads });
+      
       const res = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           api_key: apiKey,
           campaign_id: campaignId,
-          batch_id: batchId
+          batch_id: activeBatch?.batch_id || batchId,
+          platform: platform,
+          leads: activeBatch?.leads || [],
         }),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || "Failed to deploy to Smartlead.");
+        throw new Error(data.detail || `Failed to deploy to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}.`);
       }
 
       const data = await res.json();
-      setSuccessMsg(data.message || "Batch successfully pushed to Smartlead!");
+      setSuccessMsg(data.message || `Batch successfully pushed to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}!`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred.");
     } finally {
@@ -91,7 +98,7 @@ export default function DeployPage() {
         </div>
         <h2 className="text-2xl font-semibold font-heading">No Active Batch</h2>
         <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
-          You need to process a batch of leads before you can deploy them to Smartlead.
+          You need to process a batch of leads before you can deploy them to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}.
         </p>
         <button
           onClick={() => router.push("/dashboard/ingestion")}
@@ -108,10 +115,10 @@ export default function DeployPage() {
       <div className="mb-10 md:mb-12">
         <h1 className="text-4xl font-bold tracking-tight flex items-center gap-4 font-heading">
           <Rocket className="w-8 h-8 text-primary" />
-          Deploy to Smartlead
+          Deploy to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}
         </h1>
         <p className="text-lg text-muted-foreground mt-3 leading-relaxed">
-          Push your generated AI outreach copy directly into a Smartlead campaign via API.
+          Push your generated AI outreach copy directly into a {platform === 'instantly' ? 'Instantly' : 'Smartlead'} campaign via API.
         </p>
       </div>
 
@@ -139,10 +146,40 @@ export default function DeployPage() {
           </div>
         </div>
 
+        <div className="mb-6">
+          <label className="block text-sm font-medium mb-2 text-zinc-300">
+            Select Deployment Engine
+          </label>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              type="button"
+              onClick={() => setPlatform('smartlead')}
+              className={`p-4 rounded-xl border font-semibold transition-all ${
+                platform === 'smartlead'
+                  ? 'bg-orange-500/10 border-orange-500 text-orange-500'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+              }`}
+            >
+              Smartlead
+            </button>
+            <button
+              type="button"
+              onClick={() => setPlatform('instantly')}
+              className={`p-4 rounded-xl border font-semibold transition-all ${
+                platform === 'instantly'
+                  ? 'bg-orange-500/10 border-orange-500 text-orange-500'
+                  : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+              }`}
+            >
+              Instantly
+            </button>
+          </div>
+        </div>
+
         <div className="space-y-2">
           <label className="text-sm font-medium flex items-center gap-2">
             <Key className="w-4 h-4 text-muted-foreground" />
-            Smartlead API Key
+            {platform === 'instantly' ? 'Instantly' : 'Smartlead'} API Key
           </label>
           <input
             type="password"
@@ -166,7 +203,7 @@ export default function DeployPage() {
             className="flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
           <p className="text-xs text-muted-foreground mt-1">
-            You can find the Campaign ID in the URL of your Smartlead campaign.
+            You can find the Campaign ID in the URL of your {platform === 'instantly' ? 'Instantly' : 'Smartlead'} campaign.
           </p>
         </div>
 
@@ -179,11 +216,11 @@ export default function DeployPage() {
             {isDeploying ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Pushing to Smartlead...
+                Pushing to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}...
               </>
             ) : (
               <>
-                Push to Smartlead
+                Push to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}
                 <Rocket className="w-4 h-4" />
               </>
             )}
@@ -204,8 +241,8 @@ export default function DeployPage() {
         {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
         <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
           <EnterpriseFeatureLocked
-            featureName="Deploy to Smartlead"
-            description="Autonomous campaign deployment is exclusively available on the Enterprise Tier. Upgrade to push AI-generated outreach directly into your Smartlead campaigns."
+            featureName={`Deploy to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}`}
+            description={`Autonomous campaign deployment is exclusively available on the Enterprise Tier. Upgrade to push AI-generated outreach directly into your ${platform === 'instantly' ? 'Instantly' : 'Smartlead'} campaigns.`}
           />
         </div>
       </>

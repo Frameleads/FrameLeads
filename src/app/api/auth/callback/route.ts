@@ -57,10 +57,15 @@ export async function GET(request: Request) {
     }
   });
 
+  // ADMIN OVERRIDE INJECTION
+  const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+  const isSystemAdmin = user?.email && user.email === ADMIN_EMAIL;
+  const effectiveTier = isSystemAdmin ? 'ENTERPRISE' : user?.tier;
+
   // 4. Mint Session with Dynamic Tier -> REDIRECTS TO WELCOME PORTAL
   const response = NextResponse.redirect(new URL("/welcome", request.url));
   response.cookies.set("frameleads_session", accessToken, { httpOnly: true, path: "/" });
-  response.cookies.set("tier", user.tier, { path: "/" }); 
+  response.cookies.set("tier", effectiveTier, { path: "/" }); 
   
   return response;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -62,6 +62,22 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    // ── Global Session Sync (Admin Override Propagation) ──
+    // Ensures the client-side localStorage state stays synchronized 
+    // with the secure backend tier cookie minted during authentication.
+    const cookieString = typeof document !== 'undefined' ? document.cookie : '';
+    const cookies = cookieString.split(";").reduce((acc, c) => {
+      const [key, val] = c.trim().split("=");
+      if (key && val) acc[key] = val;
+      return acc;
+    }, {} as Record<string, string>);
+    
+    if (cookies["tier"]) {
+      localStorage.setItem("userTier", cookies["tier"]);
+    }
+  }, []);
 
   // ── Shared sidebar content (used in both mobile overlay & desktop) ──
   const SidebarContent = (
