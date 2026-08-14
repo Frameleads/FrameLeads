@@ -72,7 +72,12 @@ export default function IngestionPage() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [csvColumns, setCsvColumns] = useState<string[]>([]);
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
-  const [mappings, setMappings] = useState<ColumnMapping[]>([]);
+  const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({
+    first_name: "",
+    company_name: "",
+    website_url: "",
+    provided_incident_details: ""
+  });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaignContext, setCampaignContext] = useState<any>(null);
@@ -156,18 +161,30 @@ export default function IngestionPage() {
         setCsvRows(results.data);
 
         // Auto-map: try exact match, then case-insensitive substring
-        setMappings(
-          headers.map((col) => {
+        const autoMappings: Record<string, string> = {
+          first_name: "",
+          company_name: "",
+          website_url: "",
+          provided_incident_details: ""
+        };
+
+        const targetFields = ["first_name", "company_name", "website_url", "provided_incident_details"];
+        
+        targetFields.forEach((schemaField) => {
+          const match = headers.find((col) => {
             const lower = col.toLowerCase();
-            const autoMatch = SCHEMA_FIELDS.find(
-              (f) =>
-                f === lower ||
-                lower.includes(f.replace(/_/g, " ")) ||
-                lower.includes(f.replace(/_/g, ""))
+            return (
+              lower === schemaField ||
+              lower.includes(schemaField.replace(/_/g, " ")) ||
+              lower.includes(schemaField.replace(/_/g, ""))
             );
-            return { csvColumn: col, schemaField: autoMatch ?? "" };
-          })
-        );
+          });
+          if (match) {
+            autoMappings[schemaField] = match;
+          }
+        });
+
+        setFieldMappings(autoMappings);
       },
       error: (err) => {
         setError(`Failed to parse CSV: ${err.message}`);
@@ -177,17 +194,10 @@ export default function IngestionPage() {
   };
 
   // ── Mapping update ────────────────────────────────────────────────
-
-  const updateMapping = (index: number, schemaField: string) => {
-    setMappings((prev) =>
-      prev.map((m, i) => (i === index ? { ...m, schemaField } : m))
-    );
+  
+  const updateFieldMapping = (schemaField: string, csvColumn: string) => {
+    setFieldMappings((prev) => ({ ...prev, [schemaField]: csvColumn }));
   };
-
-  // Check if a schema field is already mapped by another column
-  const isFieldTaken = (field: string, currentIndex: number): boolean =>
-    field !== "" &&
-    mappings.some((m, i) => i !== currentIndex && m.schemaField === field);
 
   // ── Batch assembly + API call ─────────────────────────────────────
 
@@ -195,37 +205,28 @@ export default function IngestionPage() {
     setError(null);
 
     // Validate: first_name and company_name are required mappings
-    const mappedFields = new Set(mappings.map((m) => m.schemaField));
-    if (!mappedFields.has("first_name") || !mappedFields.has("company_name")) {
+    if (!fieldMappings.first_name || !fieldMappings.company_name) {
       setError(
-        `You must map at least "first_name" and "company_name" before processing.`
+        `You must map at least "First Name" and "Company Name" before processing.`
       );
       return;
-    }
-
-    // Build a lookup: schemaField → csvColumn
-    const fieldToCsv: Partial<Record<SchemaField, string>> = {};
-    for (const m of mappings) {
-      if (m.schemaField) {
-        fieldToCsv[m.schemaField as SchemaField] = m.csvColumn;
-      }
     }
 
     // Transform rows into LeadPayload[]
     const leads: LeadPayload[] = csvRows.map((row, idx) => {
       const firstName = (
-        row[fieldToCsv.first_name ?? ""] ?? ""
+        row[fieldMappings.first_name] ?? ""
       ).trim();
       const companyName = (
-        row[fieldToCsv.company_name ?? ""] ?? ""
+        row[fieldMappings.company_name] ?? ""
       ).trim();
       const websiteUrl =
-        fieldToCsv.website_url
-          ? (row[fieldToCsv.website_url] ?? "").trim() || null
+        fieldMappings.website_url
+          ? (row[fieldMappings.website_url] ?? "").trim() || null
           : null;
       const incidentDetails =
-        fieldToCsv.provided_incident_details
-          ? (row[fieldToCsv.provided_incident_details] ?? "").trim() || null
+        fieldMappings.provided_incident_details
+          ? (row[fieldMappings.provided_incident_details] ?? "").trim() || null
           : null;
 
       const hasWebsite = websiteUrl !== null && websiteUrl !== "";
@@ -254,8 +255,8 @@ export default function IngestionPage() {
     }
 
     // ── Core Tier Quota Gate ──────────────────────────────────────────
-    // Block the batch if it would push the user over the 500-lead limit.
-    // Enterprise tier users bypass this check entirely.
+    // Warn the user if they exceed quota, but DO NOT block the batch.
+    // The backend route.ts will slice the array and return quota_locked ghosts.
     if (userTier === "CORE") {
       const newTotal = leadsGenerated + validLeads.length;
       if (newTotal > CORE_LEAD_LIMIT) {
@@ -263,17 +264,19 @@ export default function IngestionPage() {
         setError(
           `Core tier limit: ${CORE_LEAD_LIMIT} leads. You've generated ${leadsGenerated} so far. ` +
           `This batch has ${validLeads.length} leads, but you only have ${remaining} remaining. ` +
-          `Upgrade to Enterprise for unlimited generation.`
+          `The remaining leads will be locked. Upgrade to Enterprise to unlock them.`
         );
-        return;
+        // Removed return statement to allow the backend array slicer to create ghost leads
       }
     }
 
-    const payload: BatchPayload = {
+    const payload: any = {
       batch_id: `batch_${Date.now()}`,
       status: "processing",
       context: campaignContext,
       leads: validLeads,
+      creditsUsed: leadsGenerated,
+      tier: userTier,
     };
 
     // ── POST to backend ───────────────────────────────────────────
@@ -322,11 +325,11 @@ export default function IngestionPage() {
 
   // ── Derived state ─────────────────────────────────────────────────
 
-  const mappedCount = mappings.filter((m) => m.schemaField !== "").length;
+  const mappedCount = Object.values(fieldMappings).filter(Boolean).length;
   const canProcess =
     csvRows.length > 0 &&
-    mappings.some((m) => m.schemaField === "first_name") &&
-    mappings.some((m) => m.schemaField === "company_name") &&
+    Boolean(fieldMappings.first_name) &&
+    Boolean(fieldMappings.company_name) &&
     !isProcessing &&
     campaignContext !== null;
 
@@ -430,52 +433,49 @@ export default function IngestionPage() {
         </div>
       </div>
 
-      {/* Column Mapping Table */}
+      {/* 2x2 Apollo-style Mapping Grid */}
       {csvColumns.length > 0 && (
-        <div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm overflow-hidden">
-          <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <FileSpreadsheet className="w-5 h-5 text-muted-foreground" />
-              <h3 className="text-sm font-medium font-heading">Column Mapping</h3>
-            </div>
-            <span className="text-xs text-muted-foreground">
-              {mappedCount} of {SCHEMA_FIELDS.length} fields mapped
-            </span>
-          </div>
-          <div className="divide-y divide-border/30">
-            {mappings.map((mapping, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-4 px-6 py-3 hover:bg-muted/20 transition-colors"
-              >
-                <span className="w-1/3 text-sm font-mono text-muted-foreground truncate">
-                  {mapping.csvColumn}
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {SCHEMA_FIELDS.map((schemaField) => (
+            <div
+              key={schemaField}
+              className="bg-[#1A1A1A] border border-[#242424] rounded-2xl p-6 flex flex-col gap-4 shadow-lg shadow-black/20"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-[#FFFFFF]">
+                  {SCHEMA_LABELS[schemaField]}
                 </span>
-                <ArrowRight className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
-                <select
-                  value={mapping.schemaField}
-                  onChange={(e) => updateMapping(index, e.target.value)}
-                  className="flex-1 h-9 rounded-lg border border-zinc-800 bg-[#0a0a0a] text-gray-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                >
-                  <option value="" className="bg-[#0a0a0a] text-gray-200">&mdash; skip &mdash;</option>
-                  {SCHEMA_FIELDS.map((field) => (
-                    <option
-                      key={field}
-                      value={field}
-                      disabled={isFieldTaken(field, index)}
-                      className="bg-[#0a0a0a] text-gray-200"
-                    >
-                      {SCHEMA_LABELS[field]}
-                      {isFieldTaken(field, index) ? " (already mapped)" : ""}
-                    </option>
-                  ))}
-                </select>
-                {mapping.schemaField && (
+                {fieldMappings[schemaField] && (
                   <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                 )}
               </div>
-            ))}
-          </div>
+              <div className="relative">
+                <select
+                  value={fieldMappings[schemaField] || ""}
+                  onChange={(e) => updateFieldMapping(schemaField, e.target.value)}
+                  className="w-full h-11 rounded-xl border border-[#242424] bg-[#000000] text-gray-200 px-4 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#FF5A1F] focus:border-[#FF5A1F] transition-all"
+                >
+                  <option value="" className="bg-[#000000] text-gray-500">
+                    &mdash; Skip mapping &mdash;
+                  </option>
+                  {csvColumns.map((col) => (
+                    <option
+                      key={col}
+                      value={col}
+                      className="bg-[#000000] text-gray-200"
+                    >
+                      {col}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
+                  <ArrowRight className="w-4 h-4 text-gray-500 rotate-90" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
           {/* Footer: stats + Process button */}
           <div className="px-6 py-4 border-t border-border/50 flex items-center justify-between">

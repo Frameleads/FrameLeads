@@ -77,12 +77,13 @@ model ApiKey {
 
 
 model User {
-  id        String   @id @default(cuid())
-  whopId    String   @unique
-  email     String   @unique
-  tier      String   @default("CORE")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  whopId       String   @unique
+  email        String   @unique
+  tier         String   @default("CORE")
+  monthlyQuota Int      @default(500)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // ── Phase 3: Deployment Armor ──────────────────────────────────
   // A user's root brand domain (e.g., "company.com") is stored here

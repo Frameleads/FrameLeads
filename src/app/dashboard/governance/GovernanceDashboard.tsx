@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import EnterpriseFeatureLocked from "@/components/EnterpriseFeatureLocked";
+import EnterprisePaywall from "@/components/EnterprisePaywall";
 import Link from "next/link";
 import {
   Shield,
@@ -545,24 +545,9 @@ export default function GovernanceDashboard() {
     </div>
   );
 
-  if (tier !== "ENTERPRISE") {
-    return (
-      <>
-        {/* 1. The Actual Real UI rendered in background, but frozen */}
-        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
-          {pageContent}
-        </div>
-        
-        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
-        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
-          <EnterpriseFeatureLocked
-            featureName="Governance Dashboard"
-            description="The Governance Dashboard and automated Fragility Digest are exclusively available on the Enterprise Tier to protect high-ticket pipelines."
-          />
-        </div>
-      </>
-    );
-  }
-
-  return pageContent;
+  return (
+    <EnterprisePaywall userTier={tier} featureName="Governance Dashboard">
+      {pageContent}
+    </EnterprisePaywall>
+  );
 }

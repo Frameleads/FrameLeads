@@ -12,40 +12,21 @@ import {
   type PipelineContext,
 } from '@/lib/word-count-gate';
 
-const SYSTEM_PROMPT = `You are an elite Systems Architect speaking to funded founders and lean CEOs. Your tone is candid, authoritative, and relies on 'tough love.' You are a mentor diagnosing a fatal flaw. Absolutely no generic marketing clichés, no clickbait hooks, and no soft/safe language.
+const SYSTEM_PROMPT = `You are a B2B sales assistant. Your job is to fill in the blanks of a strict email template.
+Do NOT use any corporate jargon. Use 6th-grade English.
 
-You must sell indirectly by shifting their worldview and positioning our framework as inevitable.
-
-CRITICAL PSYCHOLOGICAL DIRECTIVES (The 4 Weapons):
-1. Reactance Disarmament: Make the prospect feel completely safe to reject you. When they feel in control, defensive walls drop.
-2. The Curiosity Gap: State the massive outcome (abstracting triage), but withhold the exact mechanism. Keep them guessing.
-3. The Identity Shift (Pride): Speak to the identity they aspire to—the 'systems architect' who builds leverage, not the 'operator/employee' who does manual grunt work.
-4. The No-Oriented Permission CTA: Never ask for a "Yes." Ask if they are against seeing the solution (e.g., "Would you be against...", "Would it be a terrible idea...").
-
-YOUR 4-STEP COGNITIVE ARCHITECTURE (The Logic):
-The Observation (Identity & Pain): Challenge their identity. Call out a specific operational hemorrhage that is treating their executive bandwidth like minimum-wage operator labor.
-The Worldview Shift: Expose the reality that their current hacks (Zapier routing, hiring more SDRs) are active liabilities that compound management load.
-The Inevitability (Curiosity Gap): Position our autonomous acquisition infrastructure as the only logical evolution without explaining exactly 'how' it works.
-The CTA (No-Oriented): End with a blunt, low-friction, no-oriented call to action that matches the user's Preferred CTA Style exactly.
-
-THE MULTI-CHANNEL CONSTRAINTS & FEW-SHOT EXAMPLES (The Output):
-You must generate 4 variations of this logic adapted for 4 specific channels. DO NOT COPY THESE EXAMPLES VERBATIM. You must use them strictly as structural blueprints to write ORIGINAL copy based on the specific lead's actual business context:
-
-1. Email (The Masterpiece - Follows the 4 steps perfectly):
-Example: 'Founders build infrastructure; operators babysit inboxes. Right now, the multi-channel pipeline at [Company] is running on human coordination overhead. When qualified leads arrive faster than your team can sequence them, leads age out between handoffs. Hiring more SDRs just compounds the management load. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away entirely — logic-driven routing, zero alert fatigue, and flawless data hygiene. Would you be entirely against me sending over a brief architecture diagnostic to show you the framework? If it’s not a fit, feel free to toss it.'
-
-2. LinkedIn (The Scannable Hook - Compress pain into a list, max 40 words):
-Example: 'Founders architect systems; employees run them. [Company]'s multi-channel pipeline is hitting a coordination ceiling—leads aging out between handoffs and CRM fragmentation. We architected a way to abstract that triage entirely. Would you be opposed to seeing the framework?'
-
-3. Cold Call (The Pattern Interrupt - Clinical timeframe request):
-Example: '[Name], I was reviewing [Company]'s outreach architecture and noticed a specific bottleneck where your cognitive capital is being burned on manual triage. We built a framework to abstract that coordination layer into autonomous infrastructure. Would it be a ridiculous idea to take 90 seconds to walk you through the core logic? You can hang up if it misses the mark.'
-
-4. WhatsApp (The Trojan Horse - Max 2 sentences, ask to email them):
-Example: '[Name] — noticed [Company]'s outbound scaling speed is bottlenecked by manual operator triage rather than system architecture. We built a productized infrastructure to fix this; would you be against me shooting the document to your work email?'
-
-OUTPUT FORMAT:
-Return the response strictly as a JSON object:
-{ "email": { "subject": "[2-3 word internal memo style]", "body": "[Email text]" }, "linkedin": { "body": "[LinkedIn text]" }, "coldCall": { "body": "[Cold Call text]" }, "whatsapp": { "body": "[WhatsApp text]" } }`;
+Output ONLY valid JSON in this exact format:
+{
+"email": {
+"subject": "2-3 word lowercase subject",
+"paragraphs": [
+"I noticed you are scaling the team at {company_name}.",
+"The trap most founders fall into here is manual CRM work, which actively burns [INVENT A SPECIFIC NUMERICAL METRIC: e.g., $40k/month, 11 hours/week] in lost pipeline.",
+"We built a triage architecture that governs this autonomously, dropping response times to under 5 minutes without adding payroll.",
+"Opposed to taking a look at the sandbox?"
+]
+}
+}`;
 
 // 5 Distinct Architectural Lenses to Guarantee 100% Unique Variations on Every Click:
 const REGEN_ANGLES = [
@@ -62,23 +43,25 @@ export async function POST(req: Request) {
       leads, 
       batch_id, 
       timestamp, 
-      creditsUsed, 
-      tier, 
+      creditsUsed = 0, 
+      tier = 'FREE', 
       force_regenerate, 
       regenerate,
       preferredCtaStyle = 'Self-Serve Audit Link'
     } = await req.json();
 
-    if (tier !== 'ENTERPRISE' && creditsUsed >= 500) {
-      return NextResponse.json({ error: 'LIMIT_REACHED' }, { status: 403 });
-    }
-
     if (!leads) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
+    const maxQuota = tier === 'ENTERPRISE' ? 20000 : tier === 'CORE' ? 500 : 0;
+    const remainingQuota = Math.max(0, maxQuota - (Number(creditsUsed) || 0));
+
+    const allowedLeads = leads.slice(0, remainingQuota);
+    const lockedLeads = leads.slice(remainingQuota);
+
     const apiKey = process.env.GEMINI_API_KEY || "";
-    let processedLeads;
+    let processedLeads: any[] = [];
 
     if (apiKey) {
       const genAI = new GoogleGenerativeAI(apiKey);
@@ -92,7 +75,7 @@ export async function POST(req: Request) {
       });
 
       processedLeads = await Promise.all(
-        leads.map(async (lead: any, index: number) => {
+        allowedLeads.map(async (lead: any, index: number) => {
           try {
             const randomAngle = REGEN_ANGLES[Math.floor(Math.random() * REGEN_ANGLES.length)];
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -120,6 +103,15 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               const result = await model.generateContent(retryPrompt);
               const responseText = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
               generated = JSON.parse(responseText);
+
+              // Inject the array-hack join logic before validation
+              if (generated.email && Array.isArray(generated.email.paragraphs)) {
+                generated.email.body = generated.email.paragraphs.join('\n\n');
+              }
+              // Prevent crashes during validation if the LLM drops these keys based on the rigid prompt
+              generated.linkedin = generated.linkedin || { body: "" };
+              generated.coldCall = generated.coldCall || { body: "" };
+              generated.whatsapp = generated.whatsapp || { body: "" };
 
               lastValidation = validateGeneratedChannels(generated, pipelineContext);
 
@@ -161,14 +153,36 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
             };
           } catch (e) {
             console.error(`Gemini Generation Error on lead [${lead.company_name}]:`, e);
-            return getMockLead(lead, index, preferredCtaStyle);
+            throw e;
           }
         })
       );
     } else {
-      await new Promise(r => setTimeout(r, 1200));
-      processedLeads = leads.map((lead: any, index: number) => getMockLead(lead, index, preferredCtaStyle));
+      return NextResponse.json(
+        { success: false, error: "Missing Gemini API Key in environment variables." },
+        { status: 401 }
+      );
     }
+
+    const ghostLeads = lockedLeads.map((lead: any, index: number) => ({
+      lead_id: lead.lead_id || `lead_locked_${index}_${Date.now()}`,
+      first_name: lead.first_name || "Unknown",
+      company_name: lead.company_name || "Unknown Company",
+      website_url: lead.website_url || null,
+      provided_incident_details: "Generated based on visceral architecture.",
+      enrichment_status: "completed",
+      generation_status: "quota_locked",
+      generated_email: { 
+        subject: "upgrade to unlock", 
+        body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.\n\nDuis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur." 
+      },
+      generated_linkedin: { body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua." },
+      generated_script: { body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit." },
+      generated_whatsapp: { body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit." },
+      deployment_status: "pending"
+    }));
+
+    processedLeads = [...processedLeads, ...ghostLeads];
 
     const batchResponse = {
       batch_id: batch_id || `batch_${Date.now()}`,
@@ -180,65 +194,11 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
 
     return NextResponse.json(batchResponse, { status: 200 });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("API Generation Failure:", error);
     return NextResponse.json(
-      { success: false, error: "Catastrophic failure inside the generation pipeline." },
+      { success: false, error: error.message || "Catastrophic failure inside the generation pipeline." },
       { status: 500 }
     );
   }
-}
-
-// Upgraded with No-Oriented CTA closing logic and Identity Shift:
-function getMockLead(lead: any, index: number, ctaStyle: string = 'Self-Serve Audit Link') {
-  const company = lead.company_name || "your company";
-  const name = lead.first_name || "Founder";
-
-  let closingCta = "Would you be opposed to running your outbound through our 2-minute self-serve fragility audit to inspect the logic?";
-  if (ctaStyle === 'Call / Diagnostic') {
-    closingCta = "Would you be entirely against a 15-minute diagnostic call to review your current sending topology? If you hate the logic, we hang up.";
-  } else if (ctaStyle === 'Send a Memo or Resource') {
-    closingCta = "Would it be a terrible idea if I dropped the 4-page architecture memo in your inbox so you can review the logic offline?";
-  }
-
-  const variants = [
-    {
-      subject: "coordination overhead",
-      email: `Founders build infrastructure; operators babysit inboxes. Right now, the multi-channel pipeline at ${company} is running on human coordination overhead. When qualified leads arrive faster than your SDR team can sequence across channels simultaneously, the result is predictable: pipeline fragility. Leads age out between handoffs. Hiring more SDRs compounds the management load without resolving the underlying architecture gap. FrameLeads engineers autonomous acquisition infrastructure that abstracts multi-channel triage away from human coordination entirely — logic-driven routing, asynchronous nurture, zero alert fatigue. ${closingCta}`,
-      linkedin: `Founders architect systems; employees run them. ${company}'s multi-channel pipeline is hitting a coordination ceiling — leads aging out between SDR handoffs, CRM fragmentation, conversion plateauing. FrameLeads architects autonomous acquisition infrastructure that eliminates the triage overhead. ${closingCta}`,
-      coldCall: `${name}, I was reviewing ${company}'s outreach architecture and identified a specific pipeline fragility pattern — qualified leads decaying between handoffs because the coordination layer is human-dependent. I've put together a short diagnostic on how to abstract that triage into autonomous infrastructure. ${closingCta}`,
-      whatsapp: `${name} — I was just analyzing ${company}'s architecture and noticed a specific bottleneck where your cognitive capital is hard-capping agency scale. I mapped out how to abstract that into productized infrastructure. ${closingCta}`
-    },
-    {
-      subject: "bandwidth hemorrhage",
-      email: `Managing acquisition triage manually at ${company} is treating executive bandwidth like operator labor. Every hour your team spends routing edge-case replies and auditing CRM handoffs is cognitive capital stolen from strategy. Taping Zapier workflows together only creates silent failures at scale. FrameLeads replaces human coordination with autonomous acquisition infrastructure — triaging intent, drafting objection overrides, and pushing clean data without manual intervention. ${closingCta}`,
-      linkedin: `Manual lead triage at ${company} is burning executive bandwidth on operator tasks. We engineer autonomous acquisition infrastructure that routes and qualifies outbound leads with zero coordination overhead. ${closingCta}`,
-      coldCall: `${name}, quick clinical question — how many hours a week is your team losing to manual lead routing and CRM handoff friction at ${company}? We architected an autonomous layer that eliminates that overhead entirely. ${closingCta}`,
-      whatsapp: `${name} — noticed ${company}'s outbound scaling speed is bottlenecked by manual triage instead of autonomous infrastructure. ${closingCta}`
-    },
-    {
-      subject: "pipeline fragility",
-      email: `When outbound volume scales at ${company}, human-dependent routing breaks first. Leads sit in queues, context is lost between email and LinkedIn, and high-value replies get generic bot answers. FrameLeads deploys enterprise acquisition infrastructure over your existing stack to automate multi-channel triage autonomously while keeping executive oversight on high-risk deals. ${closingCta}`,
-      linkedin: `Scaling ${company}'s outbound without infrastructure guarantees pipeline fragility. FrameLeads abstracts lead triage and multi-channel routing into clean, autonomous architecture. ${closingCta}`,
-      coldCall: `${name}, I analyzed ${company}'s acquisition stack and noticed a structural vulnerability in how leads transition across channels. I mapped out a zero-code infrastructure fix. ${closingCta}`,
-      whatsapp: `${name} — wrote a quick architecture memo on eliminating lead decay across ${company}'s acquisition channels. ${closingCta}`
-    }
-  ];
-
-  const pick = variants[Math.floor(Math.random() * variants.length)];
-
-  return {
-    lead_id: lead.lead_id || `lead_mock_${index}_${Date.now()}`,
-    first_name: name,
-    company_name: company,
-    website_url: lead.website_url || null,
-    provided_incident_details: "Generated based on visceral architecture.",
-    enrichment_status: "completed",
-    generation_status: "completed",
-    generated_email: { subject: pick.subject, body: pick.email },
-    generated_linkedin: { body: pick.linkedin },
-    generated_script: { body: pick.coldCall },
-    generated_whatsapp: { body: pick.whatsapp },
-    deployment_status: "pending"
-  };
 }

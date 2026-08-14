@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import EnterpriseFeatureLocked from "@/components/EnterpriseFeatureLocked";
+import EnterprisePaywall from "@/components/EnterprisePaywall";
 import { 
   Rocket, 
   Key, 
@@ -230,24 +230,12 @@ export default function DeployPage() {
     </div>
   );
 
-  if (tier === "CORE") {
-    return (
-      <>
-        {/* 1. The Actual Real UI rendered in background, but frozen */}
-        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
-          {pageContent}
-        </div>
-
-        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
-        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
-          <EnterpriseFeatureLocked
-            featureName={`Deploy to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}`}
-            description={`Autonomous campaign deployment is exclusively available on the Enterprise Tier. Upgrade to push AI-generated outreach directly into your ${platform === 'instantly' ? 'Instantly' : 'Smartlead'} campaigns.`}
-          />
-        </div>
-      </>
-    );
-  }
-
-  return pageContent;
+  return (
+    <EnterprisePaywall 
+      userTier={tier} 
+      featureName={`Deploy to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}`}
+    >
+      {pageContent}
+    </EnterprisePaywall>
+  );
 }

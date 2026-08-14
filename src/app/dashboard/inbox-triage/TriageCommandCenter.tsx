@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Loader2, Info } from 'lucide-react';
-import EnterpriseFeatureLocked from '@/components/EnterpriseFeatureLocked';
+import EnterprisePaywall from '@/components/EnterprisePaywall';
 
 export default function TriageCommandCenter({ initialData }: { initialData: any }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -311,24 +311,9 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
     </div>
   );
 
-  if (tier === 'CORE') {
-    return (
-      <>
-        {/* 1. The Actual Real UI rendered in background, but frozen */}
-        <div className="pointer-events-none select-none opacity-40 overflow-hidden h-[80vh]">
-          {pageContent}
-        </div>
-        
-        {/* 2. Full-Screen Fixed Overlay (Sidebar is z-50, this is z-40, so Sidebar stays clear) */}
-        <div className="fixed inset-0 z-40 backdrop-blur-md bg-black/40 flex items-center justify-center md:pl-[288px]">
-          <EnterpriseFeatureLocked
-            featureName="Inbox Triage"
-            description="Autonomous objection handling and signal-triggered draft generation are exclusively available on the Enterprise Tier."
-          />
-        </div>
-      </>
-    );
-  }
-
-  return pageContent;
+  return (
+    <EnterprisePaywall userTier={tier} featureName="Inbox Triage">
+      {pageContent}
+    </EnterprisePaywall>
+  );
 }

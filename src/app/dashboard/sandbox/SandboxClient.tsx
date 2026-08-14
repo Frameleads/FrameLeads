@@ -13,7 +13,8 @@ import {
   Radio,
   Shield,
   Edit2,
-  Check
+  Check,
+  Lock
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -62,6 +63,11 @@ const statusConfig: Record<
     color: "text-blue-400 bg-blue-400/10 border-blue-400/20",
     icon: Globe,
   },
+  quota_locked: {
+    label: "Locked",
+    color: "text-red-400 bg-red-400/10 border-red-400/20",
+    icon: Lock,
+  },
   waiting_on_enrichment: {
     label: "Awaiting Enrichment",
     color: "text-purple-400 bg-purple-400/10 border-purple-400/20",
@@ -89,7 +95,6 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [selectedId, setSelectedId] = useState<string>("");
   const [activeTab, setActiveTab] = useState<"email" | "linkedin" | "script" | "whatsapp">("email");
   const [copySuccess, setCopySuccess] = useState(false);
-  const [isPaywallActive, setIsPaywallActive] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draftText, setDraftText] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -111,12 +116,6 @@ useEffect(() => {
   }
 }, []);
 
-  // Paywall Trigger Fix: evaluate updated state immediately after limit breach
-  useEffect(() => {
-    if (userTier === 'CORE' && leadsGenerated >= CORE_LEAD_LIMIT && !isDemoAdmin) {
-      setIsPaywallActive(true);
-    }
-  }, [leadsGenerated, userTier, isDemoAdmin]);
 
   // ── Load initial batch from sessionStorage ────────────────────────
 
@@ -256,12 +255,7 @@ useEffect(() => {
   };
 
   const handleRegenerate = async () => {
-    if (!selectedLead || (userTier === 'CORE' && isPaywallActive && !isDemoAdmin)) return;
-    
-    if (userTier === 'CORE' && leadsGenerated >= CORE_LEAD_LIMIT && !isDemoAdmin) {
-      setIsPaywallActive(true);
-      return;
-    }
+    if (!selectedLead) return;
     
     // 1. Create a clean stripped lead so the backend is FORCED to generate fresh copy
     const strippedLead = {
@@ -298,14 +292,12 @@ useEffect(() => {
       });
       
       if (res.status === 403 && !isDemoAdmin) {
-        setIsPaywallActive(true);
         return;
       }
 
       if (res.ok) {
         const data = await res.json();
         if (data.error === 'LIMIT_REACHED' && !isDemoAdmin) {
-          setIsPaywallActive(true);
           return;
         }
         
@@ -352,6 +344,7 @@ useEffect(() => {
   };
 
   const getStatus = (lead: Lead) => {
+    if (lead.generation_status === "quota_locked") return statusConfig.quota_locked;
     if (lead.generation_status === "completed") return statusConfig.completed;
     if (lead.generation_status === "queued") return statusConfig.queued;
     if (lead.enrichment_status === "pending_scrape")
@@ -390,29 +383,11 @@ useEffect(() => {
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)] relative">
-      {!isDemoAdmin && isPaywallActive && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md rounded-2xl">
-          <div className="bg-card border border-border shadow-2xl p-8 rounded-2xl max-w-lg text-center flex flex-col items-center">
-            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-6">
-              <span className="text-red-500 font-bold text-2xl">!</span>
-            </div>
-            <h2 className="text-2xl font-bold font-heading mb-3">Core Infrastructure Limit Reached</h2>
-            <p className="text-muted-foreground mb-8 leading-relaxed">
-              Your acquisition volume has outscaled the Core tier. Upgrade to Velvet Rope for unmetered generation.
-            </p>
-            <button
-              onClick={() => {}}
-              className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] w-full"
-            >
-              Upgrade Infrastructure
-            </button>
-          </div>
-        </div>
-      )}
+    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)] lg:h-[calc(100vh-8rem)] relative">
+
       
       {/* Left Panel Column */}
-      <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0">
+      <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0 lg:h-full">
         
         {/* Core Tier Quota Header */}
         {userTier === 'CORE' && (
@@ -487,7 +462,7 @@ useEffect(() => {
       </div>
 
       {/* Right Panel — AI Copy Editor */}
-      <div className="w-full lg:w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden min-h-[400px] lg:min-h-0">
+      <div className="w-full lg:w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden min-h-[400px] lg:min-h-0 lg:h-full">
         <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between w-full gap-2 pr-4">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
@@ -563,9 +538,10 @@ useEffect(() => {
             WhatsApp
           </button>
         </div>
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="flex-1 p-6 overflow-y-auto relative">
           {selectedLead?.generated_email ? (
-            <div className="w-full h-full whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-transparent focus:outline-none">
+            <>
+            <div className={`w-full h-full whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-transparent focus:outline-none ${selectedLead.generation_status === 'quota_locked' ? 'blur-md select-none opacity-50' : ''}`}>
               {isEditing ? (
                 <div className="flex flex-col h-full">
                   {activeTab === "email" && (selectedLead.generated_email as any)?.subject && (
@@ -597,27 +573,54 @@ useEffect(() => {
                       {message.email && (message.email as any).subject && (
                         <div className="text-xs font-bold text-gray-400 mb-2">Subject: {(message.email as any).subject}</div>
                       )}
-                      <div>{message.email ? (message.email as any).body : "No email generated."}</div>
+                      <div className="whitespace-pre-wrap">{message.email ? (message.email as any).body : "No email generated."}</div>
                     </div>
                   );
                 }
 
                 if (activeTab === "linkedin") {
-                  return <div>{message.linkedin ? (message.linkedin as any).body : "No LinkedIn DM generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{message.linkedin ? (message.linkedin as any).body : "No LinkedIn DM generated."}</div>;
                 }
 
                 if (activeTab === "script") {
-                  return <div>{message.coldCall ? (message.coldCall as any).body : "No script generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{message.coldCall ? (message.coldCall as any).body : "No script generated."}</div>;
                 }
 
                 if (activeTab === "whatsapp") {
-                  return <div>{message.whatsapp ? (message.whatsapp as any).body : "No WhatsApp draft generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{message.whatsapp ? (message.whatsapp as any).body : "No WhatsApp draft generated."}</div>;
                 }
 
                 return null;
                 })()
               )}
             </div>
+            
+            {selectedLead.generation_status === 'quota_locked' && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center p-6 text-center">
+                <div className="bg-[#000000] border border-[#1A1A1A] shadow-2xl p-8 rounded-2xl max-w-sm w-full flex flex-col items-center">
+                  <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#FF5A1F]/20 flex items-center justify-center mb-4">
+                    <Lock className="w-6 h-6 text-[#FF5A1F]" />
+                  </div>
+                  <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">Premium Leads Locked</h3>
+                  <p className="text-sm text-[#888888] mb-6">You've hit your monthly generation quota. Upgrade to unlock these high-intent prospects.</p>
+                  <a 
+                    href="https://whop.com/brandflowstudio/frameleads-24/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full h-11 flex items-center justify-center bg-[#FF5A1F] text-[#FFFFFF] font-semibold rounded-lg shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#FF5A1F]/90 transition-colors mb-3"
+                  >
+                    Upgrade to Enterprise tier
+                  </a>
+                  <button 
+                    onClick={() => setSelectedId("")}
+                    className="text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
+                  >
+                    Maybe later
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Loader2 className="w-8 h-8 text-muted-foreground/50 animate-spin mb-4" />
