@@ -18,7 +18,14 @@ export async function POST(req: Request) {
     const where = email ? { email } : { whopId: whopUserId };
 
     // 3. The Activation Logic
-    if (eventType === 'membership_activated' || eventType === 'payment_succeeded' || eventType === 'membership_updated' || eventType === 'membership.went_valid') {
+    if (
+      eventType === 'membership.activated' ||
+      eventType === 'payment.succeeded' ||
+      eventType === 'membership_activated' ||
+      eventType === 'payment_succeeded' ||
+      eventType === 'membership_updated' ||
+      eventType === 'membership.went_valid'
+    ) {
         const payloadString = JSON.stringify(payload).toLowerCase();
         let assignedTier = 'FREE'; 
         let assignedQuota = 0;
@@ -47,7 +54,13 @@ export async function POST(req: Request) {
     } 
     
     // 4. The Cancellation Logic
-    if (eventType === 'membership_cancelled' || eventType === 'membership.went_invalid' || eventType === 'payment_failed') {
+    if (
+      eventType === 'membership.deactivated' ||
+      eventType === 'payment.failed' ||
+      eventType === 'membership_cancelled' ||
+      eventType === 'membership.went_invalid' ||
+      eventType === 'payment_failed'
+    ) {
         await prisma.user.updateMany({
           where: where,
           data: { tier: 'FREE', monthlyQuota: 0, leadsProcessed: 0 },
@@ -62,6 +75,11 @@ export async function POST(req: Request) {
 
   } catch (error) {
     console.error('[WHOP WEBHOOK] 💥 Error:', error);
-    return NextResponse.json({ received: true }, { status: 200 });
+    // Let Whop retry transient parsing or database failures instead of
+    // acknowledging an event that was never persisted.
+    return NextResponse.json(
+      { received: false, error: 'Webhook processing failed' },
+      { status: 500 }
+    );
   }
 }
