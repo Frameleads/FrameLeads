@@ -54,13 +54,7 @@ export async function GET(request: Request) {
   const user = await prisma.user.upsert({
     where: { whopId: whopId },
     update: {},
-    create: {
-      whopId: whopId,
-      email: email,
-      tier: "FREE",
-      monthlyQuota: 0,
-      leadsProcessed: 0
-    }
+    create: { email, whopId, tier: 'FREE', monthlyQuota: 0, leadsProcessed: 0 }
   });
 
   // ADMIN OVERRIDE INJECTION

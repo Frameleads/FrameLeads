@@ -47,26 +47,30 @@ export async function POST(req: Request) {
       case 'membership_updated':
       case 'payment_succeeded':
       case 'membership.went_valid': {
-        const payloadString = JSON.stringify(payload).toLowerCase();
-        let tierKey: keyof typeof TIER_CONFIG = 'FREE';
-        
-        if (payloadString.includes('micro')) tierKey = 'MICRO_PILOT';
-        else if (payloadString.includes('enterprise')) tierKey = 'ENTERPRISE';
-        else if (payloadString.includes('core')) tierKey = 'CORE';
+        const stringified = JSON.stringify(payload).toLowerCase();
+        let assignedTier = 'FREE'; let assignedQuota = 0;
+        if (stringified.includes('micro')) { assignedTier = 'MICRO_PILOT'; assignedQuota = 25; }
+        else if (stringified.includes('enterprise')) { assignedTier = 'ENTERPRISE'; assignedQuota = 20000; }
+        else if (stringified.includes('core')) { assignedTier = 'CORE'; assignedQuota = 500; }
 
-        const tierConfig = TIER_CONFIG[tierKey];
-
-        await prisma.user.updateMany({
-          where,
-          data: {
-            tier:           tierConfig.tier,
-            monthlyQuota:   tierConfig.monthlyQuota,
+        await prisma.user.upsert({
+          where: { whopId: whopUserId || "unknown" },
+          update: {
+            tier: assignedTier,
+            monthlyQuota: assignedQuota,
             leadsProcessed: 0,
           },
+          create: {
+            whopId: whopUserId || "unknown",
+            email: email || "unknown@example.com",
+            tier: assignedTier,
+            monthlyQuota: assignedQuota,
+            leadsProcessed: 0,
+          }
         });
 
         console.log(
-          `[WHOP WEBHOOK] ✅ Upgraded to ${tierConfig.tier} (quota: ${tierConfig.monthlyQuota})` +
+          `[WHOP WEBHOOK] ✅ Upgraded to ${assignedTier} (quota: ${assignedQuota})` +
           ` for ${email ?? whopUserId} (plan: "${planName || 'unknown'}")`
         );
         break;
