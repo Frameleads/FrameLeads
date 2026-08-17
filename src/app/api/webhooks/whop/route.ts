@@ -37,7 +37,9 @@ export async function POST(req: Request) {
         await prisma.user.upsert({
           where: where,
           update: { tier: assignedTier, monthlyQuota: assignedQuota, leadsProcessed: 0 },
-          create: { whopId: whopUserId || "unknown", email: email || "unknown@example.com", tier: assignedTier, monthlyQuota: assignedQuota, leadsProcessed: 0 }
+          create: {
+            whopId: whopUserId || `missing_${Date.now()}`,
+            email: email || `missing_${whopUserId || Date.now()}@whop.local`, tier: assignedTier, monthlyQuota: assignedQuota, leadsProcessed: 0 }
         });
 
         console.log(`[WHOP WEBHOOK] ✅ Upgraded to ${assignedTier} (Quota: ${assignedQuota}) for ${email || whopUserId}`);

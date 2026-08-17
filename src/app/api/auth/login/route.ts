@@ -1,37 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  // EXECUTIVE OVERRIDE: Local Development Bypass
-  // Whop's strict PKCE firewall is blocking localhost. We are bypassing it to unblock development.
-  const response = NextResponse.redirect(new URL("/welcome", request.url));
+  const clientId = process.env.WHOP_CLIENT_ID;
+  const redirectUri = process.env.WHOP_REDIRECT_URI || "http://localhost:3000/api/auth/callback";
 
-  const email = "admin@example.com";
-  const user = await prisma.user.upsert({
-    where: { email },
-    update: {},
-    create: {
-      email,
-      whopId: "dev_whop_id_123",
-      tier: "CORE"
-    }
-  });
+  if (!clientId) {
+    return NextResponse.json({ error: "Missing WHOP_CLIENT_ID" }, { status: 500 });
+  }
 
-  // Mint the exact cookies the middleware requires to let you into the app
-  response.cookies.set("frameleads_session", "dev_bypass_master_key_999", { 
-    httpOnly: true, 
-    path: "/" 
-  });
-  response.cookies.set("tier", user.tier, { 
-    path: "/" 
-  });
-  response.cookies.set("user_email", user.email, {
-    httpOnly: true,
-    path: "/"
-  });
-
-  return response;
+  const whopOAuthUrl = `https://whop.com/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  return NextResponse.redirect(whopOAuthUrl);
 }

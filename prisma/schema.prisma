@@ -83,8 +83,8 @@ model User {
   id           String   @id @default(cuid())
   whopId       String   @unique
   email        String   @unique
-  tier         String   @default("CORE")
-  monthlyQuota Int      @default(500)
+  tier         String   @default("FREE")
+  monthlyQuota Int      @default(0)
   leadsProcessed Int    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
