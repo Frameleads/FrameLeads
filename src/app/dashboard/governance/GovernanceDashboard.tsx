@@ -174,67 +174,13 @@ function ChartEmptyState({ label }: { label: string }) {
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function GovernanceDashboard() {
-  const [metrics, setMetrics] = useState<GovernanceMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+export default function GovernanceDashboard({ initialMetrics }: { initialMetrics: GovernanceMetrics }) {
+  const metrics = initialMetrics;
   const [tier, setTier] = useState<string | null>(null);
   
   useEffect(() => {
     setTier(localStorage.getItem('userTier') || 'CORE');
   }, []);
-
-  const fetchMetrics = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/governance/metrics");
-      if (!res.ok) throw new Error(`API returned ${res.status}`);
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Unknown error");
-      setMetrics(data.metrics);
-      setLastUpdated(new Date().toLocaleTimeString());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load metrics");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchMetrics();
-    const interval = setInterval(fetchMetrics, 60_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── Loading State ───────────────────────────────────────────────────
-  if (loading && !metrics) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <Loader2 className="w-8 h-8 text-[#FF5A1F] animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading governance metrics...</p>
-      </div>
-    );
-  }
-
-  // ── Error State ─────────────────────────────────────────────────────
-  if (error && !metrics) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-          <AlertTriangle className="w-8 h-8 text-red-400" />
-        </div>
-        <p className="text-sm text-red-400">{error}</p>
-        <button
-          onClick={fetchMetrics}
-          className="text-sm text-muted-foreground hover:text-white transition-colors underline underline-offset-4"
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
 
   if (!metrics) return null;
 
@@ -266,17 +212,14 @@ export default function GovernanceDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {lastUpdated && (
-            <span className="text-xs text-gray-500">
-              Updated {lastUpdated}
-            </span>
-          )}
+          <span className="text-xs text-gray-500">
+            Live from Database
+          </span>
           <button
-            onClick={fetchMetrics}
-            disabled={loading}
-            className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border/50 text-sm text-muted-foreground hover:text-white hover:border-border hover:bg-muted/30 transition-all disabled:opacity-50"
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2 h-9 px-4 rounded-xl border border-border/50 text-sm text-muted-foreground hover:text-white hover:border-border hover:bg-muted/30 transition-all"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className="w-4 h-4" />
             Refresh
           </button>
         </div>
@@ -381,55 +324,56 @@ export default function GovernanceDashboard() {
           </div>
 
           {hasProtectionData ? (
-            <div className="h-[240px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={metrics.timeSeriesData}
-                  margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="protectionGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#FF5A1F" stopOpacity={0.3} />
-                      <stop offset="50%" stopColor="#FF5A1F" stopOpacity={0.08} />
-                      <stop offset="100%" stopColor="#FF5A1F" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="day"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#4b5563", fontSize: 10 }}
-                    interval={Math.max(0, Math.floor(metrics.timeSeriesData.length / 5) - 1)}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#4b5563", fontSize: 10 }}
-                    tickFormatter={(v: number) =>
-                      v >= 1_000_000 ? `$${(v / 1_000_000).toFixed(1)}M` : `$${Math.round(v / 1_000)}K`
-                    }
-                    width={55}
-                  />
-                  <Tooltip
-                    content={<ProtectionTooltip />}
-                    cursor={{ stroke: "#FF5A1F", strokeWidth: 1, strokeDasharray: "4 4", strokeOpacity: 0.3 }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="protectedARR"
-                    stroke="#FF5A1F"
-                    strokeWidth={2}
-                    fill="url(#protectionGradient)"
-                    dot={false}
-                    activeDot={{
-                      r: 4,
-                      fill: "#FF5A1F",
-                      stroke: "#0a0a0a",
-                      strokeWidth: 2,
-                    }}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div className="h-[240px] w-full overflow-x-auto hide-scrollbar pr-4 md:pr-0">
+              <div className="min-w-[400px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={metrics.timeSeriesData}
+                    margin={{ top: 4, right: 20, left: -20, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="protectionGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#FF5A1F" stopOpacity={0.3} />
+                        <stop offset="50%" stopColor="#FF5A1F" stopOpacity={0.08} />
+                        <stop offset="100%" stopColor="#FF5A1F" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis
+                      dataKey="day"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#4b5563", fontSize: 10 }}
+                      interval={Math.max(0, Math.floor(metrics.timeSeriesData.length / 5) - 1)}
+                    />
+                    <YAxis 
+                      stroke="#888888" 
+                      tickLine={false} 
+                      axisLine={false} 
+                      width={60} 
+                      tick={{ fontSize: 10, fill: '#888888' }} 
+                      tickFormatter={(value) => "$" + (value / 1000) + "k"}
+                    />
+                    <Tooltip
+                      content={<ProtectionTooltip />}
+                      cursor={{ stroke: "#FF5A1F", strokeWidth: 1, strokeDasharray: "4 4", strokeOpacity: 0.3 }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="protectedARR"
+                      stroke="#FF5A1F"
+                      strokeWidth={2}
+                      fill="url(#protectionGradient)"
+                      dot={false}
+                      activeDot={{
+                        r: 4,
+                        fill: "#FF5A1F",
+                        stroke: "#0a0a0a",
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           ) : (
             <ChartEmptyState label="Protection Velocity" />
@@ -438,76 +382,70 @@ export default function GovernanceDashboard() {
 
         {/* ─── Chart 2: Review Latency (Bar Chart) ──────────────────── */}
         <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-start justify-between mb-6">
             <div>
               <h3 className="text-sm font-medium text-gray-300">Review Latency</h3>
               <p className="text-[10px] text-gray-500 uppercase tracking-widest mt-1">
                 Avg. time-to-approval · 14 days
               </p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-[10px] text-gray-600">≤15m</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                <span className="text-[10px] text-gray-600">&gt;15m</span>
-              </div>
+            <div className="absolute top-4 right-4 flex flex-col items-start gap-1.5">
+              <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-emerald-500"></div><span className="text-[10px] text-[#888888] tracking-wide">Healthy (≤15m)</span></div>
+              <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-amber-500"></div><span className="text-[10px] text-[#888888] tracking-wide">Slow (&gt;15m)</span></div>
             </div>
           </div>
 
           {hasLatencyData ? (
-            <div className="h-[240px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={metrics.timeSeriesData}
-                  margin={{ top: 4, right: 4, left: -20, bottom: 0 }}
-                  barCategoryGap="25%"
-                >
-                  <XAxis
-                    dataKey="day"
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#4b5563", fontSize: 10 }}
-                    interval={Math.max(0, Math.floor(metrics.timeSeriesData.length / 5) - 1)}
-                  />
-                  <YAxis
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fill: "#4b5563", fontSize: 10 }}
-                    tickFormatter={(v: number) => `${v}m`}
-                    width={40}
-                    domain={[0, "auto"]}
-                  />
-                  <Tooltip
-                    content={<LatencyTooltip />}
-                    cursor={{ fill: "#ffffff08" }}
-                  />
-                  <Bar
-                    dataKey="avgLatencyMin"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={36}
-                    shape={(props: any) => {
-                      const { x, y, width, height, payload } = props;
-                      if (!height || height <= 0) return null;
-                      const isHealthy = payload.avgLatencyMin <= 15;
-                      return (
-                        <rect
-                          x={x}
-                          y={y}
-                          width={width}
-                          height={height}
-                          rx={6}
-                          ry={6}
-                          fill={isHealthy ? "#34d399" : "#fbbf24"}
-                          fillOpacity={0.8}
-                        />
-                      );
-                    }}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="h-[240px] w-full overflow-x-auto hide-scrollbar pr-4 md:pr-0">
+              <div className="min-w-[400px] h-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={metrics.timeSeriesData}
+                    margin={{ top: 4, right: 20, left: -20, bottom: 0 }}
+                    barCategoryGap="25%"
+                  >
+                    <XAxis
+                      dataKey="day"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: "#4b5563", fontSize: 10 }}
+                      interval={Math.max(0, Math.floor(metrics.timeSeriesData.length / 5) - 1)}
+                    />
+                    <YAxis 
+                      width={40} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tick={{ fill: "#9ca3af", fontSize: 11 }} 
+                    />
+                    <Tooltip
+                      content={<LatencyTooltip />}
+                      cursor={{ fill: "#ffffff08" }}
+                    />
+                    <Bar
+                      dataKey="avgLatencyMin"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={36}
+                      shape={(props: any) => {
+                        const { x, y, width, height, payload } = props;
+                        if (!height || height <= 0) return null;
+                        const isHealthy = payload.avgLatencyMin <= 15;
+                        return (
+                          <rect
+                            x={x}
+                            y={y}
+                            width={width}
+                            height={height}
+                            rx={6}
+                            ry={6}
+                            fill={isHealthy ? "#34d399" : "#fbbf24"}
+                            fillOpacity={0.8}
+                          />
+                        );
+                      }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           ) : (
             <ChartEmptyState label="Review Latency" />

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Settings2, CheckCircle2, ChevronDown } from "lucide-react";
+import { Save, Settings2, CheckCircle2, ChevronDown, Loader2, Sparkles } from "lucide-react";
 
 // ── CTA Style Options ─────────────────────────────────────────────────
 // Each CTA style maps to a specific closing technique injected into the
@@ -64,6 +64,7 @@ const CTA_OPTIONS: CtaOption[] = [
 
 export default function CampaignPage() {
   const [companyName, setCompanyName] = useState("");
+  const [senderName, setSenderName] = useState("");
   const [valueProposition, setValueProposition] = useState("");
   const [targetAudience, setTargetAudience] = useState("");
   // ────────────────────────────────────────────────────────────────────
@@ -75,6 +76,9 @@ export default function CampaignPage() {
   const [ctaStyleKey, setCtaStyleKey] = useState<CtaStyleKey>("self_serve_audit");
   const [wedgeOfferDetail, setWedgeOfferDetail] = useState("");
   const [showSuccess, setShowSuccess] = useState(false);
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [magicAssistLoading, setMagicAssistLoading] = useState(false);
+  const [magicAssistError, setMagicAssistError] = useState("");
 
   const router = useRouter();
 
@@ -88,8 +92,10 @@ export default function CampaignPage() {
       try {
         const parsed = JSON.parse(stored);
         setCompanyName(parsed.company_name || "");
+        setSenderName(parsed.sender_name || "");
         setValueProposition(parsed.value_proposition || "");
         setTargetAudience(parsed.target_audience || "");
+        setWebsiteUrl(parsed.website_url || "");
 
         // Migration: if the old format stored `preferred_cta_style` as a raw
         // label string, attempt to match it to the new key-based system.
@@ -120,6 +126,8 @@ export default function CampaignPage() {
     // ────────────────────────────────────────────────────────────────
     const payload = {
       company_name: companyName,
+      sender_name: senderName,
+      website_url: websiteUrl,
       value_proposition: valueProposition,
       target_audience: targetAudience,
       preferred_cta_style: selectedCta.label,
@@ -133,6 +141,30 @@ export default function CampaignPage() {
       setShowSuccess(false);
       router.push("/dashboard/ingestion");
     }, 1000);
+  };
+
+  const handleMagicAssist = async () => {
+    if (!websiteUrl) return;
+    setMagicAssistLoading(true);
+    setMagicAssistError("");
+    try {
+      const res = await fetch("/api/magic-assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: websiteUrl }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.targetAudience) setTargetAudience(data.targetAudience);
+        if (data.valueProposition) setValueProposition(data.valueProposition);
+      } else {
+        setMagicAssistError(data.error || "Magic Assist failed. Please try again.");
+      }
+    } catch (err: any) {
+      setMagicAssistError("Network error. Could not reach Magic Assist.");
+    } finally {
+      setMagicAssistLoading(false);
+    }
   };
 
   const inputClasses =
@@ -157,7 +189,7 @@ export default function CampaignPage() {
         <div className="flex flex-col gap-8 md:grid md:grid-cols-2 pb-24 overflow-y-auto bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-5 md:p-8">
           
           {/* Block 1: Company Name */}
-          <div className="w-full md:col-span-2 flex flex-col gap-2">
+          <div className="w-full md:col-span-1 flex flex-col gap-2">
             <label className="block text-lg font-medium text-gray-200">
               Your Company Name
             </label>
@@ -168,6 +200,53 @@ export default function CampaignPage() {
               placeholder="e.g. Acme Corp"
               className={`w-full p-4 text-sm leading-relaxed ${inputClasses}`}
             />
+          </div>
+
+          {/* Block 1.5: Sender Name */}
+          <div className="w-full md:col-span-1 flex flex-col gap-2">
+            <label className="block text-lg font-medium text-gray-200">
+              Sender Name
+            </label>
+            <input
+              type="text"
+              value={senderName}
+              onChange={(e) => setSenderName(e.target.value)}
+              placeholder="e.g. Akram"
+              className={`w-full p-4 text-sm leading-relaxed ${inputClasses}`}
+            />
+          </div>
+
+          {/* Block 2: Magic Assist — Website URL */}
+          <div className="w-full md:col-span-2 flex flex-col gap-2">
+            <label className="block text-lg font-medium text-gray-200">
+              Company Website URL
+            </label>
+            <p className="text-sm text-gray-500 leading-relaxed">
+              Paste your website URL and let AI suggest your target audience and value proposition.
+            </p>
+            <div className="flex flex-col w-full gap-3">
+              <input
+                type="url"
+                value={websiteUrl}
+                onChange={(e) => setWebsiteUrl(e.target.value)}
+                placeholder="e.g. https://yourcompany.com"
+                className={`w-full flex-1 p-4 text-sm leading-relaxed ${inputClasses}`}
+              />
+              <button
+                onClick={handleMagicAssist}
+                disabled={!websiteUrl || magicAssistLoading}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-primary/20 whitespace-nowrap"
+              >
+                {magicAssistLoading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Scanning...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> Magic Assist</>
+                )}
+              </button>
+            </div>
+            {magicAssistError && (
+              <p className="text-xs text-red-400 mt-1">{magicAssistError}</p>
+            )}
           </div>
 
           {/* Block 2: Value Proposition */}
@@ -288,8 +367,8 @@ export default function CampaignPage() {
           </div>
 
           {/* Block 5: Save Action */}
-          <div className="w-full md:col-span-2 flex justify-end mt-4">
-            <div className="flex items-center gap-4">
+          <div className="w-full md:col-span-2 flex justify-center md:justify-start mt-8">
+            <div className="w-full flex justify-center md:justify-start mt-8">
               {showSuccess && (
                 <span className="flex items-center gap-2 text-base text-green-400">
                   <CheckCircle2 className="w-5 h-5" />
@@ -306,7 +385,7 @@ export default function CampaignPage() {
                   // This prevents the AI from receiving an empty wedge offer instruction.
                   (ctaStyleKey === "wedge_offer" && !wedgeOfferDetail.trim())
                 }
-                className="flex items-center justify-center gap-2.5 bg-primary text-primary-foreground hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all duration-200 px-8 h-12 rounded-xl text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center justify-center gap-2.5 bg-primary text-primary-foreground hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] transition-all duration-200 px-8 h-12 rounded-xl text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed w-full max-w-sm md:w-auto"
               >
                 <Save className="w-5 h-5" />
                 Save Campaign

@@ -10,15 +10,15 @@ interface Props {
   featureName: string;
 }
 
-export default function EnterprisePaywall({ children, userTier, featureName }: Props) {
+export default function CorePaywall({ children, userTier, featureName }: Props) {
   const router = useRouter();
 
   // Strict Fail-Closed Architecture
-  // Block if tier is undefined, null, FREE, MICRO_PILOT, or CORE
-  // ONLY allow if strictly 'ENTERPRISE'
-  const hasEnterpriseAccess = userTier === 'ENTERPRISE';
+  // Block if tier is undefined, null, FREE, or MICRO_PILOT
+  // ONLY allow if strictly 'CORE' or 'ENTERPRISE'
+  const hasCoreAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
 
-  if (hasEnterpriseAccess) {
+  if (hasCoreAccess) {
     return <>{children}</>;
   }
 
@@ -35,18 +35,18 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
             <Lock className="w-6 h-6 text-[#FF5A1F]" />
           </div>
           <h2 className="text-2xl font-bold font-heading mb-3 text-[#FFFFFF] tracking-tight">
-            ENTERPRISE FEATURE LOCKED
+            CORE FEATURE LOCKED
           </h2>
           <p className="text-sm text-[#888888] mb-8 leading-relaxed">
-            The {featureName} is exclusively available on the Enterprise Tier to protect high-ticket pipelines.
+            The {featureName} is exclusively available on the Core Tier (and above) for seamless deployment.
           </p>
           <a
-            href="https://whop.com/brandflowstudio/frameleads-enterprise-autonomous-architecture/"
+            href="https://whop.com/brandflowstudio/frameleads-24/"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full h-12 bg-[#FF5A1F] text-[#FFFFFF] font-semibold rounded-xl shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#FF5A1F]/90 hover:shadow-[#FF5A1F]/30 transition-all mb-4 flex items-center justify-center"
           >
-            Upgrade to Enterprise
+            Upgrade to Core
           </a>
           <button
             onClick={() => router.back()}

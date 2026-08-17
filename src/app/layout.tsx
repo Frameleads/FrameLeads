@@ -21,7 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
-        className={`${spaceGrotesk.variable} ${oxanium.variable} ${jetbrainsMono.variable} min-h-screen bg-background font-sans antialiased`}
+        className={`${spaceGrotesk.variable} ${oxanium.variable} ${jetbrainsMono.variable} min-h-screen bg-background font-sans antialiased w-full max-w-[100vw] overflow-x-hidden`}
         suppressHydrationWarning
       >
         <ThemeProvider>{children}</ThemeProvider>

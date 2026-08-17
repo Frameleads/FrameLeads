@@ -66,6 +66,7 @@ export async function GET(request: Request) {
   const response = NextResponse.redirect(new URL("/welcome", request.url));
   response.cookies.set("frameleads_session", accessToken, { httpOnly: true, path: "/" });
   response.cookies.set("tier", effectiveTier, { path: "/" }); 
+  response.cookies.set("user_email", email, { httpOnly: true, path: "/" });
   
   return response;
 }

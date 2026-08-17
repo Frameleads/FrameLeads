@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 
 // ── Tier mapping constants ────────────────────────────────────────────────────
 const TIER_CONFIG = {
+  MICRO_PILOT: { tier: 'MICRO_PILOT' as const, monthlyQuota: 25    },
   CORE:       { tier: 'CORE'       as const, monthlyQuota: 500   },
   ENTERPRISE: { tier: 'ENTERPRISE' as const, monthlyQuota: 20000 },
   FREE:       { tier: 'FREE'       as const, monthlyQuota: 0     },
@@ -16,6 +17,7 @@ function resolveTierFromPlanName(planName: string | undefined | null): keyof typ
   const name = planName.toLowerCase();
   if (name.includes('enterprise')) return 'ENTERPRISE';
   if (name.includes('core'))       return 'CORE';
+  if (name.includes('micro-pilot') || name.includes('micro pilot')) return 'MICRO_PILOT';
   return 'FREE';
 }
 

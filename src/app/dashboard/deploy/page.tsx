@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import EnterprisePaywall from "@/components/EnterprisePaywall";
 import { 
   Rocket, 
   Key, 
@@ -12,6 +11,7 @@ import {
   CheckCircle2,
   Inbox
 } from "lucide-react";
+import CorePaywall from "@/components/CorePaywall";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -92,21 +92,23 @@ export default function DeployPage() {
 
   if (!displayBatchId) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
-        <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-8">
-          <AlertCircle className="w-10 h-10 text-amber-500" />
+      <CorePaywall userTier={tier} featureName="Deploy Infrastructure">
+        <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
+          <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-8">
+            <AlertCircle className="w-10 h-10 text-amber-500" />
+          </div>
+          <h2 className="text-2xl font-semibold font-heading">No Active Batch</h2>
+          <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
+            You don't have any generated leads to deploy. Head over to the Ingestion pipeline to start a new batch.
+          </p>
+          <button
+            onClick={() => router.push("/dashboard/ingestion")}
+            className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
+          >
+            Go to Ingestion
+          </button>
         </div>
-        <h2 className="text-2xl font-semibold font-heading">No Active Batch</h2>
-        <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
-          You need to process a batch of leads before you can deploy them to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}.
-        </p>
-        <button
-          onClick={() => router.push("/dashboard/ingestion")}
-          className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
-        >
-          Go to Ingestion
-        </button>
-      </div>
+      </CorePaywall>
     );
   }
 
@@ -231,11 +233,8 @@ export default function DeployPage() {
   );
 
   return (
-    <EnterprisePaywall 
-      userTier={tier} 
-      featureName={`Deploy to ${platform === 'instantly' ? 'Instantly' : 'Smartlead'}`}
-    >
+    <CorePaywall userTier={tier} featureName="Deploy Infrastructure">
       {pageContent}
-    </EnterprisePaywall>
+    </CorePaywall>
   );
 }

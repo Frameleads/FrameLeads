@@ -3,8 +3,13 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
+import { requireEnterpriseTier } from '@/lib/auth-guard';
+
 export async function POST(req: Request) {
   try {
+    const authError = await requireEnterpriseTier();
+    if (authError) return authError;
+
     const body = await req.json();
     const { 
       signalId, 

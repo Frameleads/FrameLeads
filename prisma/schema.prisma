@@ -17,6 +17,9 @@ model InboundSignal {
   rawEmail        String
   intentRisk      String
   intentType      String
+  intentScore     Int      @default(0)
+  confidenceScore Int      @default(0)
+  signalAnalysis  String?
   aiDraft         String
   status          String   @default("PENDING")
   createdAt       DateTime @default(now())
@@ -82,6 +85,7 @@ model User {
   email        String   @unique
   tier         String   @default("CORE")
   monthlyQuota Int      @default(500)
+  leadsProcessed Int    @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

@@ -29,8 +29,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
+import { requireMinimumCoreTier } from '@/lib/auth-guard';
+
 export async function POST(req: Request) {
   try {
+    const authError = await requireMinimumCoreTier();
+    if (authError) return authError;
+
     const {
       userId,
       inboxId,

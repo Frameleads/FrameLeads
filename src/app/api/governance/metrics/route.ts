@@ -68,10 +68,12 @@ function generateDateSlots(days: number): Array<{ key: string; label: string }> 
   return slots;
 }
 
-// ── Route Handler ───────────────────────────────────────────────────────
+import { requireEnterpriseTier } from '@/lib/auth-guard';
 
 export async function GET() {
   try {
+    const authError = await requireEnterpriseTier();
+    if (authError) return authError;
     // ── Metric 1: Deals Protected ──────────────────────────────────
     // Sum of pipelineValue for ALL signals that have passed through
     // or are currently sitting in the Velvet Rope (PENDING + APPROVED).

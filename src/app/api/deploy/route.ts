@@ -9,8 +9,13 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
+import { requireMinimumCoreTier } from '@/lib/auth-guard';
+
 export async function POST(req: Request) {
   try {
+    const authError = await requireMinimumCoreTier();
+    if (authError) return authError;
+
     // We expect 'platform' ('smartlead' or 'instantly') and the actual 'leads' array
     const { platform = "smartlead", api_key, campaign_id, batch_id, leads } = await req.json();
 

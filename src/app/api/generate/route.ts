@@ -3,7 +3,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { cookies } from 'next/headers';
+import { prisma } from '@/lib/prisma';
+import Anthropic from '@anthropic-ai/sdk';
 import {
   validateGeneratedChannels,
   forceCompliance,
@@ -25,8 +27,29 @@ Output ONLY valid JSON in this exact format:
 "We built a triage architecture that governs this autonomously, dropping response times to under 5 minutes without adding payroll.",
 "Opposed to taking a look at the sandbox?"
 ]
+},
+"linkedin": "Short, direct 2-3 sentence LinkedIn connection note/DM focusing on pipeline fragility.",
+"coldCall": "Crisp 30-second conversational phone script: Opener -> Problem diagnosis -> Low-friction permission check.",
+"whatsapp": "Ultra-concise 1-2 sentence direct message asking for permission to send the diagnostic audit link.",
+"psLine": "A one-sentence P.S. offering a highly relevant, low-friction asset (like a visual case study or a brief technical breakdown) related to the specific bottleneck diagnosed in the email."
 }
-}`;
+
+Ensure all four channels adhere to our core copy principles: 6th-grade English, concrete metrics ($15k–$67k loss / Zapier timeout errors), and zero corporate jargon.
+
+You are a strict JSON generator. Output ONLY a valid raw JSON object. Do not include markdown code blocks, preambles, or postscripts.`;
+
+function extractJsonObject(rawText: string): any {
+  const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  
+  if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+    throw new Error(`Failed to locate JSON object in response: ${rawText}`);
+  }
+  
+  const jsonString = cleaned.substring(firstBrace, lastBrace + 1);
+  return JSON.parse(jsonString);
+}
 
 // 5 Distinct Architectural Lenses to Guarantee 100% Unique Variations on Every Click:
 const REGEN_ANGLES = [
@@ -39,6 +62,9 @@ const REGEN_ANGLES = [
 
 export async function POST(req: Request) {
   try {
+    const cookieStore = await cookies();
+    const userEmail = cookieStore.get('user_email')?.value;
+
     const { 
       leads, 
       batch_id, 
@@ -47,32 +73,29 @@ export async function POST(req: Request) {
       tier = 'FREE', 
       force_regenerate, 
       regenerate,
-      preferredCtaStyle = 'Self-Serve Audit Link'
+      preferredCtaStyle = 'Self-Serve Audit Link',
+      context = {}
     } = await req.json();
+
+    const senderName = context.sender_name || 'Sender';
+    const companyName = context.company_name || 'Our Company';
 
     if (!leads) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
-    const maxQuota = tier === 'ENTERPRISE' ? 20000 : tier === 'CORE' ? 500 : 0;
+    const maxQuota = tier === 'ENTERPRISE' ? 20000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
+    
     const remainingQuota = Math.max(0, maxQuota - (Number(creditsUsed) || 0));
 
     const allowedLeads = leads.slice(0, remainingQuota);
     const lockedLeads = leads.slice(remainingQuota);
 
-    const apiKey = process.env.GEMINI_API_KEY || "";
+    const apiKey = process.env.ANTHROPIC_API_KEY || "";
     let processedLeads: any[] = [];
 
     if (apiKey) {
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-3.6-flash",
-        systemInstruction: SYSTEM_PROMPT,
-        generationConfig: {
-          temperature: 0.7,
-          responseMimeType: "application/json",
-        }
-      });
+      const anthropic = new Anthropic({ apiKey });
 
       processedLeads = await Promise.all(
         allowedLeads.map(async (lead: any, index: number) => {
@@ -100,9 +123,16 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
                 ? prompt
                 : `${prompt}\n\nPREVIOUS ATTEMPT EXCEEDED WORD LIMITS. You MUST keep each channel body STRICTLY under ${OUTBOUND_WORD_LIMIT} words. Be more concise.`;
 
-              const result = await model.generateContent(retryPrompt);
-              const responseText = result.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-              generated = JSON.parse(responseText);
+              const response = await anthropic.messages.create({
+                model: 'claude-haiku-4-5',
+                max_tokens: 1024,
+                temperature: 0.7,
+                system: SYSTEM_PROMPT,
+                messages: [{ role: 'user', content: retryPrompt }]
+              });
+              
+              const responseText = (response.content[0] as any).text;
+              generated = extractJsonObject(responseText);
 
               // Inject the array-hack join logic before validation
               if (generated.email && Array.isArray(generated.email.paragraphs)) {
@@ -137,6 +167,13 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               generated = forceCompliance(generated);
             }
 
+            if (generated.email && generated.email.body) {
+              const rawPsLine = generated.psLine || "Here is a quick visual breakdown of this architecture in action.";
+              const cleanPsLine = rawPsLine.replace(/^(P\.S\.|PS:|P\.S|PS)\s*/i, '').trim();
+              const finalEmailBody = `${generated.email.body}\n\nBest,\n${senderName}\n${companyName}\n\nP.S. ${cleanPsLine}`;
+              generated.email.body = finalEmailBody;
+            }
+
             return {
               lead_id: lead.lead_id || `lead_gen_${index}_${Date.now()}`,
               first_name: lead.first_name || "Unknown",
@@ -152,14 +189,14 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               deployment_status: "pending"
             };
           } catch (e) {
-            console.error(`Gemini Generation Error on lead [${lead.company_name}]:`, e);
+            console.error(`Claude Generation Error on lead [${lead.company_name}]:`, e);
             throw e;
           }
         })
       );
     } else {
       return NextResponse.json(
-        { success: false, error: "Missing Gemini API Key in environment variables." },
+        { success: false, error: "Missing Anthropic API Key" },
         { status: 401 }
       );
     }
@@ -183,6 +220,13 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
     }));
 
     processedLeads = [...processedLeads, ...ghostLeads];
+
+    if (userEmail && allowedLeads.length > 0) {
+      await prisma.user.update({
+        where: { email: userEmail },
+        data: { leadsProcessed: { increment: allowedLeads.length } }
+      });
+    }
 
     const batchResponse = {
       batch_id: batch_id || `batch_${Date.now()}`,

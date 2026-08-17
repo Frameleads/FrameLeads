@@ -14,7 +14,8 @@ import {
   Shield,
   Edit2,
   Check,
-  Lock
+  Lock,
+  Download
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ interface Lead {
   first_name: string;
   company_name: string;
   website_url: string | null;
+  linkedin_url?: string | null;
+  email_address?: string | null;
   provided_incident_details: string | null;
   enrichment_status: string;
   generation_status: string;
@@ -82,11 +85,8 @@ const POLL_INTERVAL_MS = 3_000;
 
 // ── Component ───────────────────────────────────────────────────────
 
-export default function SandboxClient({ userTier }: { userTier: string }) {
-  // Temporarily force CORE for UI testing
-  userTier = "CORE";
-  const CORE_LEAD_LIMIT = 500;
-  const [leadsGenerated, setLeadsGenerated] = useState(0);
+interface SandboxClientProps { userTier: string; monthlyQuota: number; leadsProcessed: number; }
+export default function SandboxClient({ userTier, monthlyQuota, leadsProcessed }: SandboxClientProps) {
 
   const router = useRouter();
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -99,10 +99,7 @@ export default function SandboxClient({ userTier }: { userTier: string }) {
   const [draftText, setDraftText] = useState("");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    const stored = localStorage.getItem("frameleads_leads_generated");
-    if (stored) setLeadsGenerated(parseInt(stored, 10) || 0);
-  }, []);
+  // Leads generated state is now controlled entirely by the server component
 // ── Admin Recording Bypass (?demo=true in browser URL) ──
   const isDemoAdmin = typeof window !== "undefined" && (
   new URLSearchParams(window.location.search).get("demo") === "true" ||
@@ -202,15 +199,24 @@ useEffect(() => {
     if (activeTab === "whatsapp") channelObj = selectedLead.generated_whatsapp;
     
     if (!channelObj) return "";
+    
+    let textBody = "";
     if (typeof channelObj === 'string') {
       try {
         const parsed = JSON.parse(channelObj);
-        return parsed.body || "";
+        textBody = parsed.body || "";
       } catch {
-        return channelObj;
+        textBody = channelObj;
       }
+    } else {
+      textBody = channelObj.body || "";
     }
-    return channelObj.body || "";
+    
+    if (activeTab === "email" && channelObj.subject) {
+      return `Subject: ${channelObj.subject}\n\n${textBody}`;
+    }
+    
+    return textBody;
   }, [selectedLead, activeTab]);
 
   useEffect(() => {
@@ -278,7 +284,7 @@ useEffect(() => {
         batch_id: batchId || `regen_${Date.now()}`,
         leads: [strippedLead], // <-- Send the clean stripped lead, NOT the old completed lead!
         timestamp: Date.now(),
-        creditsUsed: leadsGenerated,
+        creditsUsed: leadsProcessed,
         tier: isDemoAdmin ? 'ENTERPRISE' : userTier,
         force_regenerate: true,
         regenerate: true
@@ -306,13 +312,7 @@ useEffect(() => {
           l.lead_id === selectedLead.lead_id ? { ...l, ...updatedLead } : l
         ));
         
-        data.leads.forEach(() => {
-          setLeadsGenerated(prev => {
-            const next = prev + 1;
-            localStorage.setItem("frameleads_leads_generated", String(next));
-            return next;
-          });
-        });
+        router.refresh();
       }
     } catch (e) {
       console.error("Regeneration failed", e);
@@ -358,29 +358,86 @@ useEffect(() => {
 
   const isPolling = batchStatus === "processing" && pollingRef.current !== null;
 
+  const exportToCSV = () => {
+    const completedLeads = leads.filter(l => l.generation_status === 'completed');
+    if (completedLeads.length === 0) return;
+
+    // Helper to safely escape CSV fields
+    const escapeCsv = (str: string | undefined | null) => {
+      if (!str) return '""';
+      const clean = str.replace(/"/g, '""');
+      return `"${clean}"`;
+    };
+
+    // Helper to get text payload safely
+    const getChannelBody = (channelObj: any) => {
+      if (!channelObj) return "";
+      if (typeof channelObj === 'string') {
+        try {
+          const parsed = JSON.parse(channelObj);
+          return parsed.body || "";
+        } catch {
+          return channelObj;
+        }
+      }
+      return channelObj.body || "";
+    };
+
+    // Create CSV header
+    const headers = [
+      "Company Name",
+      "Prospect Name",
+      "Website URL",
+      "LinkedIn URL",
+      "Email Address",
+      "Generated Email Subject",
+      "Generated Email Body",
+      "Generated LinkedIn Message",
+      "Generated Cold Call Script",
+      "Generated WhatsApp Message"
+    ];
+
+    const rows = completedLeads.map(lead => {
+      let emailSubject = "";
+      if (lead.generated_email && (lead.generated_email as any).subject) {
+        emailSubject = (lead.generated_email as any).subject;
+      }
+      
+      return [
+        escapeCsv(lead.company_name),
+        escapeCsv(lead.first_name),
+        escapeCsv(lead.website_url),
+        escapeCsv(lead.linkedin_url),
+        escapeCsv(lead.email_address),
+        escapeCsv(emailSubject),
+        escapeCsv(getChannelBody(lead.generated_email)),
+        escapeCsv(getChannelBody(lead.generated_linkedin)),
+        escapeCsv(getChannelBody(lead.generated_script)),
+        escapeCsv(getChannelBody(lead.generated_whatsapp))
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `frameleads_export_${Date.now()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // ── Empty state ───────────────────────────────────────────────────
 
-  if (leads.length === 0 && !batchId) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
-        <div className="w-20 h-20 rounded-2xl bg-muted/50 border border-border/50 flex items-center justify-center mb-8">
-          <Inbox className="w-10 h-10 text-muted-foreground" />
-        </div>
-        <h2 className="text-2xl font-semibold font-heading">No leads yet</h2>
-        <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
-          Upload a CSV in the Ingestion tab to get started.
-        </p>
-        <button
-          onClick={() => router.push("/dashboard/ingestion")}
-          className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
-        >
-          Go to Ingestion
-        </button>
-      </div>
-    );
-  }
+  // Empty state is now rendered inline below the banner
+  const isEmpty = leads.length === 0 && !batchId;
 
   // ── Render ────────────────────────────────────────────────────────
+
+  console.log("Sandbox Props:", { userTier, monthlyQuota, leadsProcessed });
 
   return (
     <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)] lg:h-[calc(100vh-8rem)] relative">
@@ -389,28 +446,43 @@ useEffect(() => {
       {/* Left Panel Column */}
       <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0 lg:h-full">
         
-        {/* Core Tier Quota Header */}
-        {userTier === 'CORE' && (
-          <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 flex items-center justify-between shadow-lg shadow-primary/5">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/20 rounded-lg">
-                <Shield className="w-5 h-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-white">Monthly Quota</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{leadsGenerated} of {CORE_LEAD_LIMIT} leads generated</p>
-              </div>
+        {/* Tier Quota Header */}
+        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/20 rounded-lg">
+              <Shield className="w-5 h-5 text-primary" />
             </div>
-            <div className="text-right">
-              <p className="text-xl font-bold text-primary font-heading">
-                {Math.max(0, CORE_LEAD_LIMIT - leadsGenerated)}
-              </p>
-              <p className="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">Remaining</p>
+            <div>
+              <p className="text-sm font-semibold text-white">Monthly Quota</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{leadsProcessed} of {monthlyQuota} leads generated</p>
             </div>
           </div>
-        )}
+          <div className="text-right">
+            <p className="text-xl font-bold text-primary font-heading">
+              {monthlyQuota - leadsProcessed}
+            </p>
+            <p className="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">REMAINING</p>
+          </div>
+        </div>
 
         {/* Left Panel — Lead Table */}
+        {isEmpty ? (
+          <div className="flex-1 bg-[#0a0a0a] border border-[#1A1A1A] rounded-2xl overflow-hidden flex flex-col items-center justify-center text-center px-4">
+            <div className="w-20 h-20 rounded-2xl bg-muted/50 border border-border/50 flex items-center justify-center mb-8">
+              <Inbox className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h2 className="text-2xl font-semibold font-heading">No leads yet</h2>
+            <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
+              Upload a CSV in the Ingestion tab to get started.
+            </p>
+            <button
+              onClick={() => router.push("/dashboard/ingestion")}
+              className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
+            >
+              Go to Ingestion
+            </button>
+          </div>
+        ) : (
         <div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden flex-1">
         <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
           <div>
@@ -419,6 +491,15 @@ useEffect(() => {
               {completedCount} of {leads.length} leads generated
             </p>
           </div>
+          {completedCount > 0 && (
+            <button
+              onClick={exportToCSV}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-md hover:bg-primary/20 hover:border-primary/40 transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download CSV
+            </button>
+          )}
           {isPolling && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border text-blue-400 bg-blue-400/10 border-blue-400/20 animate-pulse">
               <Radio className="w-3 h-3" />
@@ -426,7 +507,7 @@ useEffect(() => {
             </span>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto divide-y divide-border/30">
+        <div className="flex-1 max-h-[40vh] overflow-y-auto md:max-h-none md:overflow-visible divide-y divide-border/30">
           {leads.map((lead) => {
             const status = getStatus(lead);
             const isActive = lead.lead_id === selectedId;
@@ -440,30 +521,33 @@ useEffect(() => {
                     : "hover:bg-muted/30 border-l-2 border-l-transparent"
                 }`}
               >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-0">
-                  <div>
+                <div className="flex flex-row items-center w-full md:justify-between gap-3 md:gap-0">
+                  <div className="flex-1 text-left">
                     <p className="text-sm font-medium">{lead.first_name}</p>
                     <p className="text-xs text-muted-foreground">
                       {lead.company_name}
                     </p>
                   </div>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border self-start md:self-auto ${status.color}`}
-                  >
-                    <status.icon className="w-3 h-3" />
-                    {status.label}
-                  </span>
+                  <div className="flex-shrink-0">
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] font-medium border ${status.color}`}
+                    >
+                      <status.icon className="w-3 h-3" />
+                      {status.label}
+                    </span>
+                  </div>
                 </div>
               </button>
             );
           })}
         </div>
         </div>
+        )}
       </div>
 
       {/* Right Panel — AI Copy Editor */}
       <div className="w-full lg:w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden min-h-[400px] lg:min-h-0 lg:h-full">
-        <div className="px-6 py-4 border-b border-border/50 flex items-start justify-between w-full gap-2 pr-4">
+        <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between w-full gap-2">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
             <h3 className="text-sm font-medium font-heading truncate">
@@ -578,16 +662,22 @@ useEffect(() => {
                   );
                 }
 
+                const renderChannel = (channel: any, fallback: string) => {
+                  if (!channel) return fallback;
+                  if (typeof channel === 'string') return channel;
+                  return channel.body || fallback;
+                };
+
                 if (activeTab === "linkedin") {
-                  return <div className="whitespace-pre-wrap">{message.linkedin ? (message.linkedin as any).body : "No LinkedIn DM generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{renderChannel(message.linkedin, "No LinkedIn DM generated.")}</div>;
                 }
 
                 if (activeTab === "script") {
-                  return <div className="whitespace-pre-wrap">{message.coldCall ? (message.coldCall as any).body : "No script generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{renderChannel(message.coldCall, "No script generated.")}</div>;
                 }
 
                 if (activeTab === "whatsapp") {
-                  return <div className="whitespace-pre-wrap">{message.whatsapp ? (message.whatsapp as any).body : "No WhatsApp draft generated."}</div>;
+                  return <div className="whitespace-pre-wrap">{renderChannel(message.whatsapp, "No WhatsApp draft generated.")}</div>;
                 }
 
                 return null;
@@ -602,14 +692,14 @@ useEffect(() => {
                     <Lock className="w-6 h-6 text-[#FF5A1F]" />
                   </div>
                   <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">Premium Leads Locked</h3>
-                  <p className="text-sm text-[#888888] mb-6">You've hit your monthly generation quota. Upgrade to unlock these high-intent prospects.</p>
+                  <p className="text-sm text-[#888888] mb-6">You've hit your generation quota. Upgrade to unlock these high-intent prospects.</p>
                   <a 
-                    href="https://whop.com/brandflowstudio/frameleads-24/"
+                    href={userTier === 'MICRO_PILOT' ? "https://whop.com/brandflowstudio/frameleads-24/" : "https://whop.com/brandflowstudio/frameleads-enterprise-autonomous-architecture/"}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full h-11 flex items-center justify-center bg-[#FF5A1F] text-[#FFFFFF] font-semibold rounded-lg shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#FF5A1F]/90 transition-colors mb-3"
                   >
-                    Upgrade to Enterprise tier
+                    {userTier === 'MICRO_PILOT' ? 'Upgrade to Core tier' : 'Upgrade to Enterprise tier'}
                   </a>
                   <button 
                     onClick={() => setSelectedId("")}
