@@ -9,17 +9,7 @@ const TIER_CONFIG = {
   FREE:        { tier: 'FREE'        as const, monthlyQuota: 0     },
 };
 
-// Fuzzy-match the plan/product name Whop sends in the payload.
-// Checks 'micro' before 'enterprise' before 'core' so composite
-// names like "Micro Pilot Core" resolve to MICRO_PILOT.
-function resolveTierFromPlanName(planName: string | undefined | null): keyof typeof TIER_CONFIG {
-  if (!planName) return 'FREE';
-  const name = planName.toLowerCase();
-  if (name.includes('micro'))       return 'MICRO_PILOT';
-  if (name.includes('enterprise'))  return 'ENTERPRISE';
-  if (name.includes('core'))        return 'CORE';
-  return 'FREE';
-}
+// The tier is determined globally via a sledgehammer JSON string match below.
 
 export async function POST(req: Request) {
   try {
@@ -57,7 +47,13 @@ export async function POST(req: Request) {
       case 'membership_updated':
       case 'payment_succeeded':
       case 'membership.went_valid': {
-        const tierKey    = resolveTierFromPlanName(planName);
+        const payloadString = JSON.stringify(payload).toLowerCase();
+        let tierKey: keyof typeof TIER_CONFIG = 'FREE';
+        
+        if (payloadString.includes('micro')) tierKey = 'MICRO_PILOT';
+        else if (payloadString.includes('enterprise')) tierKey = 'ENTERPRISE';
+        else if (payloadString.includes('core')) tierKey = 'CORE';
+
         const tierConfig = TIER_CONFIG[tierKey];
 
         await prisma.user.updateMany({
