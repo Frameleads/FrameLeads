@@ -49,12 +49,12 @@ export async function POST(req: Request) {
       case 'membership.went_valid': {
         const stringified = JSON.stringify(payload).toLowerCase();
         let assignedTier = 'FREE'; let assignedQuota = 0;
-        if (stringified.includes('micro')) { assignedTier = 'MICRO_PILOT'; assignedQuota = 25; }
-        else if (stringified.includes('enterprise')) { assignedTier = 'ENTERPRISE'; assignedQuota = 20000; }
-        else if (stringified.includes('core')) { assignedTier = 'CORE'; assignedQuota = 500; }
+        if (/\bmicro\b/.test(stringified)) { assignedTier = 'MICRO_PILOT'; assignedQuota = 25; }
+        else if (/\benterprise\b/.test(stringified)) { assignedTier = 'ENTERPRISE'; assignedQuota = 20000; }
+        else if (/\bcore\b/.test(stringified)) { assignedTier = 'CORE'; assignedQuota = 500; }
 
         await prisma.user.upsert({
-          where: { whopId: whopUserId || "unknown" },
+          where: where,
           update: {
             tier: assignedTier,
             monthlyQuota: assignedQuota,
