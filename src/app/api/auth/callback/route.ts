@@ -53,7 +53,7 @@ export async function GET(request: Request) {
   // 3. Prisma Upsert
   const user = await prisma.user.upsert({
     where: { whopId: whopId },
-    update: { email: email },
+    update: {},
     create: {
       whopId: whopId,
       email: email,
