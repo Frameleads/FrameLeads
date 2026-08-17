@@ -43,8 +43,12 @@ export async function GET(request: Request) {
   }
 
   const profileData = await profileRes.json();
-  const whopId = profileData.id || profileData.data?.id || "unknown";
-  const email = profileData.email || profileData.data?.email || "unknown@example.com";
+  const whopId = profileData.id || profileData.data?.id;
+  const email = profileData.email || profileData.data?.email;
+
+  if (!whopId || !email) {
+    return NextResponse.redirect(new URL("/login?error=invalid_profile", request.url));
+  }
 
   // 3. Prisma Upsert
   const user = await prisma.user.upsert({
@@ -53,7 +57,9 @@ export async function GET(request: Request) {
     create: {
       whopId: whopId,
       email: email,
-      tier: "CORE"
+      tier: "FREE",
+      monthlyQuota: 0,
+      leadsProcessed: 0
     }
   });
 

@@ -58,6 +58,7 @@ export async function POST(req: Request) {
         data: {
           tier:         tierConfig.tier,
           monthlyQuota: tierConfig.monthlyQuota,
+          leadsProcessed: 0,
         },
       });
 
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
         data: {
           tier:         TIER_CONFIG.FREE.tier,
           monthlyQuota: TIER_CONFIG.FREE.monthlyQuota,
+          leadsProcessed: 0,
         },
       });
 
