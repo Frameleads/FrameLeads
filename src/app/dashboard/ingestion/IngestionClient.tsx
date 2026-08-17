@@ -65,7 +65,7 @@ const BACKEND_URL =
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function IngestionClient({ userTier, leadsProcessed }: { userTier: string, leadsProcessed: number }) {
+export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed }: { userTier: string, monthlyQuota: number, leadsProcessed: number }) {
   const router = useRouter();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -82,9 +82,6 @@ export default function IngestionClient({ userTier, leadsProcessed }: { userTier
   const [error, setError] = useState<string | null>(null);
   const [campaignContext, setCampaignContext] = useState<any>(null);
 
-  // Tier quota tracking
-  const MICRO_PILOT_LIMIT = 25;
-  const CORE_LEAD_LIMIT = 500;
   const leadsGenerated = leadsProcessed;
 
   // ── Load Campaign Context ───────────────────────────────────────────
@@ -248,8 +245,8 @@ export default function IngestionClient({ userTier, leadsProcessed }: { userTier
     // ── Tier Quota Gate ──────────────────────────────────────────
     // Warn the user if they exceed quota, but DO NOT block the batch.
     // The backend route.ts will slice the array and return quota_locked ghosts.
-    if (userTier === "CORE" || userTier === "MICRO_PILOT") {
-      const limit = userTier === "MICRO_PILOT" ? MICRO_PILOT_LIMIT : CORE_LEAD_LIMIT;
+    if (userTier !== "ENTERPRISE") {
+      const limit = monthlyQuota;
       const newTotal = leadsGenerated + validLeads.length;
       
       if (newTotal > limit) {
@@ -331,14 +328,15 @@ export default function IngestionClient({ userTier, leadsProcessed }: { userTier
         <p className="text-lg text-muted-foreground mt-3 leading-relaxed">
           Upload your lead list and map columns to the FrameLeads schema.
         </p>
-        {/* Header Section */}
-        {(userTier === "CORE" || userTier === "MICRO_PILOT") && (
-          <div className="mt-6 md:mt-8 flex flex-col items-center justify-center md:items-start md:text-left p-6 bg-zinc-900 border border-zinc-800 rounded-2xl">
-            <h2 className="text-xl font-bold mb-2 tracking-tight uppercase text-orange-500">{userTier} TIER</h2>
-            <div className="flex flex-col text-center md:flex-row md:text-left md:justify-start items-center gap-2 md:gap-4 text-sm text-zinc-400 font-mono w-full">
-              <span>{leadsGenerated} of {userTier === 'MICRO_PILOT' ? MICRO_PILOT_LIMIT : CORE_LEAD_LIMIT} leads generated</span>
-              <span className="hidden md:block w-1 h-1 bg-zinc-700 rounded-full"></span>
-              <span>{Math.max(0, (userTier === 'MICRO_PILOT' ? MICRO_PILOT_LIMIT : CORE_LEAD_LIMIT) - leadsGenerated)} remaining</span>
+        {userTier !== "ENTERPRISE" && (
+          <div className="rounded-2xl md:mt-8 border border-primary/30 bg-primary/10 p-6 flex flex-col md:flex-row md:items-center justify-between shadow-lg shadow-primary/5 mb-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2 tracking-tight uppercase text-orange-500">{userTier} TIER</h2>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
+                <span>{leadsGenerated} of {monthlyQuota} leads generated</span>
+                <span>•</span>
+                <span>{Math.max(0, monthlyQuota - leadsGenerated)} remaining</span>
+              </div>
             </div>
           </div>
         )}
