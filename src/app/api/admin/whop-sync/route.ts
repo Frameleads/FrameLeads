@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     let memberships: any[] = [];
 
     while (hasMore) {
-      const res = await fetch(`https://api.whop.com/v5/memberships?page=${pageNumber}&limit=50`, {
+      const res = await fetch(`https://api.whop.com/api/v2/memberships?page=${pageNumber}&limit=50`, {
         headers: {
           'Authorization': `Bearer ${whopApiKey}`,
           'Accept': 'application/json'
