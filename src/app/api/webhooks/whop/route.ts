@@ -15,15 +15,16 @@ const TIER_CONFIG = {
 function resolveTierFromPlanName(planName: string | undefined | null): keyof typeof TIER_CONFIG {
   if (!planName) return 'FREE';
   const name = planName.toLowerCase();
+  if (name.includes('micro')) return 'MICRO_PILOT';
+  if (name.includes('core')) return 'CORE';
   if (name.includes('enterprise')) return 'ENTERPRISE';
-  if (name.includes('core'))       return 'CORE';
-  if (name.includes('micro-pilot') || name.includes('micro pilot')) return 'MICRO_PILOT';
   return 'FREE';
 }
 
 export async function POST(req: Request) {
   try {
     const payload = await req.json();
+    console.log("WEBHOOK PAYLOAD RECEIVED:", payload);
     const action: string = payload?.action ?? 'unknown';
 
     console.log('[WHOP WEBHOOK] Signal Received:', action);

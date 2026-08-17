@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -180,7 +180,11 @@ export default function DashboardLayout({
               "Dashboard"}
           </h2>
         </div>
-        <div className="p-4 md:p-8">{children}</div>
+        <div className="p-4 md:p-8">
+          <Suspense fallback={<div className="p-8 text-neutral-400">Loading workspace...</div>}>
+            {children}
+          </Suspense>
+        </div>
       </main>
     </div>
   );
