@@ -24,12 +24,12 @@ export default function CorePaywall({ children, userTier, featureName }: Props) 
 
   // Otherwise, render the blurred paywall
   return (
-    <div className="relative w-full h-full min-h-[80vh] overflow-hidden">
-      <div className="blur-md pointer-events-none select-none opacity-40">
+    <div className="relative min-h-screen -m-4 md:-m-8">
+      <div className="p-4 md:p-8 pointer-events-none select-none">
         {children}
       </div>
 
-      <div className="absolute inset-0 z-40 flex items-center justify-center p-6 text-center">
+      <div className="absolute inset-0 z-50 backdrop-blur-md bg-[#1A1A1A]/40 flex items-center justify-center p-6 text-center">
         <div className="bg-[#000000] border border-[#1A1A1A] shadow-2xl p-8 rounded-2xl max-w-md w-full flex flex-col items-center">
           <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#FF5A1F]/20 flex items-center justify-center mb-6">
             <Lock className="w-6 h-6 text-[#FF5A1F]" />

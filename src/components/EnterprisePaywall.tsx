@@ -35,12 +35,12 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
   // Otherwise, render the blurred paywall
   return (
     <EnterprisePaywallContext.Provider value={true}>
-      <div className="relative w-full h-full min-h-[80vh] overflow-hidden">
-        <div className="pointer-events-none select-none">
+      <div className="relative min-h-screen -m-4 md:-m-8">
+        <div className="p-4 md:p-8 pointer-events-none select-none">
           {children}
         </div>
 
-        <div className="absolute inset-0 z-50 backdrop-blur-md bg-[#000000]/60 flex items-center justify-center p-6 text-center">
+        <div className="absolute inset-0 z-50 backdrop-blur-md bg-[#1A1A1A]/40 flex items-center justify-center p-6 text-center">
           <div className="bg-[#1A1A1A] border border-[#242424] shadow-2xl p-8 rounded-2xl max-w-md w-full flex flex-col items-center">
             <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#FF5A1F]/20 flex items-center justify-center mb-6">
               <Lock className="w-6 h-6 text-[#FF5A1F]" />
