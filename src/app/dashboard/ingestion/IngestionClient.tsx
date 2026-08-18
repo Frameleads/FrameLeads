@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Papa from "papaparse";
 import {
   Upload,
@@ -356,9 +357,13 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <p>
             You must define your Campaign Context before processing leads.{" "}
-            <a href="/dashboard/campaign" className="underline hover:text-amber-300">
+            <Link
+              href="/dashboard/campaign"
+              prefetch={true}
+              className="underline hover:text-amber-300"
+            >
               Go to Campaign Settings
-            </a>
+            </Link>
           </p>
         </div>
       )}

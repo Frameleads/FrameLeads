@@ -85,6 +85,7 @@ export default function DashboardLayout({
             <Link
               key={item.href}
               href={item.href}
+              prefetch={true}
               onClick={() => setIsOpen(false)}
               className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-150 ${
                 isActive

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { 
   Rocket, 
   Key, 
@@ -11,25 +11,18 @@ import {
   CheckCircle2,
   Inbox
 } from "lucide-react";
-import CorePaywall from "@/components/CorePaywall";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function DeployPage() {
-  const router = useRouter();
   const [batchId, setBatchId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [isDeploying, setIsDeploying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [tier, setTier] = useState<string | null>(null);
   const [platform, setPlatform] = useState<'smartlead' | 'instantly'>('smartlead');
   const [activeBatch, setActiveBatch] = useState<any>(null);
-
-  useEffect(() => {
-    setTier(localStorage.getItem('userTier') || 'CORE');
-  }, []);
 
   useEffect(() => {
     try {
@@ -84,31 +77,26 @@ export default function DeployPage() {
 
   // ── Deploy Form ───────────────────────────────────────────────────
 
-  if (tier === null) return null; // Prevent hydration flicker
-
-  // For CORE tier, force-render the form (with a placeholder batchId if
-  // none exists) so the real UI is visible behind the paywall blur.
-  const displayBatchId = batchId || (tier === "CORE" ? "batch_demo_preview" : null);
+  const displayBatchId = batchId;
 
   if (!displayBatchId) {
     return (
-      <CorePaywall userTier={tier} featureName="Deploy Infrastructure">
-        <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
-          <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-8">
-            <AlertCircle className="w-10 h-10 text-amber-500" />
-          </div>
-          <h2 className="text-2xl font-semibold font-heading">No Active Batch</h2>
-          <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
-            You don't have any generated leads to deploy. Head over to the Ingestion pipeline to start a new batch.
-          </p>
-          <button
-            onClick={() => router.push("/dashboard/ingestion")}
-            className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
-          >
-            Go to Ingestion
-          </button>
+      <div className="flex flex-col items-center justify-center min-h-[500px] h-[calc(100vh-8rem)] text-center px-4">
+        <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-8">
+          <AlertCircle className="w-10 h-10 text-amber-500" />
         </div>
-      </CorePaywall>
+        <h2 className="text-2xl font-semibold font-heading">No Active Batch</h2>
+        <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
+          You don't have any generated leads to deploy. Head over to the Ingestion pipeline to start a new batch.
+        </p>
+        <Link
+          href="/dashboard/ingestion"
+          prefetch={true}
+          className="inline-flex h-12 items-center justify-center px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
+        >
+          Go to Ingestion
+        </Link>
+      </div>
     );
   }
 
@@ -232,9 +220,5 @@ export default function DeployPage() {
     </div>
   );
 
-  return (
-    <CorePaywall userTier={tier} featureName="Deploy Infrastructure">
-      {pageContent}
-    </CorePaywall>
-  );
+  return pageContent;
 }
