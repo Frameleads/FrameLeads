@@ -57,10 +57,11 @@ type TierIdentifiers = {
   productIds: string[];
   planIds: string[];
   names: string[];
+  rawProductPlans: Array<{ product: unknown; plan: unknown }>;
 };
 
 function emptyIdentifiers(): TierIdentifiers {
-  return { productIds: [], planIds: [], names: [] };
+  return { productIds: [], planIds: [], names: [], rawProductPlans: [] };
 }
 
 function collectTierIdentifiers(
@@ -73,6 +74,7 @@ function collectTierIdentifiers(
       result.productIds.push(...nested.productIds);
       result.planIds.push(...nested.planIds);
       result.names.push(...nested.names);
+      result.rawProductPlans.push(...nested.rawProductPlans);
       return result;
     }, emptyIdentifiers());
   }
@@ -84,6 +86,13 @@ function collectTierIdentifiers(
 
   const record = source as Record<string, unknown>;
   const identifiers = emptyIdentifiers();
+
+  if ("product" in record || "plan" in record) {
+    identifiers.rawProductPlans.push({
+      product: record.product,
+      plan: record.plan,
+    });
+  }
 
   for (const field of ["plan", "product"] as const) {
     const value = record[field];
@@ -114,6 +123,7 @@ function collectTierIdentifiers(
     identifiers.productIds.push(...nested.productIds);
     identifiers.planIds.push(...nested.planIds);
     identifiers.names.push(...nested.names);
+    identifiers.rawProductPlans.push(...nested.rawProductPlans);
   }
 
   return identifiers;
@@ -206,5 +216,11 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
       2,
     ),
   );
+  for (const membership of observed.rawProductPlans) {
+    console.log("[WHOP DEBUG] Unrecognized Product/Plan:", {
+      product: membership.product,
+      plan: membership.plan,
+    });
+  }
   throw new UnrecognizedWhopProductError();
 }

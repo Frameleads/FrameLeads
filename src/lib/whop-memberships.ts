@@ -47,6 +47,8 @@ export async function verifyWhopSubscription(
   // A user OAuth token already scopes this request. Whop documents user_ids
   // and company_id as optional filters, so omit them from the wire request and
   // enforce both identifiers against every returned membership below.
+  membershipsUrl.searchParams.append("expand", "product");
+  membershipsUrl.searchParams.append("expand", "plan");
   membershipsUrl.searchParams.set("first", "50");
 
   let response: Response | undefined;
