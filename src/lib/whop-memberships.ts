@@ -33,9 +33,9 @@ export async function verifyWhopSubscription(
   const membershipsUrl = new URL(
     "https://api.whop.com/api/v1/memberships",
   );
-  // Whop's SDK serializes array filters with bracket notation.
-  membershipsUrl.searchParams.append("user_ids[]", whopUserId);
-  membershipsUrl.searchParams.set("company_id", companyId);
+  // A user OAuth token already scopes this request. Whop documents user_ids
+  // and company_id as optional filters, so omit them from the wire request and
+  // enforce both identifiers against every returned membership below.
   membershipsUrl.searchParams.set("first", "50");
 
   let response: Response | undefined;
@@ -73,7 +73,9 @@ export async function verifyWhopSubscription(
       whopUserId,
       companyId,
     });
-    throw new Error(`Whop membership verification failed (${response.status})`);
+    throw new Error(
+      `Whop membership verification failed (${response.status}): ${rawResponse}`,
+    );
   }
 
   let payload: WhopMembershipList;
@@ -86,7 +88,10 @@ export async function verifyWhopSubscription(
       responseText: rawResponse,
       error,
     });
-    throw new Error("Whop membership verification returned invalid JSON");
+    throw new Error(
+      `Whop membership verification returned invalid JSON: ${rawResponse}`,
+      { cause: error },
+    );
   }
 
   if (!Array.isArray(payload.data)) {
@@ -95,7 +100,7 @@ export async function verifyWhopSubscription(
       status: response.status,
       responseText: rawResponse,
     });
-    throw new Error("Whop membership response is malformed");
+    throw new Error(`Whop membership response is malformed: ${rawResponse}`);
   }
 
   const activeMemberships = payload.data.filter((membership) => {
