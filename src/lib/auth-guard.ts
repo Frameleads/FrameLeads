@@ -40,7 +40,7 @@ export async function requireMinimumCoreTier() {
 
   const user = await prisma.user.findUnique({ where: { email }, select: { tier: true } });
 
-  if (!user || user.tier === 'MICRO_PILOT' || user.tier === 'FREE') {
+  if (!user || !['CORE', 'ENTERPRISE'].includes(user.tier)) {
     return NextResponse.json(
       { success: false, error: "Payment Required: Deploy feature requires Core tier or higher." },
       { status: 402 }

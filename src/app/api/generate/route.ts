@@ -70,7 +70,7 @@ export async function POST(req: Request) {
       batch_id, 
       timestamp, 
       creditsUsed = 0, 
-      tier = 'FREE', 
+      tier = 'UNAUTHORIZED',
       force_regenerate, 
       regenerate,
       preferredCtaStyle = 'Self-Serve Audit Link',

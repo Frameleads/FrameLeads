@@ -1,15 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-
-type WhopSubscription = {
-  tier: string;
-  monthlyQuota: number;
-};
+import type { WhopSubscription } from "@/lib/whop-subscription";
 
 type MergeWhopUserInput = {
   whopId: string;
   email: string;
-  subscription?: WhopSubscription;
+  subscription: WhopSubscription;
 };
 
 function isRetryableConflict(error: unknown) {
@@ -28,8 +24,8 @@ function isRetryableConflict(error: unknown) {
  * Serializable transactions make the read-then-create sequence atomic. A
  * concurrent request can still be selected as the transaction loser, so
  * Prisma's serialization (P2034) and unique-key (P2002) conflicts are retried.
- * OAuth callers omit `subscription`, which deliberately preserves any paid
- * tier that a webhook has already written.
+ * Every caller must supply a verified paid subscription. This prevents user
+ * records from being created without a recognized FrameLeads entitlement.
  */
 export async function mergeWhopUser({
   whopId,
@@ -53,7 +49,7 @@ export async function mergeWhopUser({
               data: {
                 whopId,
                 email: normalizedEmail,
-                ...(subscription || {}),
+                ...subscription,
               },
             });
           }
@@ -62,8 +58,8 @@ export async function mergeWhopUser({
             data: {
               whopId,
               email: normalizedEmail,
-              tier: subscription?.tier || "FREE",
-              monthlyQuota: subscription?.monthlyQuota || 0,
+              tier: subscription.tier,
+              monthlyQuota: subscription.monthlyQuota,
               leadsProcessed: 0,
             },
           });

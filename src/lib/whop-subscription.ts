@@ -1,7 +1,16 @@
 export type WhopSubscription = {
-  tier: "FREE" | "MICRO_PILOT" | "CORE" | "ENTERPRISE";
+  tier: "MICRO_PILOT" | "CORE" | "ENTERPRISE";
   monthlyQuota: number;
 };
+
+export class NoActivePaidSubscriptionError extends Error {
+  readonly code = "NO_ACTIVE_PAID_SUBSCRIPTION";
+
+  constructor() {
+    super("No active paid subscription found");
+    this.name = "NoActivePaidSubscriptionError";
+  }
+}
 
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
@@ -56,5 +65,5 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
     }
   }
 
-  return { tier: "FREE", monthlyQuota: 0 };
+  throw new NoActivePaidSubscriptionError();
 }

@@ -1,4 +1,5 @@
 import {
+  NoActivePaidSubscriptionError,
   resolveWhopSubscription,
   type WhopSubscription,
 } from "@/lib/whop-subscription";
@@ -103,6 +104,11 @@ export async function verifyWhopSubscription(
     throw new Error(`Whop membership response is malformed: ${rawResponse}`);
   }
 
+  console.log(
+    "[WHOP DEBUG] Raw Memberships:",
+    JSON.stringify(payload.data, null, 2),
+  );
+
   const activeMemberships = payload.data.filter((membership) => {
     const belongsToUser = membership.user?.id === whopUserId;
     const belongsToCompany = membership.company?.id === companyId;
@@ -112,6 +118,10 @@ export async function verifyWhopSubscription(
 
     return belongsToUser && belongsToCompany && isActive;
   });
+
+  if (activeMemberships.length === 0) {
+    throw new NoActivePaidSubscriptionError();
+  }
 
   const subscription = resolveWhopSubscription(activeMemberships);
   console.log("[WHOP OAUTH] Verified membership during login:", {

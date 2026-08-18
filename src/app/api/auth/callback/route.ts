@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
 import { verifyWhopSubscription } from "@/lib/whop-memberships";
+import { NoActivePaidSubscriptionError } from "@/lib/whop-subscription";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
@@ -164,12 +165,20 @@ export async function GET(request: NextRequest) {
   }
 
   // 3. Verify paid access synchronously so login does not depend on webhook
-  // delivery timing. A failed API check does not silently create a FREE user.
+  // delivery timing. A failed API check never creates an unauthorized user.
   let subscription: Awaited<ReturnType<typeof verifyWhopSubscription>>;
   try {
     subscription = await verifyWhopSubscription(accessToken, whopId);
   } catch (error) {
     console.error("[WHOP OAUTH] Unable to verify membership during login:", error);
+    if (error instanceof NoActivePaidSubscriptionError) {
+      return clearOAuthCookies(
+        NextResponse.redirect(
+          new URL("/login?error=no_active_subscription", request.url),
+        ),
+      );
+    }
+
     return clearOAuthCookies(
       NextResponse.redirect(
         new URL("/login?error=membership_verification_failed", request.url),

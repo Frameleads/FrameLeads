@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     if (INACTIVE_EVENTS.has(eventType)) {
       await prisma.user.updateMany({
         where: { OR: [{ whopId: whopUserId }, { email }] },
-        data: { tier: "FREE", monthlyQuota: 0 },
+        data: { tier: "INACTIVE", monthlyQuota: 0 },
       });
       console.log(`[WHOP WEBHOOK] Downgraded ${email} from ${eventType}.`);
       return NextResponse.json({ received: true, success: true });

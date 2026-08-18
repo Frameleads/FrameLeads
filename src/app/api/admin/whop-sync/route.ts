@@ -65,9 +65,9 @@ export async function POST(req: Request) {
 
         const where = email ? { email } : { whopId: whopUserId };
 
-        if (status === 'active' || status === 'valid') {
-          let assignedTier = 'FREE'; 
-          let assignedQuota = 0;
+        if (status === 'active' || status === 'trialing' || status === 'completed' || status === 'valid') {
+          let assignedTier: 'MICRO_PILOT' | 'CORE' | 'ENTERPRISE' | null = null;
+          let assignedQuota: 25 | 500 | 20000 | null = null;
           
           if (/\bmicro\b/.test(stringified)) { 
               assignedTier = 'MICRO_PILOT'; 
@@ -78,6 +78,12 @@ export async function POST(req: Request) {
           } else if (/\bcore\b/.test(stringified)) { 
               assignedTier = 'CORE'; 
               assignedQuota = 500; 
+          }
+
+          if (!assignedTier || assignedQuota === null) {
+            console.warn('Skipping unrecognized paid membership:', membership.id);
+            skipped++;
+            continue;
           }
 
           const existingUser = await prisma.user.findFirst({ where });
@@ -98,10 +104,10 @@ export async function POST(req: Request) {
           
         } else {
           const existingUser = await prisma.user.findFirst({ where });
-          if (existingUser && existingUser.tier !== 'FREE') {
+          if (existingUser && existingUser.tier !== 'INACTIVE') {
             await prisma.user.updateMany({
               where: where,
-              data: { tier: 'FREE', monthlyQuota: 0 }
+              data: { tier: 'INACTIVE', monthlyQuota: 0 }
             });
             updated++;
           } else {

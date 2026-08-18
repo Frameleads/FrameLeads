@@ -14,7 +14,7 @@ export default function CorePaywall({ children, userTier, featureName }: Props) 
   const router = useRouter();
 
   // Strict Fail-Closed Architecture
-  // Block if tier is undefined, null, FREE, or MICRO_PILOT
+  // Block unless the user has Core or Enterprise access.
   // ONLY allow if strictly 'CORE' or 'ENTERPRISE'
   const hasCoreAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
 

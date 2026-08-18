@@ -14,7 +14,7 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
   const router = useRouter();
 
   // Strict Fail-Closed Architecture
-  // Block if tier is undefined, null, FREE, MICRO_PILOT, or CORE
+  // Block unless the user has Enterprise access.
   // ONLY allow if strictly 'ENTERPRISE'
   const hasEnterpriseAccess = userTier === 'ENTERPRISE';
 
