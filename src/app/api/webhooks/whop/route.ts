@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveWhopSubscription } from "@/lib/whop-subscription";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 type WhopUser = {
@@ -27,11 +28,6 @@ type WhopPayload = {
   };
 };
 
-type Subscription = {
-  tier: "FREE" | "MICRO_PILOT" | "CORE" | "ENTERPRISE";
-  monthlyQuota: number;
-};
-
 const ACTIVE_EVENTS = new Set([
   "membership.activated",
   "payment.succeeded",
@@ -46,71 +42,6 @@ const INACTIVE_EVENTS = new Set([
   "membership_cancelled",
   "membership.went_invalid",
 ]);
-
-// Current public Whop products and plans. The environment variables allow
-// these mappings to be extended/replaced without another deployment.
-const DEFAULT_TIER_IDS = {
-  MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
-  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ"],
-  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI"],
-} as const;
-
-function configuredIds(name: string, defaults: readonly string[]) {
-  const values = process.env[name]
-    ?.split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  return new Set(values?.length ? values : defaults);
-}
-
-function getSubscription(payload: WhopPayload): Subscription {
-  const product = payload.data?.product || payload.data?.membership?.product;
-  const plan = payload.data?.plan || payload.data?.membership?.plan;
-  const ids = new Set([product?.id, plan?.id].filter(Boolean));
-
-  const mappings: Array<{
-    tier: Subscription["tier"];
-    monthlyQuota: number;
-    ids: Set<string>;
-  }> = [
-    {
-      tier: "ENTERPRISE",
-      monthlyQuota: 20_000,
-      ids: configuredIds("WHOP_ENTERPRISE_IDS", DEFAULT_TIER_IDS.ENTERPRISE),
-    },
-    {
-      tier: "CORE",
-      monthlyQuota: 500,
-      ids: configuredIds("WHOP_CORE_IDS", DEFAULT_TIER_IDS.CORE),
-    },
-    {
-      tier: "MICRO_PILOT",
-      monthlyQuota: 25,
-      ids: configuredIds("WHOP_MICRO_IDS", DEFAULT_TIER_IDS.MICRO_PILOT),
-    },
-  ];
-
-  for (const mapping of mappings) {
-    if ([...ids].some((id) => mapping.ids.has(id as string))) {
-      return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
-    }
-  }
-
-  // Keep a title/metadata fallback for legacy payloads that omit IDs.
-  const payloadString = JSON.stringify(payload).toLowerCase();
-  if (/\benterprise\b/.test(payloadString)) {
-    return { tier: "ENTERPRISE", monthlyQuota: 20_000 };
-  }
-  if (/\bcore\b/.test(payloadString)) {
-    return { tier: "CORE", monthlyQuota: 500 };
-  }
-  if (/\bmicro(?:-pilot)?\b/.test(payloadString)) {
-    return { tier: "MICRO_PILOT", monthlyQuota: 25 };
-  }
-
-  return { tier: "FREE", monthlyQuota: 0 };
-}
 
 function getIdentity(payload: WhopPayload) {
   const user =
@@ -138,7 +69,7 @@ export async function POST(req: Request) {
     }
 
     if (ACTIVE_EVENTS.has(eventType)) {
-      const subscription = getSubscription(payload);
+      const subscription = resolveWhopSubscription(payload);
       await mergeWhopUser({ whopId: whopUserId, email, subscription });
 
       console.log(

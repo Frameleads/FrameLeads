@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
+import { verifyWhopSubscription } from "@/lib/whop-memberships";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
@@ -162,11 +163,24 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // 3. Merge with any user created concurrently by a checkout webhook.
-  // Omitting subscription here preserves the paid tier written by the webhook.
+  // 3. Verify paid access synchronously so login does not depend on webhook
+  // delivery timing. A failed API check does not silently create a FREE user.
+  let subscription: Awaited<ReturnType<typeof verifyWhopSubscription>>;
+  try {
+    subscription = await verifyWhopSubscription(accessToken, whopId);
+  } catch (error) {
+    console.error("[WHOP OAUTH] Unable to verify membership during login:", error);
+    return clearOAuthCookies(
+      NextResponse.redirect(
+        new URL("/login?error=membership_verification_failed", request.url),
+      ),
+    );
+  }
+
+  // 4. Merge with any user created concurrently by a checkout webhook.
   let user: Awaited<ReturnType<typeof mergeWhopUser>>;
   try {
-    user = await mergeWhopUser({ whopId, email });
+    user = await mergeWhopUser({ whopId, email, subscription });
   } catch (error) {
     console.error("[WHOP OAUTH] Failed to merge user:", error);
     return clearOAuthCookies(
@@ -179,7 +193,7 @@ export async function GET(request: NextRequest) {
   const isSystemAdmin = user?.email && user.email === ADMIN_EMAIL;
   const effectiveTier = isSystemAdmin ? 'ENTERPRISE' : user?.tier;
 
-  // 4. Mint Session with Dynamic Tier -> REDIRECTS TO WELCOME PORTAL
+  // 5. Mint Session with Dynamic Tier -> REDIRECTS TO WELCOME PORTAL
   const response = NextResponse.redirect(new URL("/welcome", request.url));
   response.cookies.set("frameleads_session", accessToken, { httpOnly: true, path: "/" });
   response.cookies.set("tier", effectiveTier, { path: "/" }); 

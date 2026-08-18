@@ -78,7 +78,10 @@ export async function createWhopAuthorizationUrl(
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("client_id", clientId);
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
-  authorizationUrl.searchParams.set("scope", "openid profile email");
+  authorizationUrl.searchParams.set(
+    "scope",
+    "openid profile email member:basic:read member:email:read",
+  );
   authorizationUrl.searchParams.set("state", state);
   authorizationUrl.searchParams.set("nonce", nonce);
   authorizationUrl.searchParams.set("code_challenge", await sha256(verifier));
