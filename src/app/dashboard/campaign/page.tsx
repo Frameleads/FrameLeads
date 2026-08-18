@@ -168,7 +168,7 @@ export default function CampaignPage() {
   };
 
   const inputClasses =
-    "rounded-xl border border-border/50 bg-transparent text-foreground ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#FF5A1F] focus:border-transparent disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-150";
+    "rounded-xl border-2 border-[#242424] bg-transparent text-foreground ring-offset-background placeholder:text-muted-foreground focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 transition-colors duration-150";
 
   return (
     <div className="h-screen overflow-y-auto flex flex-col">
@@ -235,12 +235,12 @@ export default function CampaignPage() {
               <button
                 onClick={handleMagicAssist}
                 disabled={!websiteUrl || magicAssistLoading}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-primary/20 whitespace-nowrap"
+                className="flex h-12 w-fit self-start items-center justify-center gap-2.5 rounded-xl bg-primary px-8 text-base font-semibold text-primary-foreground whitespace-nowrap shadow-lg shadow-primary/20 transition-all duration-200 hover:opacity-90 hover:shadow-primary/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {magicAssistLoading ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Scanning...</>
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Scanning...</>
                 ) : (
-                  <><Sparkles className="w-4 h-4" /> Magic Assist</>
+                  <><Sparkles className="w-5 h-5" /> Magic Assist</>
                 )}
               </button>
             </div>
@@ -360,7 +360,7 @@ export default function CampaignPage() {
                   value={wedgeOfferDetail}
                   onChange={(e) => setWedgeOfferDetail(e.target.value)}
                   placeholder='e.g. "Outbound Fragility Audit"'
-                  className={`w-full p-3 text-sm leading-relaxed ${inputClasses} border-[#FF5A1F]/20 focus:ring-[#FF5A1F]`}
+                  className={`w-full p-3 text-sm leading-relaxed ${inputClasses}`}
                 />
               </div>
             )}
