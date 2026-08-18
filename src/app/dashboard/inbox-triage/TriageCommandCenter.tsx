@@ -28,7 +28,13 @@ function parseSlotLabel(label: string): string | null {
   return date.toISOString();
 }
 
-export default function TriageCommandCenter({ initialData }: { initialData: any }) {
+export default function TriageCommandCenter({
+  initialData,
+  userTier,
+}: {
+  initialData: any;
+  userTier: string;
+}) {
   const dbLeads = Array.isArray(initialData) && initialData.length > 0 
     ? initialData.map((s: any) => ({
         id: s.id,
@@ -59,12 +65,6 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingSlotStart, setBookingSlotStart] = useState('');
   const [bookingSlotEnd, setBookingSlotEnd] = useState('');
-  const [tier, setTier] = useState<string | null>(null);
-  
-  useEffect(() => {
-    setTier(localStorage.getItem('userTier') || 'CORE');
-  }, []);
-
   const [isCleared, setIsCleared] = useState(dbLeads.length === 0);
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
@@ -236,14 +236,12 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
     }
   };
 
-  if (tier === null) return null; // Prevent hydration flicker
-
   // The "Inbox Zero" Success State
   // For CORE users behind the paywall, the triage content still renders
   // in the background so the blur has populated UI to display.
-  if (isCleared && tier !== 'CORE') {
+  if (isCleared && userTier !== 'CORE') {
     return (
-      <EnterprisePaywall userTier={tier} featureName="Inbox Triage">
+      <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
         <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8">
           <div className="w-16 h-16 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
             <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -486,7 +484,7 @@ export default function TriageCommandCenter({ initialData }: { initialData: any 
 );
 
 return (
-    <EnterprisePaywall userTier={tier} featureName="Inbox Triage">
+    <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
       {/* Booking Confirmation Modal */}
       {showBookingModal && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/95 w-full h-full p-4 overflow-y-auto">

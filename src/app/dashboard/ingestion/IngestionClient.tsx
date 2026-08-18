@@ -329,18 +329,18 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         <p className="text-lg text-muted-foreground mt-3 leading-relaxed">
           Upload your lead list and map columns to the FrameLeads schema.
         </p>
-        {userTier !== "ENTERPRISE" && (
-          <div className="rounded-2xl mt-6 md:mt-8 border border-primary/30 bg-primary/10 p-6 flex flex-col md:flex-row md:items-center justify-between shadow-lg shadow-primary/5 mb-6">
+        <div className="rounded-2xl mt-6 md:mt-8 border border-primary/30 bg-primary/10 p-6 flex flex-col md:flex-row md:items-center justify-between shadow-lg shadow-primary/5 mb-6">
             <div>
-              <h2 className="text-xl font-bold mb-2 tracking-tight uppercase text-orange-500">{userTier} TIER</h2>
+              <h2 className="text-xl font-bold mb-2 tracking-tight uppercase text-orange-500">
+                {userTier.replace(/_/g, " ")} TIER
+              </h2>
               <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
                 <span>{leadsGenerated} of {monthlyQuota} leads generated</span>
                 <span>•</span>
                 <span>{Math.max(0, monthlyQuota - leadsGenerated)} remaining</span>
               </div>
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Error Banner */}

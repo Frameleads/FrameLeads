@@ -1,7 +1,19 @@
 import { prisma } from '@/lib/prisma';
+import { cookies } from 'next/headers';
 import GovernanceDashboard from "./GovernanceDashboard";
 
+export const dynamic = 'force-dynamic';
+
 export default async function GovernancePage() {
+  const cookieStore = await cookies();
+  const email = cookieStore.get('user_email')?.value;
+  const user = email
+    ? await prisma.user.findUnique({
+        where: { email: email.trim().toLowerCase() },
+        select: { tier: true },
+      })
+    : null;
+
   const signals = await prisma.inboundSignal.findMany({
     orderBy: { createdAt: 'asc' }
   });
@@ -92,5 +104,10 @@ export default async function GovernancePage() {
     timeSeriesData
   };
 
-  return <GovernanceDashboard initialMetrics={metrics} />;
+  return (
+    <GovernanceDashboard
+      initialMetrics={metrics}
+      userTier={user?.tier ?? 'INACTIVE'}
+    />
+  );
 }

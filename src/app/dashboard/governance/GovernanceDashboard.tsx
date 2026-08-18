@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import EnterprisePaywall from "@/components/EnterprisePaywall";
 import Link from "next/link";
 import {
@@ -174,13 +173,14 @@ function ChartEmptyState({ label }: { label: string }) {
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function GovernanceDashboard({ initialMetrics }: { initialMetrics: GovernanceMetrics }) {
+export default function GovernanceDashboard({
+  initialMetrics,
+  userTier,
+}: {
+  initialMetrics: GovernanceMetrics;
+  userTier: string;
+}) {
   const metrics = initialMetrics;
-  const [tier, setTier] = useState<string | null>(null);
-  
-  useEffect(() => {
-    setTier(localStorage.getItem('userTier') || 'CORE');
-  }, []);
 
   if (!metrics) return null;
 
@@ -195,8 +195,6 @@ export default function GovernanceDashboard({ initialMetrics }: { initialMetrics
   const hasLatencyData = metrics.timeSeriesData.some(
     (d) => d.avgLatencyMin > 0
   );
-
-  if (tier === null) return null; // Prevent hydration flicker
 
   const pageContent = (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 lg:px-0">
@@ -484,7 +482,7 @@ export default function GovernanceDashboard({ initialMetrics }: { initialMetrics
   );
 
   return (
-    <EnterprisePaywall userTier={tier} featureName="Governance Dashboard">
+    <EnterprisePaywall userTier={userTier} featureName="Governance Dashboard">
       {pageContent}
     </EnterprisePaywall>
   );
