@@ -247,6 +247,7 @@ export async function POST(req: Request) {
 
     const inboundSignal = await prisma.inboundSignal.create({
       data: {
+        userId: auth.userId!,
         prospectName: signal.prospectName,
         prospectEmail: signal.prospectEmail,
         prospectContext: `${signal.companyName} | Signal: ${signal.signalType.replace(/_/g, " ")}`,

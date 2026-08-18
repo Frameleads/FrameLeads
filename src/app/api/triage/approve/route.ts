@@ -1,106 +1,101 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-
-import { requireEnterpriseTier } from '@/lib/auth-guard';
+import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { requireEnterpriseTier } from "@/lib/auth-guard";
 
 export async function POST(req: Request) {
   try {
     const authError = await requireEnterpriseTier();
     if (authError) return authError;
 
-    const body = await req.json();
-    const { 
-      signalId, 
-      prospectEmail, 
-      subject, 
-      finalText, 
-      status,
+    const cookieStore = await cookies();
+    const email = cookieStore.get("user_email")?.value;
+    const user = email
+      ? await prisma.user.findUnique({
+          where: { email: email.trim().toLowerCase() },
+          select: { id: true },
+        })
+      : null;
+
+    if (!user) {
+      return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
+    }
+
+    const {
+      signalId,
+      subject,
+      finalText,
       campaignId,
       leadId,
-      apiKey 
-    } = body;
+      apiKey,
+    } = await req.json();
 
-    // 1. Audit Log: Record Executive Override event
-    console.log("=== EXECUTIVE OVERRIDE INITIATED ===", {
-      signalId,
-      prospectEmail,
-      subject,
-      bodyLength: finalText?.length,
-      status: status || 'APPROVED',
-      timestamp: new Date().toISOString()
+    if (!signalId || !finalText) {
+      return NextResponse.json(
+        { success: false, error: "signalId and finalText are required." },
+        { status: 400 }
+      );
+    }
+
+    const signal = await prisma.inboundSignal.findFirst({
+      where: { id: signalId, userId: user.id },
+      select: { id: true },
     });
 
-    // 2. Dual-Path Check: Is this a synthetic demo lead or a real production lead?
-    const isDemoLead = !signalId || 
-      signalId.toString().startsWith('demo_') || 
-      prospectEmail === 'marcus@nexussystems.io';
+    if (!signal) {
+      return NextResponse.json({ success: false, error: "Signal not found." }, { status: 404 });
+    }
 
-    // ==========================================
-    // PATH A: LIVE SMARTLEAD ENTERPRISE DISPATCH
-    // ==========================================
-    if (!isDemoLead && apiKey && campaignId && leadId) {
-      console.log(`[SMARTLEAD LIVE DISPATCH] Transmitting reply to Campaign: ${campaignId}, Lead: ${leadId}`);
-      
+    let dispatched = false;
+    if (apiKey && campaignId && leadId) {
       const smartleadRes = await fetch(
-        `https://server.smartlead.ai/api/v1/campaigns/${campaignId}/leads/${leadId}/reply?api_key=${apiKey}`,
+        `https://server.smartlead.ai/api/v1/campaigns/${campaignId}/leads/${leadId}/reply?api_key=${encodeURIComponent(apiKey)}`,
         {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             email_body: finalText,
-            subject: subject || 'Re: Technical Review',
-            reply_to_message_id: signalId
-          })
+            subject: subject || "Re: Technical Review",
+            reply_to_message_id: signalId,
+          }),
         }
       );
 
       if (!smartleadRes.ok) {
-        const errText = await smartleadRes.text().catch(() => 'Unknown Smartlead API Error');
-        console.error("[SMARTLEAD DISPATCH FAILED]:", smartleadRes.status, errText);
-        return NextResponse.json({ 
-          success: false, 
-          error: `Smartlead API Error: ${smartleadRes.status}` 
-        }, { status: 502 });
+        const errorText = await smartleadRes.text().catch(() => "Unknown Smartlead error");
+        console.error("[TRIAGE APPROVE] Smartlead dispatch failed:", smartleadRes.status, errorText);
+        return NextResponse.json(
+          { success: false, error: `Smartlead API error: ${smartleadRes.status}` },
+          { status: 502 }
+        );
       }
-
-      console.log("[SMARTLEAD LIVE DISPATCH SUCCESS]");
-    } else {
-      // ==========================================
-      // PATH B: DEMO / SANDBOX SAFE-FAIL BYPASS
-      // ==========================================
-      console.log("[SMARTLEAD DEMO BYPASS] Synthetic lead detected — bypassing external API send to prevent 404.");
+      dispatched = true;
     }
 
-    // 3. Database Sync: Update Prisma record for real database entities
-    if (signalId && !isDemoLead) {
-      await prisma.inboundSignal.updateMany({
-        where: { id: signalId },
-        data: {
-          status: 'APPROVED',
-          aiDraft: finalText
-        }
-      }).catch((e: any) => {
-        console.warn("Prisma DB sync skipped:", e.message);
-      });
-    }
+    await prisma.inboundSignal.updateMany({
+      where: { id: signalId, userId: user.id },
+      data: {
+        status: "APPROVED",
+        approvedAt: new Date(),
+        aiDraft: finalText,
+      },
+    });
 
-    // 4. Return clean 200 OK to trigger the QUEUE CLEARED transition
     return NextResponse.json({
       success: true,
       status: "APPROVED",
-      dispatch_mode: isDemoLead ? "DEMO_SIMULATED" : "SMARTLEAD_LIVE",
-      message: "Draft response transmitted to outbound sending infrastructure."
-    }, { status: 200 });
-
+      dispatched,
+      message: dispatched
+        ? "Draft response sent and approved."
+        : "Draft approved and saved. No sending-provider credentials were supplied.",
+    });
   } catch (error) {
-    console.error("Approval Execution Error:", error);
-    // Safe-fail 200 return ensures demo recordings never crash on edge-runtime network timeouts
-    return NextResponse.json({
-      success: true,
-      status: "APPROVED_FALLBACK",
-      message: "Processed via resilient execution queue."
-    }, { status: 200 });
+    console.error("[TRIAGE APPROVE] Approval failed:", error);
+    return NextResponse.json(
+      { success: false, error: "Unable to approve this signal." },
+      { status: 500 }
+    );
   }
 }

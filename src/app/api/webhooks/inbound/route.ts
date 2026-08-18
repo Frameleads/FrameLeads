@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import Anthropic from '@anthropic-ai/sdk';
+import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 
 const SYSTEM_PROMPT = `You are an elite sales triage AI. Read this inbound email reply. Score the buying intent from 0-100. Categorize it as HOT (score >= 80), WARM (score 40-79), or COLD (score < 40). Evaluate your confidence in this intent classification. If it is a clear rejection or unsubscribe, score confidence > 90. If it is ambiguous, sarcastic, or complex, score < 70. Return strictly a JSON object: { "intentScore": number, "status": "HOT" | "WARM" | "COLD", "signalAnalysis": "1 sentence explanation", "confidenceScore": number }.`;
 
@@ -19,16 +20,26 @@ function extractJsonObject(rawText: string): any {
 
 export async function POST(req: Request) {
   try {
+    const rawKey = extractApiKey(req);
+    if (!rawKey) {
+      return NextResponse.json({ success: false, error: "Missing FrameLeads API key." }, { status: 401 });
+    }
+    const auth = await verifyApiKey(rawKey);
+    if (!auth.authenticated || !auth.userId) {
+      return NextResponse.json({ success: false, error: auth.error || "Invalid API key." }, { status: 401 });
+    }
+
     const payload = await req.json();
 
     // Dynamically extract fields. This handles both standard Smartlead and Instantly shapes.
-    const leadEmail = payload.lead_email || payload.email || "unknown@domain.com";
-    const leadFirstName = payload.lead_first_name || payload.firstName || "Prospect";
-    const companyName = payload.company_name || payload.companyName || "Unknown Company";
+    const leadEmail = payload.lead_email || payload.email || "";
+    const leadFirstName = payload.lead_first_name || payload.firstName || leadEmail.split('@')[0] || "Unknown prospect";
+    const companyName = payload.company_name || payload.companyName || "";
     const replyText = payload.reply_text || payload.text || payload.body || "";
+    const pipelineValue = Number(payload.pipeline_value ?? payload.pipelineValue ?? payload.deal_value ?? 0) || 0;
 
-    if (!replyText) {
-      return NextResponse.json({ success: false, error: "No reply text found in payload." }, { status: 400 });
+    if (!leadEmail || !replyText) {
+      return NextResponse.json({ success: false, error: "A lead email and reply text are required." }, { status: 400 });
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
@@ -72,6 +83,7 @@ export async function POST(req: Request) {
     // Insert into PostgreSQL via Prisma
     const newSignal = await prisma.inboundSignal.create({
       data: {
+        userId: auth.userId,
         prospectName: leadFirstName,
         prospectContext: companyName,
         prospectEmail: leadEmail,
@@ -82,7 +94,7 @@ export async function POST(req: Request) {
         signalAnalysis: finalSignalAnalysis || "",
         intentRisk: "Unknown", // Default or you could derive this via AI too
         aiDraft: "Awaiting Triage Draft...",
-        pipelineValue: 50000, // Arbitrary default or extracted if possible
+        pipelineValue,
         dealStage: "Inbound Reply",
         isHighPriority: finalIntentType === "HOT" || finalIntentType === "WARM",
         sourceType: "WEBHOOK",

@@ -1,12 +1,26 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 export async function POST(req: Request) {
   try {
-    const { lead_name, reply_text, deal_value } = await req.json();
+    const rawKey = extractApiKey(req);
+    if (!rawKey) {
+      return NextResponse.json({ success: false, error: 'Missing FrameLeads API key' }, { status: 401 });
+    }
+    const auth = await verifyApiKey(rawKey);
+    if (!auth.authenticated || !auth.userId) {
+      return NextResponse.json({ success: false, error: auth.error || 'Invalid API key' }, { status: 401 });
+    }
+
+    const { lead_name, lead_email, company_name, reply_text, deal_value, deal_stage } = await req.json();
+
+    if (!lead_name || !reply_text) {
+      return NextResponse.json({ success: false, error: 'lead_name and reply_text are required' }, { status: 400 });
+    }
     
     // Process inbound signal through Gemini
     const model = genAI.getGenerativeModel({
@@ -21,10 +35,12 @@ export async function POST(req: Request) {
     // Write event to the InboundSignal table
     await prisma.inboundSignal.create({
       data: {
+        userId: auth.userId,
         prospectName: lead_name,
-        prospectContext: 'Unknown Title @ Unknown Company', // Default/placeholder
-        pipelineValue: deal_value || 45000,
-        dealStage: 'Technical Review', // Default/placeholder
+        prospectEmail: lead_email || null,
+        prospectContext: company_name || '',
+        pipelineValue: Number(deal_value) || 0,
+        dealStage: deal_stage || 'Inbound Reply',
         rawEmail: reply_text,
         intentRisk: 'HIGH', // Default/placeholder
         intentType: 'OBJECTION', // Default/placeholder

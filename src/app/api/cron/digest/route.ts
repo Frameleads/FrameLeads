@@ -87,6 +87,7 @@ async function aggregateUserMetrics(
   // ── Deals Protected (this week) ──────────────────────────────────
   const dealsProtected = await prisma.inboundSignal.aggregate({
     where: {
+      userId,
       createdAt: { gte: weekAgo },
       status: { in: ["PENDING", "APPROVED"] },
     },
@@ -97,6 +98,7 @@ async function aggregateUserMetrics(
   // ── Time-to-Approval (this week) ─────────────────────────────────
   const approvedThisWeek = await prisma.inboundSignal.findMany({
     where: {
+      userId,
       status: "APPROVED",
       approvedAt: { not: null, gte: weekAgo },
     },
@@ -124,6 +126,7 @@ async function aggregateUserMetrics(
   // ── Signal ingestion count (this week) ───────────────────────────
   const signalsIngested = await prisma.inboundSignal.count({
     where: {
+      userId,
       sourceType: "SIGNAL_TRIGGERED",
       createdAt: { gte: weekAgo },
     },
@@ -131,7 +134,7 @@ async function aggregateUserMetrics(
 
   // ── Currently pending ────────────────────────────────────────────
   const pendingCount = await prisma.inboundSignal.count({
-    where: { status: "PENDING" },
+    where: { userId, status: "PENDING" },
   });
 
   return {

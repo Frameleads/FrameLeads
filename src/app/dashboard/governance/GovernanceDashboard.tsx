@@ -163,9 +163,9 @@ function ChartEmptyState({ label }: { label: string }) {
   return (
     <div className="h-[240px] w-full flex flex-col items-center justify-center gap-3">
       <BarChart3 className="w-8 h-8 text-gray-700" />
-      <p className="text-sm text-gray-500">Awaiting Data</p>
-      <p className="text-[10px] text-gray-600">
-        {label} will populate as signals flow through the Velvet Rope.
+      <p className="text-sm text-[#888888]">Awaiting campaign deployment</p>
+      <p className="text-[10px] text-gray-600 text-center">
+        {label} will populate from your workspace signals.
       </p>
     </div>
   );
@@ -358,6 +358,7 @@ export default function GovernanceDashboard({
                     <Area
                       type="monotone"
                       dataKey="protectedARR"
+                      isAnimationActive={false}
                       stroke="#FF5A1F"
                       strokeWidth={2}
                       fill="url(#protectionGradient)"
@@ -421,6 +422,7 @@ export default function GovernanceDashboard({
                     />
                     <Bar
                       dataKey="avgLatencyMin"
+                      isAnimationActive={false}
                       radius={[6, 6, 0, 0]}
                       maxBarSize={36}
                       shape={(props: any) => {

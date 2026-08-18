@@ -19,6 +19,7 @@
 // ────────────────────────────────────────────────────────────────────────
 
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -74,6 +75,22 @@ export async function GET() {
   try {
     const authError = await requireEnterpriseTier();
     if (authError) return authError;
+
+    const cookieStore = await cookies();
+    const email = cookieStore.get("user_email")?.value;
+    const user = email
+      ? await prisma.user.findUnique({
+          where: { email: email.trim().toLowerCase() },
+          select: { id: true },
+        })
+      : null;
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "Authenticated user was not found." },
+        { status: 401 }
+      );
+    }
     // ── Metric 1: Deals Protected ──────────────────────────────────
     // Sum of pipelineValue for ALL signals that have passed through
     // or are currently sitting in the Velvet Rope (PENDING + APPROVED).
@@ -86,6 +103,7 @@ export async function GET() {
 
     const dealsProtected = await prisma.inboundSignal.aggregate({
       where: {
+        userId: user.id,
         status: { in: ["PENDING", "APPROVED"] },
       },
       _sum: {
@@ -110,6 +128,7 @@ export async function GET() {
 
     const approvedSignals = await prisma.inboundSignal.findMany({
       where: {
+        userId: user.id,
         status: "APPROVED",
         approvedAt: { not: null },
       },
@@ -146,17 +165,18 @@ export async function GET() {
 
     const memoryScore = await prisma.governanceRule.count({
       where: {
+        userId: user.id,
         isActive: true,
       },
     });
 
     // ── Additional context metrics ─────────────────────────────────
     const pendingCount = await prisma.inboundSignal.count({
-      where: { status: "PENDING" },
+      where: { userId: user.id, status: "PENDING" },
     });
 
     const signalTriggeredCount = await prisma.inboundSignal.count({
-      where: { sourceType: "SIGNAL_TRIGGERED" },
+      where: { userId: user.id, sourceType: "SIGNAL_TRIGGERED" },
     });
 
     // ── Time-Series Data for Charts ────────────────────────────────
@@ -178,6 +198,7 @@ export async function GET() {
     // Fetch signals created in the window for protection ARR
     const recentSignals = await prisma.inboundSignal.findMany({
       where: {
+        userId: user.id,
         status: { in: ["PENDING", "APPROVED"] },
         createdAt: { gte: windowStart },
       },
@@ -191,6 +212,7 @@ export async function GET() {
     // Fetch approved signals in the window for latency calculation
     const recentApprovals = await prisma.inboundSignal.findMany({
       where: {
+        userId: user.id,
         status: "APPROVED",
         approvedAt: { not: null, gte: windowStart },
       },

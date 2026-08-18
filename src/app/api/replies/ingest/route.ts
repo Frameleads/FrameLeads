@@ -23,6 +23,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
 import {
   classifyReply,
   type InboundReply,
@@ -33,6 +34,15 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const rawKey = extractApiKey(req);
+    if (!rawKey) {
+      return NextResponse.json({ success: false, error: "Missing FrameLeads API key." }, { status: 401 });
+    }
+    const auth = await verifyApiKey(rawKey);
+    if (!auth.authenticated || !auth.userId) {
+      return NextResponse.json({ success: false, error: auth.error || "Invalid API key." }, { status: 401 });
+    }
+
     const payload = await req.json();
 
     // ── Input validation ───────────────────────────────────────────
@@ -81,6 +91,7 @@ export async function POST(req: Request) {
         // This appears in the Inbox Triage queue as a high-priority event.
         const signal = await prisma.inboundSignal.create({
           data: {
+            userId: auth.userId,
             prospectName: reply.leadId,
             prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${(reply.pipelineValue ?? 0).toLocaleString()}`,
             pipelineValue: reply.pipelineValue ?? 0,
@@ -115,6 +126,7 @@ export async function POST(req: Request) {
         // draft, which the human then reviews before sending.
         const signal = await prisma.inboundSignal.create({
           data: {
+            userId: auth.userId,
             prospectName: reply.leadId,
             prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${(reply.pipelineValue ?? 0).toLocaleString()}`,
             pipelineValue: reply.pipelineValue ?? 0,

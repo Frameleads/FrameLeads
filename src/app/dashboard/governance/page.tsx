@@ -10,11 +10,12 @@ export default async function GovernancePage() {
   const user = email
     ? await prisma.user.findUnique({
         where: { email: email.trim().toLowerCase() },
-        select: { tier: true },
+        select: { id: true, tier: true },
       })
     : null;
 
   const signals = await prisma.inboundSignal.findMany({
+    where: { userId: user?.id ?? '__unauthenticated__' },
     orderBy: { createdAt: 'asc' }
   });
 
@@ -69,7 +70,9 @@ export default async function GovernancePage() {
   const avgMinutes = Math.round(avgMilliseconds / 60000);
   const avgHours = parseFloat((avgMinutes / 60).toFixed(1));
 
-  const rulesCount = await prisma.governanceRule.count();
+  const rulesCount = await prisma.governanceRule.count({
+    where: { userId: user?.id ?? '__unauthenticated__', isActive: true },
+  });
 
   const timeSeriesData = Array.from(timeSeriesMap.entries()).map(([day, stats]) => {
     const avgLatencyMin = stats.latencyCount > 0 ? Math.round((stats.latencyMsTotal / stats.latencyCount) / 60000) : 0;

@@ -9,6 +9,8 @@ datasource db {
 
 model InboundSignal {
   id              String   @id @default(uuid())
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   prospectName    String
   prospectContext String
   prospectEmail   String?
@@ -36,7 +38,7 @@ model InboundSignal {
   // Used to calculate Time-to-Approval metrics.
   approvedAt      DateTime?
 
-  @@index([status, isHighPriority])
+  @@index([userId, status, isHighPriority])
   @@index([createdAt])
 }
 
@@ -95,6 +97,7 @@ model User {
   rootBrandDomain String?
 
   inboxes   SendingInbox[]
+  inboundSignals InboundSignal[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────

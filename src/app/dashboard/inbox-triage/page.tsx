@@ -12,14 +12,17 @@ export default async function InboxTriagePage() {
   const user = email
     ? await prisma.user.findUnique({
         where: { email: email.trim().toLowerCase() },
-        select: { tier: true },
+        select: { id: true, tier: true },
       })
     : null;
 
   // Phase 4: Priority-sorted query — SIGNAL_TRIGGERED items with
   // isHighPriority=true always surface at the top of the triage queue.
   const pendingSignals = await prisma.inboundSignal.findMany({
-    where: { status: "PENDING" },
+    where: {
+      userId: user?.id ?? "__unauthenticated__",
+      status: "PENDING",
+    },
     orderBy: [
       { isHighPriority: "desc" },
       { createdAt: "asc" },

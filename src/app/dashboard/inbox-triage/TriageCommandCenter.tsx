@@ -42,6 +42,8 @@ export default function TriageCommandCenter({
         company: s.prospectContext || 'Unknown Company',
         email: s.prospectEmail || '',
         pipelineValue: `$${(s.pipelineValue || 0).toLocaleString()}`,
+        dealStage: s.dealStage || '',
+        createdAt: s.createdAt,
         inboundSignal: s.rawEmail || '',
         intentScore: s.intentScore || 0,
         status: s.intentType || 'COLD',
@@ -62,6 +64,7 @@ export default function TriageCommandCenter({
   const [isBooking, setIsBooking] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingError, setBookingError] = useState('');
+  const [regenerateError, setRegenerateError] = useState('');
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingSlotStart, setBookingSlotStart] = useState('');
   const [bookingSlotEnd, setBookingSlotEnd] = useState('');
@@ -93,15 +96,9 @@ export default function TriageCommandCenter({
     return 'bg-red-500';
   };
 
-  // 3-Angle Client-Side Failsafe Rotation (Guarantees 100% fresh copy on Click #1):
-  const fallbackReframes = [
-    "Michael, completely understand the hesitation—handing the keys to an unconstrained AI is exactly how agencies burn their primary domains. That is why we built the Velvet Rope Protocol. FrameLeads doesn't blindly send; it routes standard inquiries autonomously, but the moment it detects a high-value objection like yours, it pauses the automation and kicks the draft to your desk for human approval. Your domain reputation remains mathematically protected. Are you open to a 10-minute technical teardown this Thursday to see the governance engine in action?",
-    "The trauma from your last Zapier deployment is justified—tape-and-glue automation always collapses under enterprise volume. FrameLeads abstracts multi-channel triage away from fragile triggers entirely. By using asynchronous logic routing, 95% of standard pipeline activity executes autonomously while whale deals ($40k+) halt for your 1-click override. Your team never touches a broken workflow again. Should I send over the deployment blueprint to prove the architecture?",
-    "Make.com is a manual routing tool. It moves data, but it doesn't interpret context or handle exceptions. You are paying human capital to manage the logic and triage failures. Our autonomous logic engines eliminate human intervention entirely from these workflows. The ROI isn't about the software's price tag. It's about recovering critical human bandwidth currently spent on manual oversight and exception handling. That freed capacity is your real growth lever. Send me a process map of your current Make.com workflows. I'll outline the immediate shift to autonomous operation."
-  ];
-
   const handleRegenerate = async () => {
     setIsGenerating(true);
+    setRegenerateError('');
     try {
       const res = await fetch('/api/triage', {
         method: 'POST',
@@ -127,17 +124,11 @@ export default function TriageCommandCenter({
         }
       }
       
-      setDraftText((current: any) => {
-        const currentStr = typeof current === 'string' ? current : String(current);
-        const nextOption = fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
-        return nextOption;
-      });
+      const errorPayload = await res.json().catch(() => null);
+      setRegenerateError(errorPayload?.error || 'Draft generation failed. Your existing draft was preserved.');
     } catch (err) {
       console.error(err);
-      setDraftText((current: any) => {
-        const currentStr = typeof current === 'string' ? current : String(current);
-        return fallbackReframes.find(f => f !== currentStr) || fallbackReframes[0];
-      });
+      setRegenerateError('Draft generation is temporarily unavailable. Your existing draft was preserved.');
     } finally {
       setIsGenerating(false);
     }
@@ -236,30 +227,19 @@ export default function TriageCommandCenter({
     }
   };
 
-  // The "Inbox Zero" Success State
-  // For CORE users behind the paywall, the triage content still renders
-  // in the background so the blur has populated UI to display.
-  if (isCleared && userTier !== 'CORE') {
+  if (isCleared) {
     return (
       <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
-        <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-center p-8">
-          <div className="w-16 h-16 border border-gray-800 rounded-full flex items-center justify-center mb-6 bg-[#121212]">
-            <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
+        <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl flex flex-col items-center justify-center text-center p-8">
+          <div className="w-16 h-16 border border-[#242424] rounded-2xl flex items-center justify-center mb-6 bg-[#1A1A1A]">
+            <Info className="w-6 h-6 text-[#FF5A1F]" />
           </div>
           <h2 className="text-2xl font-bold text-white tracking-wide mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            QUEUE CLEARED
+            NO ACTIVE TRIAGE SIGNALS
           </h2>
           <p className="text-gray-500 max-w-md" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-            No high-priority events require Executive Override. The Autonomous Acquisition Architecture is running securely.
+            Awaiting campaign deployment and real inbound replies. New signals will appear here for review.
           </p>
-          <button 
-            onClick={() => { setIsCleared(false); setIsDispatching(false); }}
-            className="mt-8 text-sm text-gray-500 hover:text-white transition-colors underline underline-offset-4"
-          >
-            Reset Demo State
-          </button>
         </div>
       </EnterprisePaywall>
     );
@@ -335,7 +315,7 @@ export default function TriageCommandCenter({
               </div>
               <div>
                 <p className="text-xs text-gray-500 uppercase">Deal Stage</p>
-                <p className="text-lg font-medium text-white mt-1">High-Intent Reply</p>
+                <p className="text-lg font-medium text-white mt-1">{activeLead?.dealStage || 'Not specified'}</p>
               </div>
             </div>
           </div>
@@ -358,7 +338,9 @@ export default function TriageCommandCenter({
           <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg flex-grow">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              <p className="text-gray-500 mb-4">Received: Today, 8:14 AM</p>
+              <p className="text-gray-500 mb-4">
+                Received: {activeLead?.createdAt ? new Date(activeLead.createdAt).toLocaleString() : 'Unknown'}
+              </p>
               <div className="whitespace-pre-wrap">
                 {inboundSignal}
               </div>
@@ -448,6 +430,10 @@ export default function TriageCommandCenter({
                 }}
                 placeholder="Awaiting Triage Draft..."
               />
+
+              {regenerateError && (
+                <p className="text-xs text-red-400">{regenerateError}</p>
+              )}
 
               {/* 3. The CTA Text (Directly below textarea) */}
               <p className="w-full text-[11px] leading-relaxed text-muted-foreground whitespace-normal break-words px-1">
