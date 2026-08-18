@@ -59,8 +59,12 @@ export async function GET(request: NextRequest) {
   }
 
   const clientId = process.env.WHOP_CLIENT_ID;
-  if (!clientId) {
-    console.error("[WHOP OAUTH] Missing WHOP_CLIENT_ID during callback.");
+  const clientSecret = process.env.WHOP_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    console.error("[WHOP OAUTH] Missing OAuth client credentials during callback.", {
+      hasClientId: Boolean(clientId),
+      hasClientSecret: Boolean(clientSecret),
+    });
     return clearOAuthCookies(
       NextResponse.redirect(new URL("/login?error=oauth_configuration", request.url)),
     );
@@ -71,12 +75,14 @@ export async function GET(request: NextRequest) {
   try {
     const tokenRes = await fetch("https://api.whop.com/oauth/token", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+      },
       body: JSON.stringify({
         grant_type: "authorization_code",
         code,
         redirect_uri: redirectUri,
-        client_id: clientId,
         code_verifier: codeVerifier,
       }),
       cache: "no-store",
@@ -89,7 +95,7 @@ export async function GET(request: NextRequest) {
         statusText: tokenRes.statusText,
         rawResponse,
         redirectUri,
-        hasClientId: Boolean(clientId),
+        hasBasicAuthentication: true,
         hasCodeVerifier: Boolean(codeVerifier),
       });
       return clearOAuthCookies(
