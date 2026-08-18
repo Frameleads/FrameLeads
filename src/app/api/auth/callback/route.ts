@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
 import { verifyWhopSubscription } from "@/lib/whop-memberships";
-import { NoActivePaidSubscriptionError } from "@/lib/whop-subscription";
+import {
+  MembershipFilteredOutError,
+  UnrecognizedWhopProductError,
+} from "@/lib/whop-subscription";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
@@ -171,10 +174,18 @@ export async function GET(request: NextRequest) {
     subscription = await verifyWhopSubscription(accessToken, whopId);
   } catch (error) {
     console.error("[WHOP OAUTH] Unable to verify membership during login:", error);
-    if (error instanceof NoActivePaidSubscriptionError) {
+    if (error instanceof MembershipFilteredOutError) {
       return clearOAuthCookies(
         NextResponse.redirect(
           new URL("/login?error=no_active_subscription", request.url),
+        ),
+      );
+    }
+
+    if (error instanceof UnrecognizedWhopProductError) {
+      return clearOAuthCookies(
+        NextResponse.redirect(
+          new URL("/login?error=unrecognized_product", request.url),
         ),
       );
     }

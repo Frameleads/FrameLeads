@@ -1,10 +1,11 @@
 import {
-  NoActivePaidSubscriptionError,
+  MembershipFilteredOutError,
   resolveWhopSubscription,
   type WhopSubscription,
 } from "@/lib/whop-subscription";
 
 type WhopMembership = {
+  id?: string;
   status?: string;
   user_id?: string;
   user?: string | { id?: string };
@@ -152,11 +153,43 @@ export async function verifyWhopSubscription(
       membership.status?.toLowerCase() || "",
     );
 
+    if (!belongsToUser || !belongsToCompany || !isActive) {
+      console.warn(
+        "[WHOP DEBUG] Membership filtered out:",
+        JSON.stringify({
+          membershipId: membership.id || null,
+          user: {
+            expected: whopUserId,
+            actual: [
+              membership.user_id,
+              expandedUserId,
+              compactUserId,
+            ].filter(Boolean),
+            matched: belongsToUser,
+          },
+          company: {
+            expected: companyId || null,
+            actual: membershipCompanyIds,
+            omittedByWhop: membershipCompanyIds.length === 0,
+            matched: belongsToCompany,
+          },
+          status: {
+            expected: Array.from(ACTIVE_MEMBERSHIP_STATUSES),
+            actual: membership.status || null,
+            normalized: membership.status?.toLowerCase() || null,
+            matched: isActive,
+          },
+          productId: membership.product?.id || null,
+          planId: membership.plan?.id || null,
+        }),
+      );
+    }
+
     return belongsToUser && belongsToCompany && isActive;
   });
 
   if (activeMemberships.length === 0) {
-    throw new NoActivePaidSubscriptionError();
+    throw new MembershipFilteredOutError(payload.data.length);
   }
 
   const subscription = resolveWhopSubscription(activeMemberships);
