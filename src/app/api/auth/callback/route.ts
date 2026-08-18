@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getWhopRedirectUri } from "@/lib/whop-oauth";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,16 @@ export async function GET(request: Request) {
 
   if (!code) return NextResponse.redirect(new URL("/login?error=no_code", request.url));
 
+  let redirectUri: string;
+  try {
+    redirectUri = getWhopRedirectUri(request);
+  } catch (error) {
+    console.error("[WHOP OAUTH] Invalid application URL configuration:", error);
+    return NextResponse.redirect(
+      new URL("/login?error=oauth_configuration", request.url),
+    );
+  }
+
   // 1. Token Exchange
   const tokenRes = await fetch("https://api.whop.com/oauth/token", {
     method: "POST",
@@ -18,7 +29,7 @@ export async function GET(request: Request) {
       code: code,
       client_id: process.env.WHOP_CLIENT_ID,
       client_secret: process.env.WHOP_CLIENT_SECRET,
-      redirect_uri: process.env.WHOP_REDIRECT_URI || "http://localhost:3000/api/auth/callback"
+      redirect_uri: redirectUri,
     }),
   });
 
