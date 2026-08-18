@@ -447,7 +447,7 @@ useEffect(() => {
       <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0 lg:h-full">
         
         {/* Tier Quota Header */}
-        <div className="rounded-2xl border border-primary/30 bg-primary/10 px-5 py-6 mb-5 md:p-6 md:mb-0 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
+        <div className="rounded-2xl border border-primary/30 bg-primary/10 p-5 mb-6 md:p-6 md:mb-0 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/20 rounded-lg">
               <Shield className="w-5 h-5 text-primary" />
