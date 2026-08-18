@@ -31,6 +31,8 @@ const ACTIVE_MEMBERSHIP_STATUSES = new Set([
   "trialing",
   "completed",
   "valid",
+  "free",
+  "trial",
   "past_due",
 ]);
 
@@ -154,6 +156,20 @@ export async function verifyWhopSubscription(
     const isActive = ACTIVE_MEMBERSHIP_STATUSES.has(
       membership.status?.toLowerCase() || "",
     );
+
+    console.log("[WHOP FILTER EVALUATION]", {
+      membershipId: membership.id,
+      rawUser: membership.user,
+      rawUserId: membership.user_id,
+      expectedUserId: whopUserId,
+      rawCompany: membership.company,
+      rawCompanyId: membership.company_id,
+      expectedCompanyId: companyId,
+      status: membership.status,
+      belongsToUser,
+      belongsToCompany,
+      isActive,
+    });
 
     if (!belongsToUser) {
       console.log("[WHOP DEBUG] Rejected: User ID mismatch", {
