@@ -27,9 +27,51 @@ function configuredIds(name: string, defaults: readonly string[]) {
   return values?.length ? values : defaults;
 }
 
+function collectTierIdentifiers(source: unknown, seen = new Set<object>()): string[] {
+  if (Array.isArray(source)) {
+    return source.flatMap((item) => collectTierIdentifiers(item, seen));
+  }
+
+  if (!source || typeof source !== "object" || seen.has(source)) {
+    return [];
+  }
+  seen.add(source);
+
+  const record = source as Record<string, unknown>;
+  const identifiers: string[] = [];
+
+  for (const field of ["plan", "product"] as const) {
+    const value = record[field];
+    if (typeof value === "string") {
+      identifiers.push(value);
+      continue;
+    }
+
+    if (value && typeof value === "object") {
+      const expanded = value as Record<string, unknown>;
+      for (const property of ["id", "name", "title"] as const) {
+        if (typeof expanded[property] === "string") {
+          identifiers.push(expanded[property]);
+        }
+      }
+    }
+  }
+
+  // OAuth membership arrays contain plan/product directly. Webhook payloads
+  // may wrap them in data or membership objects.
+  for (const field of ["data", "membership"] as const) {
+    identifiers.push(...collectTierIdentifiers(record[field], seen));
+  }
+
+  return identifiers;
+}
+
 /** Resolves the highest FrameLeads tier present in a Whop payload. */
 export function resolveWhopSubscription(source: unknown): WhopSubscription {
-  const payloadString = JSON.stringify(source ?? "").toLowerCase();
+  const identifiers = collectTierIdentifiers(source).map((value) =>
+    value.toLowerCase(),
+  );
+  const identifierText = identifiers.join(" ");
   const mappings: Array<{
     tier: WhopSubscription["tier"];
     monthlyQuota: number;
@@ -58,8 +100,8 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
 
   for (const mapping of mappings) {
     if (
-      mapping.ids.some((id) => payloadString.includes(id.toLowerCase())) ||
-      mapping.titlePattern.test(payloadString)
+      mapping.ids.some((id) => identifiers.includes(id.toLowerCase())) ||
+      mapping.titlePattern.test(identifierText)
     ) {
       return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
     }

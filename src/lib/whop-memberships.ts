@@ -6,10 +6,18 @@ import {
 
 type WhopMembership = {
   status?: string;
-  user?: { id?: string };
-  company?: { id?: string };
-  product?: { id?: string; title?: string; route?: string; metadata?: unknown };
-  plan?: { id?: string; title?: string; metadata?: unknown };
+  user_id?: string;
+  user?: string | { id?: string };
+  company_id?: string;
+  company?: string | { id?: string };
+  product?: {
+    id?: string;
+    name?: string;
+    title?: string;
+    route?: string;
+    metadata?: unknown;
+  };
+  plan?: { id?: string; name?: string; title?: string; metadata?: unknown };
   metadata?: unknown;
 };
 
@@ -21,7 +29,8 @@ const ACTIVE_MEMBERSHIP_STATUSES = new Set([
   "active",
   "trialing",
   "completed",
-  "canceling",
+  "valid",
+  "past_due",
 ]);
 
 const DEFAULT_COMPANY_ID = "biz_RSQW7xARXYAQke";
@@ -110,8 +119,35 @@ export async function verifyWhopSubscription(
   );
 
   const activeMemberships = payload.data.filter((membership) => {
-    const belongsToUser = membership.user?.id === whopUserId;
-    const belongsToCompany = membership.company?.id === companyId;
+    const expandedUserId =
+      typeof membership.user === "object" ? membership.user?.id : undefined;
+    const compactUserId =
+      typeof membership.user === "string" ? membership.user : undefined;
+    const belongsToUser = [
+      membership.user_id,
+      expandedUserId,
+      compactUserId,
+    ].includes(whopUserId);
+
+    const expandedCompanyId =
+      typeof membership.company === "object"
+        ? membership.company?.id
+        : undefined;
+    const compactCompanyId =
+      typeof membership.company === "string" ? membership.company : undefined;
+    const membershipCompanyIds = [
+      membership.company_id,
+      expandedCompanyId,
+      compactCompanyId,
+    ].filter((value): value is string => Boolean(value));
+
+    // User OAuth scopes the response. When Whop omits company information,
+    // accept the membership after the user ID matches; reject an explicit
+    // company value only when it belongs to a different company.
+    const belongsToCompany =
+      !companyId ||
+      membershipCompanyIds.length === 0 ||
+      membershipCompanyIds.includes(companyId);
     const isActive = ACTIVE_MEMBERSHIP_STATUSES.has(
       membership.status?.toLowerCase() || "",
     );
