@@ -29,11 +29,11 @@ import {
 
 export const dynamic = "force-dynamic";
 
-import { requireEnterpriseTier } from '@/lib/auth-guard';
+import { requireMinimumCoreTier } from '@/lib/auth-guard';
 
 export async function POST(req: Request) {
   try {
-    const authError = await requireEnterpriseTier();
+    const authError = await requireMinimumCoreTier();
     if (authError) return authError;
 
     const {

@@ -16,7 +16,7 @@ export default function CorePaywall({ children, userTier, featureName }: Props) 
   // Strict Fail-Closed Architecture
   // Block unless the user has Core or Enterprise access.
   // ONLY allow if strictly 'CORE' or 'ENTERPRISE'
-  const hasCoreAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
+  const hasCoreAccess = ['CORE', 'ENTERPRISE'].includes(userTier || '');
 
   if (hasCoreAccess) {
     return <>{children}</>;

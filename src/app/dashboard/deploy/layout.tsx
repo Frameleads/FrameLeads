@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import EnterprisePaywall from "@/components/EnterprisePaywall";
+import CorePaywall from "@/components/CorePaywall";
 
 export const dynamic = "force-dynamic";
 
@@ -28,8 +28,8 @@ export default async function DeployAccessLayout({
   }
 
   return (
-    <EnterprisePaywall userTier={user.tier} featureName="Deploy feature">
+    <CorePaywall userTier={user.tier} featureName="Deploy feature">
       {children}
-    </EnterprisePaywall>
+    </CorePaywall>
   );
 }

@@ -227,7 +227,7 @@ export default function TriageCommandCenter({
     }
   };
 
-  if (isCleared) {
+  if (isCleared && userTier === 'ENTERPRISE') {
     return (
       <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
         <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl flex flex-col items-center justify-center text-center p-8">
