@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getWhopRedirectUri } from "@/lib/whop-oauth";
+import {
+  createWhopAuthorizationUrl,
+  getWhopRedirectUri,
+  WHOP_OAUTH_COOKIES,
+} from "@/lib/whop-oauth";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +16,20 @@ export async function GET(request: Request) {
 
   try {
     const redirectUri = getWhopRedirectUri(request);
-    const whopOAuthUrl = new URL("https://whop.com/oauth");
-    whopOAuthUrl.searchParams.set("client_id", clientId);
-    whopOAuthUrl.searchParams.set("redirect_uri", redirectUri);
+    const { authorizationUrl, verifier, state } =
+      await createWhopAuthorizationUrl(clientId, redirectUri);
+    const response = NextResponse.redirect(authorizationUrl);
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax" as const,
+      path: "/api/auth",
+      maxAge: 10 * 60,
+    };
 
-    return NextResponse.redirect(whopOAuthUrl);
+    response.cookies.set(WHOP_OAUTH_COOKIES.verifier, verifier, cookieOptions);
+    response.cookies.set(WHOP_OAUTH_COOKIES.state, state, cookieOptions);
+    return response;
   } catch (error) {
     console.error("[WHOP OAUTH] Invalid application URL configuration:", error);
     return NextResponse.json(

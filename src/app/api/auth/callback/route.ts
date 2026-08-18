@@ -1,14 +1,52 @@
-import { NextResponse } from "next/server";
-import { getWhopRedirectUri } from "@/lib/whop-oauth";
+import { NextRequest, NextResponse } from "next/server";
+import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
 import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(request: Request) {
+function clearOAuthCookies(response: NextResponse) {
+  response.cookies.delete(WHOP_OAUTH_COOKIES.verifier);
+  response.cookies.delete(WHOP_OAUTH_COOKIES.state);
+  return response;
+}
+
+export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const returnedState = searchParams.get("state");
+  const oauthError = searchParams.get("error");
+  const oauthErrorDescription = searchParams.get("error_description");
 
-  if (!code) return NextResponse.redirect(new URL("/login?error=no_code", request.url));
+  if (oauthError) {
+    console.error("[WHOP OAUTH] Authorization rejected:", {
+      error: oauthError,
+      description: oauthErrorDescription,
+    });
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=authorization_rejected", request.url)),
+    );
+  }
+
+  if (!code) {
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=no_code", request.url)),
+    );
+  }
+
+  const expectedState = request.cookies.get(WHOP_OAUTH_COOKIES.state)?.value;
+  const codeVerifier = request.cookies.get(WHOP_OAUTH_COOKIES.verifier)?.value;
+
+  if (!expectedState || !codeVerifier || returnedState !== expectedState) {
+    console.error("[WHOP OAUTH] State or PKCE cookie validation failed.", {
+      hasExpectedState: Boolean(expectedState),
+      hasReturnedState: Boolean(returnedState),
+      hasCodeVerifier: Boolean(codeVerifier),
+      stateMatches: Boolean(expectedState && returnedState === expectedState),
+    });
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=invalid_oauth_state", request.url)),
+    );
+  }
 
   let redirectUri: string;
   try {
@@ -20,45 +58,102 @@ export async function GET(request: Request) {
     );
   }
 
-  // 1. Token Exchange
-  const tokenRes = await fetch("https://api.whop.com/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "authorization_code",
-      code: code,
-      client_id: process.env.WHOP_CLIENT_ID,
-      client_secret: process.env.WHOP_CLIENT_SECRET,
-      redirect_uri: redirectUri,
-    }),
-  });
-
-  if (!tokenRes.ok) {
-     return NextResponse.redirect(new URL("/login?error=expired_code", request.url));
+  const clientId = process.env.WHOP_CLIENT_ID;
+  if (!clientId) {
+    console.error("[WHOP OAUTH] Missing WHOP_CLIENT_ID during callback.");
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=oauth_configuration", request.url)),
+    );
   }
 
-  const data = await tokenRes.json();
+  // 1. Exchange the single-use code using Whop's OAuth 2.1 PKCE contract.
+  let data: { access_token?: string };
+  try {
+    const tokenRes = await fetch("https://api.whop.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: redirectUri,
+        client_id: clientId,
+        code_verifier: codeVerifier,
+      }),
+      cache: "no-store",
+    });
+    const rawResponse = await tokenRes.text();
+
+    if (!tokenRes.ok) {
+      console.error("[WHOP OAUTH] Token exchange rejected by Whop:", {
+        status: tokenRes.status,
+        statusText: tokenRes.statusText,
+        rawResponse,
+        redirectUri,
+        hasClientId: Boolean(clientId),
+        hasCodeVerifier: Boolean(codeVerifier),
+      });
+      return clearOAuthCookies(
+        NextResponse.redirect(
+          new URL("/login?error=token_exchange_failed", request.url),
+        ),
+      );
+    }
+
+    try {
+      data = JSON.parse(rawResponse) as { access_token?: string };
+    } catch (error) {
+      console.error("[WHOP OAUTH] Whop returned non-JSON token data:", {
+        rawResponse,
+        error,
+      });
+      return clearOAuthCookies(
+        NextResponse.redirect(
+          new URL("/login?error=invalid_token_response", request.url),
+        ),
+      );
+    }
+  } catch (error) {
+    console.error("[WHOP OAUTH] Token exchange request failed:", error);
+    return clearOAuthCookies(
+      NextResponse.redirect(
+        new URL("/login?error=token_exchange_unavailable", request.url),
+      ),
+    );
+  }
+
   const accessToken = data.access_token;
 
   if (!accessToken) {
-    return NextResponse.redirect(new URL("/login?error=no_token", request.url));
+    console.error("[WHOP OAUTH] Successful token response omitted access_token.");
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=no_token", request.url)),
+    );
   }
 
   // 2. Fetch User Profile
-  const profileRes = await fetch("https://api.whop.com/v2/me", {
+  const profileRes = await fetch("https://api.whop.com/oauth/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
 
   if (!profileRes.ok) {
-    return NextResponse.redirect(new URL("/login?error=profile_fetch_failed", request.url));
+    const rawResponse = await profileRes.text();
+    console.error("[WHOP OAUTH] Userinfo request failed:", {
+      status: profileRes.status,
+      rawResponse,
+    });
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=profile_fetch_failed", request.url)),
+    );
   }
 
   const profileData = await profileRes.json();
-  const whopId = profileData.id || profileData.data?.id;
+  const whopId = profileData.sub || profileData.id || profileData.data?.id;
   const email = profileData.email || profileData.data?.email;
 
   if (!whopId || !email) {
-    return NextResponse.redirect(new URL("/login?error=invalid_profile", request.url));
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=invalid_profile", request.url)),
+    );
   }
 
   // 3. Merge with any user created concurrently by a checkout webhook.
@@ -68,8 +163,8 @@ export async function GET(request: Request) {
     user = await mergeWhopUser({ whopId, email });
   } catch (error) {
     console.error("[WHOP OAUTH] Failed to merge user:", error);
-    return NextResponse.redirect(
-      new URL("/login?error=user_sync_failed", request.url),
+    return clearOAuthCookies(
+      NextResponse.redirect(new URL("/login?error=user_sync_failed", request.url)),
     );
   }
 
@@ -84,5 +179,5 @@ export async function GET(request: Request) {
   response.cookies.set("tier", effectiveTier, { path: "/" }); 
   response.cookies.set("user_email", email, { httpOnly: true, path: "/" });
   
-  return response;
+  return clearOAuthCookies(response);
 }

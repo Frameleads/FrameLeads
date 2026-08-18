@@ -1,5 +1,26 @@
 const WHOP_CALLBACK_PATH = "/api/auth/callback";
 
+export const WHOP_OAUTH_COOKIES = {
+  state: "whop_oauth_state",
+  verifier: "whop_oauth_verifier",
+} as const;
+
+function base64Url(bytes: Uint8Array) {
+  return Buffer.from(bytes).toString("base64url");
+}
+
+function randomString(length: number) {
+  return base64Url(crypto.getRandomValues(new Uint8Array(length)));
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return base64Url(new Uint8Array(digest));
+}
+
 function configuredAppOrigin() {
   const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
   if (!configuredUrl) return null;
@@ -43,4 +64,25 @@ export function getWhopRedirectUri(request: Request) {
 
   const requestOrigin = new URL(request.url).origin;
   return new URL(WHOP_CALLBACK_PATH, appOrigin || requestOrigin).toString();
+}
+
+export async function createWhopAuthorizationUrl(
+  clientId: string,
+  redirectUri: string,
+) {
+  const verifier = randomString(32);
+  const state = randomString(24);
+  const nonce = randomString(24);
+  const authorizationUrl = new URL("https://api.whop.com/oauth/authorize");
+
+  authorizationUrl.searchParams.set("response_type", "code");
+  authorizationUrl.searchParams.set("client_id", clientId);
+  authorizationUrl.searchParams.set("redirect_uri", redirectUri);
+  authorizationUrl.searchParams.set("scope", "openid profile email");
+  authorizationUrl.searchParams.set("state", state);
+  authorizationUrl.searchParams.set("nonce", nonce);
+  authorizationUrl.searchParams.set("code_challenge", await sha256(verifier));
+  authorizationUrl.searchParams.set("code_challenge_method", "S256");
+
+  return { authorizationUrl, verifier, state };
 }
