@@ -507,7 +507,7 @@ useEffect(() => {
             </span>
           )}
         </div>
-        <div className="flex-1 max-h-[40vh] overflow-y-auto md:max-h-none md:overflow-visible divide-y divide-border/30">
+        <div className="flex-1 max-h-[40vh] overflow-y-auto md:max-h-[70vh] md:overflow-y-auto custom-scrollbar divide-y divide-border/30">
           {leads.map((lead) => {
             const status = getStatus(lead);
             const isActive = lead.lead_id === selectedId;

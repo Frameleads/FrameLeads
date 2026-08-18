@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { 
+import {
   Rocket, 
   Key, 
   Hash, 
@@ -11,10 +11,12 @@ import {
   CheckCircle2,
   Inbox
 } from "lucide-react";
+import { useEnterprisePaywallLocked } from "@/components/EnterprisePaywall";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function DeployPage() {
+  const isEnterpriseLocked = useEnterprisePaywallLocked();
   const [batchId, setBatchId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [campaignId, setCampaignId] = useState("");
@@ -77,7 +79,9 @@ export default function DeployPage() {
 
   // ── Deploy Form ───────────────────────────────────────────────────
 
-  const displayBatchId = batchId;
+  // Locked tiers receive the real Deploy form as a non-interactive preview
+  // beneath the Enterprise paywall, even when no batch exists in this session.
+  const displayBatchId = batchId || (isEnterpriseLocked ? "enterprise_preview" : null);
 
   if (!displayBatchId) {
     return (

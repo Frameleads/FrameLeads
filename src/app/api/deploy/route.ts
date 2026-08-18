@@ -9,11 +9,11 @@ import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-import { requireMinimumCoreTier } from '@/lib/auth-guard';
+import { requireEnterpriseTier } from '@/lib/auth-guard';
 
 export async function POST(req: Request) {
   try {
-    const authError = await requireMinimumCoreTier();
+    const authError = await requireEnterpriseTier();
     if (authError) return authError;
 
     // We expect 'platform' ('smartlead' or 'instantly') and the actual 'leads' array

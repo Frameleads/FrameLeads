@@ -1,10 +1,9 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import EnterprisePaywall from "@/components/EnterprisePaywall";
 
 export const dynamic = "force-dynamic";
-
-const DEPLOY_TIERS = new Set(["CORE", "ENTERPRISE"]);
 
 export default async function DeployAccessLayout({
   children,
@@ -24,9 +23,13 @@ export default async function DeployAccessLayout({
     select: { tier: true },
   });
 
-  if (!user || !DEPLOY_TIERS.has(user.tier)) {
-    redirect("/dashboard/ingestion?error=deploy_requires_core");
+  if (!user) {
+    redirect("/login");
   }
 
-  return children;
+  return (
+    <EnterprisePaywall userTier={user.tier} featureName="Deploy feature">
+      {children}
+    </EnterprisePaywall>
+  );
 }
