@@ -36,6 +36,12 @@ Output ONLY valid JSON in this exact format:
 
 Ensure all four channels adhere to our core copy principles: 6th-grade English, concrete metrics ($15k–$67k loss / Zapier timeout errors), and zero corporate jargon.
 
+STRICT EMAIL SUBJECT FORMAT:
+- Output the subject line exactly once, only in "email.subject", with no "Subject:" prefix.
+- The rendered email format is the subject on the first line, followed by one blank line, then the email body.
+- NEVER repeat the subject line in "email.paragraphs" or anywhere in the email body.
+- DO NOT output the word "Subject:" inside the email body.
+
 You are a strict JSON generator. Output ONLY a valid raw JSON object. Do not include markdown code blocks, preambles, or postscripts.`;
 
 function extractJsonObject(rawText: string): any {
@@ -49,6 +55,42 @@ function extractJsonObject(rawText: string): any {
   
   const jsonString = cleaned.substring(firstBrace, lastBrace + 1);
   return JSON.parse(jsonString);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeEmailSubject(subject: unknown): string {
+  if (typeof subject !== 'string') return '';
+  return subject.replace(/^\s*subject\s*:\s*/i, '').trim();
+}
+
+function sanitizeLeadingEmailSubject(body: unknown, subject: string): string {
+  if (typeof body !== 'string') return '';
+
+  let sanitized = body.trimStart();
+  const normalizedSubject = normalizeEmailSubject(subject);
+  const labeledSubjectLine = /^subject\s*:\s*[^\r\n]*(?:\r?\n+|$)/i;
+  const exactSubjectLine = normalizedSubject
+    ? new RegExp(
+        `^["'\\u201c\\u201d]?${escapeRegExp(normalizedSubject)}["'\\u201c\\u201d]?[ \\t]*(?:\\r?\\n+|$)`,
+        'i'
+      )
+    : null;
+
+  // Strip only contiguous leading subject lines. A legitimate mention of the
+  // subject later in the email body remains untouched.
+  for (let pass = 0; pass < 10; pass++) {
+    const before = sanitized;
+    sanitized = sanitized.replace(labeledSubjectLine, '').trimStart();
+    if (exactSubjectLine) {
+      sanitized = sanitized.replace(exactSubjectLine, '').trimStart();
+    }
+    if (sanitized === before) break;
+  }
+
+  return sanitized.trim();
 }
 
 // 5 Distinct Architectural Lenses to Guarantee 100% Unique Variations on Every Click:
@@ -138,6 +180,13 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               if (generated.email && Array.isArray(generated.email.paragraphs)) {
                 generated.email.body = generated.email.paragraphs.join('\n\n');
               }
+              if (generated.email && typeof generated.email === 'object') {
+                generated.email.subject = normalizeEmailSubject(generated.email.subject);
+                generated.email.body = sanitizeLeadingEmailSubject(
+                  generated.email.body,
+                  generated.email.subject
+                );
+              }
               // Prevent crashes during validation if the LLM drops these keys based on the rigid prompt
               generated.linkedin = generated.linkedin || { body: "" };
               generated.coldCall = generated.coldCall || { body: "" };
@@ -168,6 +217,11 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
             }
 
             if (generated.email && generated.email.body) {
+              generated.email.subject = normalizeEmailSubject(generated.email.subject);
+              generated.email.body = sanitizeLeadingEmailSubject(
+                generated.email.body,
+                generated.email.subject
+              );
               const rawPsLine = generated.psLine || "Here is a quick visual breakdown of this architecture in action.";
               const cleanPsLine = rawPsLine.replace(/^(P\.S\.|PS:|P\.S|PS)\s*/i, '').trim();
               const finalEmailBody = `${generated.email.body}\n\nBest,\n${senderName}\n${companyName}\n\nP.S. ${cleanPsLine}`;
