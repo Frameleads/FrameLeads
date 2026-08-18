@@ -102,16 +102,15 @@ export default function DashboardLayout({
 
       {/* Footer */}
       <div className="px-3 py-4 border-t border-border/50 shrink-0">
-        <button
-          onClick={() => {
-            setIsOpen(false);
-            window.location.href = "/login";
-          }}
+        <Link
+          href="/login"
+          prefetch={true}
+          onClick={() => setIsOpen(false)}
           className="flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150 w-full"
         >
           <LogOut className="w-5 h-5" />
           Sign Out
-        </button>
+        </Link>
       </div>
     </>
   );
@@ -119,7 +118,7 @@ export default function DashboardLayout({
   return (
     <div className="min-h-screen bg-background">
       {/* ─── Mobile Top Bar (visible < md) ─────────────────────────── */}
-      <div className="fixed top-0 left-0 right-0 z-50 h-16 border-b border-border/50 bg-card/80 backdrop-blur-xl flex items-center justify-between px-4 md:hidden">
+      <div className="fixed top-0 left-0 right-0 z-[100] h-16 border-b border-border/50 bg-card/80 backdrop-blur-xl flex items-center justify-between px-4 md:hidden">
         <div className="flex items-center gap-3">
           <div className="bg-[#1A1A1A] border border-[#242424] p-1.5 rounded-lg">
             <Zap className="text-[#FF5A1F] w-4 h-4" />
@@ -142,11 +141,11 @@ export default function DashboardLayout({
         <>
           {/* Backdrop */}
           <div
-            className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden"
+            className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-sm md:hidden"
             onClick={() => setIsOpen(false)}
           />
           {/* Slide-in panel */}
-          <aside className="fixed inset-y-0 left-0 z-50 w-72 bg-card/95 backdrop-blur-xl border-r border-border/50 flex flex-col md:hidden animate-in slide-in-from-left duration-200">
+          <aside className="fixed inset-y-0 left-0 z-[100] w-72 bg-card/95 backdrop-blur-xl border-r border-border/50 flex flex-col md:hidden animate-in slide-in-from-left duration-200">
             {SidebarContent}
           </aside>
         </>
