@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { mergeWhopUser } from "@/lib/whop-user";
 
 type WhopUser = {
   id?: string;
@@ -138,26 +139,7 @@ export async function POST(req: Request) {
 
     if (ACTIVE_EVENTS.has(eventType)) {
       const subscription = getSubscription(payload);
-      const existingUser = await prisma.user.findFirst({
-        where: { OR: [{ whopId: whopUserId }, { email }] },
-        select: { id: true },
-      });
-
-      if (existingUser) {
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { whopId: whopUserId, email, ...subscription },
-        });
-      } else {
-        await prisma.user.create({
-          data: {
-            whopId: whopUserId,
-            email,
-            ...subscription,
-            leadsProcessed: 0,
-          },
-        });
-      }
+      await mergeWhopUser({ whopId: whopUserId, email, subscription });
 
       console.log(
         `[WHOP WEBHOOK] Synced ${email} as ${subscription.tier} from ${eventType}.`,

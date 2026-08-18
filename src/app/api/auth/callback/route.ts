@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { mergeWhopUser } from "@/lib/whop-user";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +50,17 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL("/login?error=invalid_profile", request.url));
   }
 
-  // 3. Prisma Upsert
-  const user = await prisma.user.upsert({
-    where: { whopId: whopId },
-    update: {},
-    create: { email, whopId, tier: 'FREE', monthlyQuota: 0, leadsProcessed: 0 }
-  });
+  // 3. Merge with any user created concurrently by a checkout webhook.
+  // Omitting subscription here preserves the paid tier written by the webhook.
+  let user: Awaited<ReturnType<typeof mergeWhopUser>>;
+  try {
+    user = await mergeWhopUser({ whopId, email });
+  } catch (error) {
+    console.error("[WHOP OAUTH] Failed to merge user:", error);
+    return NextResponse.redirect(
+      new URL("/login?error=user_sync_failed", request.url),
+    );
+  }
 
   // ADMIN OVERRIDE INJECTION
   const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
