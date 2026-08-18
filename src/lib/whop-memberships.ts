@@ -155,6 +155,35 @@ export async function verifyWhopSubscription(
       membership.status?.toLowerCase() || "",
     );
 
+    if (!belongsToUser) {
+      console.log("[WHOP DEBUG] Rejected: User ID mismatch", {
+        membershipId: membership.id || null,
+        expectedUserId: whopUserId,
+        actualUserIds: [
+          membership.user_id,
+          expandedUserId,
+          compactUserId,
+        ].filter(Boolean),
+      });
+    }
+
+    if (!belongsToCompany) {
+      console.log("[WHOP DEBUG] Rejected: Company ID mismatch", {
+        membershipId: membership.id || null,
+        expectedCompanyId: companyId || null,
+        actualCompanyIds: membershipCompanyIds,
+      });
+    }
+
+    if (!isActive) {
+      console.log("[WHOP DEBUG] Rejected: Status was", {
+        membershipId: membership.id || null,
+        actualStatus: membership.status || null,
+        normalizedStatus: membership.status?.toLowerCase() || null,
+        allowedStatuses: Array.from(ACTIVE_MEMBERSHIP_STATUSES),
+      });
+    }
+
     if (!belongsToUser || !belongsToCompany || !isActive) {
       console.warn(
         "[WHOP DEBUG] Membership filtered out:",
