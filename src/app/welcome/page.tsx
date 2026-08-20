@@ -10,7 +10,7 @@ export default function WelcomePortalPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FF5A1F]/15 via-[#0A0A0A]/80 to-[#0A0A0A] text-gray-200 flex flex-col justify-between overflow-hidden font-sans select-none">
+    <div className="relative min-h-screen overflow-hidden bg-[#0A0A0A] text-gray-200 flex flex-col justify-between font-sans select-none">
       
       {/* Background Architectural Grid (Matches Notion Framework Visual) */}
       <div 
@@ -24,19 +24,19 @@ export default function WelcomePortalPage() {
         }}
       />
 
-      {/* Subtle Radial Orange Glow in Center */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-[#FF5A1F]/10 to-transparent rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-[#FF5A1F]/20 rounded-full blur-[140px] pointer-events-none" />
+      <div className="absolute -top-32 -right-32 w-[400px] h-[400px] bg-[#FF5A1F]/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main Center Stage (The Gateway) */}
       <main className="relative z-10 flex-grow flex flex-col items-center justify-center text-center px-4 sm:px-6 max-w-4xl mx-auto my-auto">
         
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
-          <img src="/FRAMELEADS.png" alt="FrameLeads" className="w-14 h-14 object-contain mx-auto mb-6" />
+          <img src="/FRAMELEADS.png" alt="FrameLeads" className="w-16 h-16 object-contain mx-auto mb-6 rounded-2xl" />
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
           </span>
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white drop-shadow-[0_0_40px_rgba(255,90,31,0.6)] leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-[#FF5A1F] drop-shadow-[0_0_35px_rgba(255,90,31,0.5)] leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             Your outbound architecture is live.
           </h1>
         </div>
