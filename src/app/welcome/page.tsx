@@ -10,14 +10,27 @@ export default function WelcomePortalPage() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#0A0A0A] text-gray-200 flex flex-col justify-between font-sans select-none">
-      
-      {/* Noise Texture Overlay */}
-      <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+    <div className="relative w-full min-h-screen overflow-hidden bg-[#000000] flex items-center justify-center">
+      {/* Deep Void Base */}
+      <div className="absolute inset-0 bg-[#000000]"></div>
 
-      {/* Organic Ambient Glow Orbs */}
-      <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-[#FF5A1F]/15 rounded-full blur-[140px] pointer-events-none" />
-      <div className="absolute -top-32 -right-32 w-[400px] h-[400px] bg-[#FF5A1F]/10 rounded-full blur-[120px] pointer-events-none" />
+      {/* Subdued Mesh Orbs */}
+      <div className="absolute top-[-20%] left-[-10%] w-[50vw] h-[50vw] bg-[#FF5A1F] rounded-full mix-blend-screen filter blur-[200px] opacity-[0.12] animate-pulse pointer-events-none"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[60vw] h-[60vw] bg-[#1A1A1A] rounded-full mix-blend-normal filter blur-[150px] opacity-90 pointer-events-none"></div>
+      <div className="absolute top-[20%] right-[10%] w-[40vw] h-[40vw] bg-[#242424] rounded-full mix-blend-normal filter blur-[150px] opacity-80 pointer-events-none"></div>
+      <div className="absolute bottom-[10%] left-[20%] w-[30vw] h-[30vw] bg-[#888888] rounded-full mix-blend-overlay filter blur-[150px] opacity-10 pointer-events-none"></div>
+
+      {/* Micro-Fine Noise Texture */}
+      <div
+        className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30"
+        style={{
+          backgroundImage: "url('data:image/svg+xml;utf8,%3Csvg viewBox=%220 0 256 256%22 width=%22256%22 height=%22256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noise%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%221.5%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noise)%22/%3E%3C/svg%3E')",
+          backgroundRepeat: "repeat",
+          backgroundSize: "128px 128px"
+        }}
+      ></div>
+
+      <div className="relative z-10 w-full min-h-screen flex flex-col justify-between text-gray-200 font-sans select-none">
 
       {/* Main Center Stage (The Gateway) */}
       <main className="relative z-10 flex-grow flex flex-col items-center justify-center text-center px-4 sm:px-6 max-w-4xl mx-auto my-auto">
@@ -64,6 +77,7 @@ export default function WelcomePortalPage() {
         </div>
       </footer>
 
+      </div>
     </div>
   );
 }
