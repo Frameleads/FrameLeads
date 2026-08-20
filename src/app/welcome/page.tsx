@@ -12,19 +12,11 @@ export default function WelcomePortalPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0A0A0A] text-gray-200 flex flex-col justify-between font-sans select-none">
       
-      {/* Background Architectural Grid (Matches Notion Framework Visual) */}
-      <div 
-        className="absolute inset-0 pointer-events-none opacity-20"
-        style={{
-          backgroundImage: `
-            linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-            linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px)
-          `,
-          backgroundSize: '40px 40px'
-        }}
-      />
+      {/* Noise Texture Overlay */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
 
-      <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-[#FF5A1F]/20 rounded-full blur-[140px] pointer-events-none" />
+      {/* Organic Ambient Glow Orbs */}
+      <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-[#FF5A1F]/15 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute -top-32 -right-32 w-[400px] h-[400px] bg-[#FF5A1F]/10 rounded-full blur-[120px] pointer-events-none" />
 
       {/* Main Center Stage (The Gateway) */}
@@ -32,11 +24,13 @@ export default function WelcomePortalPage() {
         
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
-          <img src="/FRAMELEADS.png" alt="FrameLeads" className="w-16 h-16 object-contain mx-auto mb-6 rounded-2xl" />
+          <div className="flex items-center justify-center w-16 h-16 bg-[#141414] rounded-2xl border border-[#888888] shadow-2xl mx-auto mb-6">
+            <img src="/FRAMELEADS.png" alt="FrameLeads" className="w-8 h-8 object-contain" />
+          </div>
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
           </span>
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-[#FF5A1F] drop-shadow-[0_0_35px_rgba(255,90,31,0.5)] leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white drop-shadow-[0_0_20px_rgba(255,90,31,0.25)] leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             Your outbound architecture is live.
           </h1>
         </div>
