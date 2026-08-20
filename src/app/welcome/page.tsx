@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ShieldCheck, ArrowRight, Terminal } from 'lucide-react';
+import { ArrowRight, Terminal } from 'lucide-react';
 
 export default function WelcomePortalPage() {
   const router = useRouter();
@@ -29,13 +29,7 @@ export default function WelcomePortalPage() {
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-[#FF5A1F]/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Status Bar */}
-      <header className="relative z-10 w-full px-8 py-6 flex justify-between items-center border-b border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md">
-        <div className="flex items-center gap-2.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-[#FF5A1F] animate-pulse" />
-          <span className="text-xs font-bold tracking-widest uppercase text-gray-400" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            FRAMELEADS // INFRASTRUCTURE
-          </span>
-        </div>
+      <header className="relative z-10 w-full px-8 py-6 flex justify-end items-center border-b border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md">
         <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500 font-mono">
           <Terminal className="w-3.5 h-3.5 text-[#FF5A1F]" />
           <span>VELVET ROPE GOVERNANCE: ENABLED</span>
@@ -45,16 +39,11 @@ export default function WelcomePortalPage() {
       {/* Main Center Stage (The Gateway) */}
       <main className="relative z-10 flex-grow flex flex-col items-center justify-center text-center px-4 sm:px-6 max-w-4xl mx-auto my-auto">
         
-        {/* Top Terminal Tag Badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#121212] border border-gray-800 mb-8 shadow-inner">
-          <ShieldCheck className="w-4 h-4 text-[#FF5A1F]" />
-          <span className="text-xs uppercase tracking-widest text-gray-300 font-medium" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            SYSTEM STATUS: SECURE • EXECUTIVE OVERRIDE ACTIVE
-          </span>
-        </div>
-
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
+          <div className="flex items-center justify-center w-16 h-16 bg-[#181818] rounded-2xl border border-white/5 shadow-lg mx-auto mb-6">
+            <img src="/FrameLeads Logo.png" alt="FrameLeads Logo" className="w-8 h-8 object-contain" />
+          </div>
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
           </span>
@@ -78,11 +67,6 @@ export default function WelcomePortalPage() {
           <span>INITIALIZE COMMAND CENTER</span>
           <ArrowRight className="w-5 h-5 transition-transform duration-200 group-hover:translate-x-1" />
         </button>
-
-        {/* Micro Trust Note Below CTA (Includes Pain 3: No Brittle Zapier Chains) */}
-        <p className="mt-6 text-xs text-gray-600 tracking-wider uppercase font-mono">
-          NO MANUAL ROUTING REQUIRED  •  NO BRITTLE ZAPIER CHAINS  •  INSTANT OMNICHANNEL SYNTHESIS
-        </p>
 
       </main>
 
