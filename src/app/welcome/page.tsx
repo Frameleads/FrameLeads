@@ -24,13 +24,19 @@ export default function WelcomePortalPage() {
         
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
-          <div className="flex items-center justify-center w-16 h-16 bg-[#141414] rounded-2xl border border-[#888888] shadow-2xl mx-auto mb-6">
-            <img src="/FRAMELEADS.png" alt="FrameLeads" className="w-8 h-8 object-contain" />
-          </div>
+          <img
+            src="/FrameLeads Logo_3.png"
+            alt="FrameLeads"
+            className="w-16 h-16 mx-auto mb-6 rounded-2xl shadow-2xl object-cover"
+            style={{ border: '1px solid #888888' }}
+          />
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
           </span>
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white drop-shadow-[0_0_20px_rgba(255,90,31,0.25)] leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+          <h1
+            className="text-4xl md:text-6xl font-bold text-center tracking-tight mb-4"
+            style={{ color: '#FF5A1F', textShadow: '0px 0px 35px rgba(255, 90, 31, 0.4)' }}
+          >
             Your outbound architecture is live.
           </h1>
         </div>
