@@ -20,11 +20,11 @@ export default function WelcomePortalPage() {
       <div className="absolute top-[20%] right-[10%] w-[40vw] h-[40vw] bg-[#242424] rounded-full mix-blend-normal filter blur-[150px] opacity-80 pointer-events-none"></div>
       <div className="absolute bottom-[10%] left-[20%] w-[30vw] h-[30vw] bg-[#888888] rounded-full mix-blend-overlay filter blur-[150px] opacity-10 pointer-events-none"></div>
 
-      {/* Micro-Fine Noise Texture */}
+      {/* Micro-Fine Noise Texture - Softened */}
       <div
-        className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-30"
+        className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-[0.12]"
         style={{
-          backgroundImage: "url('data:image/svg+xml;utf8,%3Csvg viewBox=%220 0 256 256%22 width=%22256%22 height=%22256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noise%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%221.5%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noise)%22/%3E%3C/svg%3E')",
+          backgroundImage: "url('data:image/svg+xml;utf8,%3Csvg viewBox=%220 0 256 256%22 width=%22256%22 height=%22256%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noise%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.65%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noise)%22/%3E%3C/svg%3E')",
           backgroundRepeat: "repeat",
           backgroundSize: "128px 128px"
         }}
