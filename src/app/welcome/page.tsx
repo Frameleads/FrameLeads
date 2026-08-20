@@ -26,9 +26,8 @@ export default function WelcomePortalPage() {
         <div className="mb-4">
           <img
             src="/FrameLeads Logo.png"
-            alt="FrameLeads"
-            className="w-16 h-16 mx-auto mb-6 rounded-2xl shadow-2xl object-cover"
-            style={{ border: '1px solid #888888' }}
+            alt="FrameLeads Icon"
+            className="w-16 h-16 mx-auto mb-6 rounded-2xl object-cover shadow-[0_0_20px_rgba(0,0,0,0.5)] border-none outline-none"
           />
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
