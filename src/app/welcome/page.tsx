@@ -25,7 +25,7 @@ export default function WelcomePortalPage() {
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
           <img
-            src="/FrameLeads Logo_3.png"
+            src="/FrameLeads Logo.png"
             alt="FrameLeads"
             className="w-16 h-16 mx-auto mb-6 rounded-2xl shadow-2xl object-cover"
             style={{ border: '1px solid #888888' }}
@@ -34,7 +34,7 @@ export default function WelcomePortalPage() {
             WELCOME TO FRAMELEADS
           </span>
           <h1
-            className="text-4xl md:text-6xl font-bold text-center tracking-tight mb-4"
+            className="text-4xl md:text-5xl font-bold text-center tracking-tight mb-6 max-w-3xl mx-auto"
             style={{ color: '#FF5A1F', textShadow: '0px 0px 35px rgba(255, 90, 31, 0.4)' }}
           >
             Your outbound architecture is live.
