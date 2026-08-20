@@ -1,7 +1,6 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Terminal } from 'lucide-react';
 
 export default function WelcomePortalPage() {
   const router = useRouter();
@@ -11,7 +10,7 @@ export default function WelcomePortalPage() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#0a0a0a] text-gray-200 flex flex-col justify-between overflow-hidden font-sans select-none">
+    <div className="relative min-h-screen bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#FF5A1F]/15 via-[#0A0A0A]/80 to-[#0A0A0A] text-gray-200 flex flex-col justify-between overflow-hidden font-sans select-none">
       
       {/* Background Architectural Grid (Matches Notion Framework Visual) */}
       <div 
@@ -28,14 +27,6 @@ export default function WelcomePortalPage() {
       {/* Subtle Radial Orange Glow in Center */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-gradient-to-tr from-[#FF5A1F]/10 to-transparent rounded-full blur-3xl pointer-events-none" />
 
-      {/* Top Status Bar */}
-      <header className="relative z-10 w-full px-8 py-6 flex justify-end items-center border-b border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md">
-        <div className="hidden sm:flex items-center gap-2 text-xs text-gray-500 font-mono">
-          <Terminal className="w-3.5 h-3.5 text-[#FF5A1F]" />
-          <span>VELVET ROPE GOVERNANCE: ENABLED</span>
-        </div>
-      </header>
-
       {/* Main Center Stage (The Gateway) */}
       <main className="relative z-10 flex-grow flex flex-col items-center justify-center text-center px-4 sm:px-6 max-w-4xl mx-auto my-auto">
         
@@ -48,24 +39,22 @@ export default function WelcomePortalPage() {
             WELCOME TO FRAMELEADS
           </span>
           <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            Autonomous Outbound. <br className="hidden sm:block" />
-            <span className="text-[#FF5A1F]">Zero Brand Risk.</span>
+            Your outbound architecture is live.
           </h1>
         </div>
 
         {/* Visceral Pain / Worldview Slogan (Aligned to singular $40k deal) */}
         <p className="max-w-2xl text-base sm:text-lg text-gray-400 mt-6 mb-10 leading-relaxed font-normal" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Stop renting SDR memory and triaging edge-cases manually. Initialize your campaign context once, deploy across 4 channels, and let the Executive Override Queue protect a $40k deal.
+          Stop babysitting your inbox. Connect your sending tools, drop your leads, and let the engine handle the endless follow-ups. You only step in when a whale replies.
         </p>
 
         {/* Primary Action Button */}
         <button
           onClick={handleEnterApp}
-          className="group relative inline-flex items-center justify-center gap-3 px-10 py-5 rounded-xl bg-[#FF5A1F] hover:bg-[#ea580c] text-white font-bold text-base sm:text-lg tracking-wide uppercase transition-all duration-200 shadow-[0_0_30px_rgba(255,90,31,0.3)] hover:shadow-[0_0_45px_rgba(255,90,31,0.5)] active:scale-[0.98]"
+          className="group relative inline-flex items-center justify-center gap-3 px-10 py-5 rounded-xl bg-[#FF5A1F] hover:bg-[#ea580c] text-white font-bold text-base sm:text-lg tracking-wide transition-all duration-200 shadow-[0_0_30px_rgba(255,90,31,0.3)] hover:shadow-[0_0_45px_rgba(255,90,31,0.5)] active:scale-[0.98]"
           style={{ fontFamily: 'Oxanium, sans-serif' }}
         >
-          <span>INITIALIZE COMMAND CENTER</span>
-          <ArrowRight className="w-5 h-5 transition-transform duration-200 group-hover:translate-x-1" />
+          <span>Enter Workspace →</span>
         </button>
 
       </main>
