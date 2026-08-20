@@ -32,13 +32,13 @@ export default function WelcomePortalPage() {
         
         {/* Brand Header / Logo Identifier */}
         <div className="mb-4">
-          <div className="flex items-center justify-center w-16 h-16 bg-[#181818] rounded-2xl border border-white/5 shadow-lg mx-auto mb-6">
+          <div className="flex items-center justify-center w-16 h-16 bg-[#141414] rounded-2xl shadow-xl mx-auto mb-6">
             <img src="/FrameLeads Logo.png" alt="FrameLeads Logo" className="w-8 h-8 object-contain" />
           </div>
           <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             WELCOME TO FRAMELEADS
           </span>
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-none" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-white leading-none drop-shadow-[0_0_35px_rgba(255,90,31,0.35)]" style={{ fontFamily: 'Oxanium, sans-serif' }}>
             Your outbound architecture is live.
           </h1>
         </div>
@@ -51,10 +51,10 @@ export default function WelcomePortalPage() {
         {/* Primary Action Button */}
         <button
           onClick={handleEnterApp}
-          className="group relative inline-flex items-center justify-center gap-3 px-10 py-5 rounded-xl bg-[#FF5A1F] hover:bg-[#ea580c] text-white font-bold text-base sm:text-lg tracking-wide transition-all duration-200 shadow-[0_0_30px_rgba(255,90,31,0.3)] hover:shadow-[0_0_45px_rgba(255,90,31,0.5)] active:scale-[0.98]"
+          className="flex items-center justify-center text-center px-8 py-4 bg-[#FF5A1F] text-white font-medium rounded-xl shadow-[0_10px_30px_-10px_rgba(255,90,31,0.5)]"
           style={{ fontFamily: 'Oxanium, sans-serif' }}
         >
-          <span>Enter Workspace →</span>
+          <span>Enter Workspace</span>
         </button>
 
       </main>
