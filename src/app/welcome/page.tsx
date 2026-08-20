@@ -22,23 +22,25 @@ export default function WelcomePortalPage() {
       {/* Main Center Stage (The Gateway) */}
       <main className="relative z-10 flex-grow flex flex-col items-center justify-center text-center px-4 sm:px-6 max-w-4xl mx-auto my-auto">
         
-        {/* Brand Header / Logo Identifier */}
-        <div className="mb-4">
-          <span className="text-sm font-bold tracking-[0.3em] uppercase text-gray-500 block mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            WELCOME TO FRAMELEADS
-          </span>
+        <div className="flex flex-col items-center justify-center w-full px-4 mt-8">
+          {/* Eyebrow */}
+          <p className="text-sm font-bold tracking-[0.2em] text-[#888888] uppercase text-center mb-6">
+            Welcome to FrameLeads
+          </p>
+
+          {/* Headline with Hard Line Break */}
           <h1
-            className="text-5xl md:text-6xl font-bold text-center tracking-tight mt-6 mb-6 max-w-4xl mx-auto leading-tight"
+            className="text-5xl md:text-6xl font-bold text-center tracking-tight mb-8 leading-[1.1]"
             style={{ color: '#FF5A1F', textShadow: '0px 0px 35px rgba(255, 90, 31, 0.4)' }}
           >
-            Your outbound architecture is live.
+            Your outbound <br /> architecture is live.
           </h1>
-        </div>
 
-        {/* Visceral Pain / Worldview Slogan (Aligned to singular $40k deal) */}
-        <p className="max-w-2xl text-base sm:text-lg text-gray-400 mt-6 mb-10 leading-relaxed font-normal" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          Stop babysitting your inbox. Connect your sending tools, drop your leads, and let the engine handle the endless follow-ups. You only step in when a whale replies.
-        </p>
+          {/* Subheadline */}
+          <p className="text-gray-400 text-center max-w-2xl mx-auto text-lg mb-12 leading-relaxed">
+            Stop babysitting your inbox. Connect your sending tools, drop your leads, and let the engine handle the endless follow-ups. You only step in when a whale replies.
+          </p>
+        </div>
 
         {/* Primary Action Button */}
         <button
