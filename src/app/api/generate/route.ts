@@ -36,6 +36,12 @@ Output ONLY valid JSON in this exact format:
 
 Ensure all four channels adhere to our core copy principles: 6th-grade English, concrete metrics ($15k–$67k loss / Zapier timeout errors), and zero corporate jargon.
 
+CRITICAL SYSTEM DIRECTIVES (STRICTLY ENFORCED):
+
+1. Zero Hallucinated Context: The core pain point you address MUST be 100% derived from the [Incident_Details] variable. If the incident details mention manual labor, you only discuss the pain of manual labor. DO NOT invent, assume, or hallucinate that the prospect uses specific software (e.g., Zapier, Make, Hubspot, Salesforce) unless it is explicitly stated in the incident.
+2. Abolish Fake Empathy: You are forbidden from using generic B2B pleasantries. Do not start with phrases like "I noticed you are growing fast," or "Congrats on the scaling." The first sentence must immediately and cleanly address the operational reality extracted from the incident.
+3. No Fabricated Math: Do not invent specific monetary losses (e.g., "$28k/month"). Instead, frame the loss through universal operational metrics, such as "silent pipeline decay," "unnecessary manual overhead," or "wasted hours in triage," unless a specific dollar amount is provided in the raw data.
+
 STRICT EMAIL SUBJECT FORMAT:
 - Output the subject line exactly once, only in "email.subject", with no "Subject:" prefix.
 - The rendered email format is the subject on the first line, followed by one blank line, then the email body.
