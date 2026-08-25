@@ -99,15 +99,6 @@ function sanitizeLeadingEmailSubject(body: unknown, subject: string): string {
   return sanitized.trim();
 }
 
-// 5 Distinct Architectural Lenses to Guarantee 100% Unique Variations on Every Click:
-const REGEN_ANGLES = [
-  "Lens 1 (Executive Bandwidth): Focus heavily on how manual SDR triage drains founder cognitive capacity and acts like operator labor.",
-  "Lens 2 (Pipeline Fragility): Focus heavily on how qualified leads decay and lose intent during the gap between CRM handoffs.",
-  "Lens 3 (Unit Economics): Focus heavily on why hiring more headcount compounds management overhead without solving the bottleneck.",
-  "Lens 4 (Infrastructure vs Hacks): Focus heavily on why tape-and-glue Zapier/Make workflows fail silently at enterprise volume.",
-  "Lens 5 (Qualification Standards): Focus heavily on how automated triage systematizes high standards instead of diluting them across reps."
-];
-
 export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
@@ -148,7 +139,6 @@ export async function POST(req: Request) {
       processedLeads = await Promise.all(
         allowedLeads.map(async (lead: any, index: number) => {
           try {
-            const randomAngle = REGEN_ANGLES[Math.floor(Math.random() * REGEN_ANGLES.length)];
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
             const prompt = `Generate outreach for:
@@ -157,7 +147,7 @@ Company: ${lead.company_name || 'Unknown'}
 Context: We provide autonomous AI acquisition infrastructure.
 Preferred CTA Style: "${preferredCtaStyle}"
 Unique Generation Seed: ${uniqueSeed}
-CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. Focus specifically through this architectural lens: "${randomAngle}". End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}". Ensure you use a No-Oriented/Permission-based question.
+CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}". Ensure you use a No-Oriented/Permission-based question.
 WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This is a hard constraint.`;
 
             // ── WORD-COUNT GATE: Retry loop ─────────────────────────
