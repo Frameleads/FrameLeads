@@ -27,6 +27,7 @@ interface LeadPayload {
   first_name: string;
   company_name: string;
   website_url: string | null;
+  linkedin_url: string | null;
   provided_incident_details: string | null;
   enrichment_status: "skipped_not_needed" | "pending_scrape";
   generation_status: "queued" | "waiting_on_enrichment";
@@ -43,12 +44,18 @@ interface BatchPayload {
   leads: LeadPayload[];
 }
 
+interface LeadListOption {
+  id: string;
+  name: string;
+}
+
 // ── Constants ───────────────────────────────────────────────────────────
 
 const SCHEMA_FIELDS = [
   "first_name",
   "company_name",
   "website_url",
+  "linkedin_url",
   "provided_incident_details",
 ] as const;
 
@@ -58,6 +65,7 @@ const SCHEMA_LABELS: Record<SchemaField, string> = {
   first_name: "First Name",
   company_name: "Company Name",
   website_url: "Website URL",
+  linkedin_url: "LinkedIn URL",
   provided_incident_details: "Incident Details",
 };
 
@@ -77,11 +85,17 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     first_name: "",
     company_name: "",
     website_url: "",
+    linkedin_url: "",
     provided_incident_details: ""
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaignContext, setCampaignContext] = useState<any>(null);
+  const [availableLists, setAvailableLists] = useState<LeadListOption[]>([]);
+  const [selectedListId, setSelectedListId] = useState("");
+  const [newListName, setNewListName] = useState("");
+  const [isCreatingList, setIsCreatingList] = useState(false);
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
 
   const leadsGenerated = leadsProcessed;
 
@@ -95,6 +109,52 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       // ignore
     }
   }, []);
+
+  const loadLists = useCallback(async () => {
+    try {
+      const response = await fetch("/api/lists", { cache: "no-store" });
+      if (!response.ok) return;
+      const result = await response.json();
+      setAvailableLists(Array.isArray(result.lists) ? result.lists : []);
+    } catch {
+      // List selection is optional; ingestion remains available if this request fails.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLists();
+    window.addEventListener("frameleads:lists-changed", loadLists);
+    return () => window.removeEventListener("frameleads:lists-changed", loadLists);
+  }, [loadLists]);
+
+  const handleCreateList = async () => {
+    const name = newListName.trim();
+    if (!name) {
+      setError("Enter a name for the new destination list.");
+      return;
+    }
+
+    setIsCreatingList(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/lists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || "Failed to create list.");
+
+      setAvailableLists((current) => [result.list, ...current]);
+      setSelectedListId(result.list.id);
+      setNewListName("");
+      window.dispatchEvent(new Event("frameleads:lists-changed"));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Failed to create list.");
+    } finally {
+      setIsCreatingList(false);
+    }
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -154,10 +214,11 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
           first_name: "",
           company_name: "",
           website_url: "",
+          linkedin_url: "",
           provided_incident_details: ""
         };
 
-        const targetFields = ["first_name", "company_name", "website_url", "provided_incident_details"];
+        const targetFields = ["first_name", "company_name", "website_url", "linkedin_url", "provided_incident_details"];
         
         targetFields.forEach((schemaField) => {
           const match = headers.find((col) => {
@@ -213,6 +274,10 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         fieldMappings.website_url
           ? (row[fieldMappings.website_url] ?? "").trim() || null
           : null;
+      const linkedInUrl =
+        fieldMappings.linkedin_url
+          ? (row[fieldMappings.linkedin_url] ?? "").trim() || null
+          : null;
       const incidentDetails =
         fieldMappings.provided_incident_details
           ? (row[fieldMappings.provided_incident_details] ?? "").trim() || null
@@ -225,6 +290,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         first_name: firstName,
         company_name: companyName,
         website_url: websiteUrl,
+        linkedin_url: linkedInUrl,
         provided_incident_details: incidentDetails,
         enrichment_status: hasWebsite ? "pending_scrape" : "skipped_not_needed",
         generation_status: hasWebsite ? "waiting_on_enrichment" : "queued",
@@ -267,6 +333,8 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       leads: validLeads,
       creditsUsed: leadsGenerated,
       tier: userTier,
+      listId: selectedListId || null,
+      overwriteExisting,
     };
 
     // ── POST to backend ───────────────────────────────────────────
@@ -298,7 +366,9 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
 
       // Route to sandbox
       router.refresh();
-      router.push("/dashboard/sandbox");
+      router.push(selectedListId
+        ? `/dashboard/sandbox?list=${encodeURIComponent(selectedListId)}`
+        : "/dashboard/sandbox");
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "An unexpected error occurred."
@@ -466,6 +536,50 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
             </div>
           ))}
         </div>
+
+          <div className="px-6 pt-2">
+            <label htmlFor="destination-list" className="mb-2 block text-sm font-bold text-[#FFFFFF]">
+              Destination List (Optional)
+            </label>
+            <div className="flex flex-col gap-2 lg:flex-row">
+              <select
+                id="destination-list"
+                value={selectedListId}
+                onChange={(event) => setSelectedListId(event.target.value)}
+                className="h-11 min-w-0 flex-1 appearance-none rounded-xl border border-[#242424] bg-[#000000] px-4 text-sm text-gray-200 outline-none transition-all focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]"
+              >
+                <option value="">Unassigned (General Sandbox)</option>
+                {availableLists.map((list) => (
+                  <option key={list.id} value={list.id}>{list.name}</option>
+                ))}
+              </select>
+              <input
+                value={newListName}
+                onChange={(event) => setNewListName(event.target.value)}
+                placeholder="New list name"
+                maxLength={100}
+                className="h-11 min-w-0 flex-1 rounded-xl border border-[#242424] bg-[#000000] px-4 text-sm text-gray-200 outline-none transition-all placeholder:text-gray-600 focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]"
+              />
+              <button
+                type="button"
+                onClick={handleCreateList}
+                disabled={isCreatingList || !newListName.trim()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-5 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isCreatingList && <Loader2 className="h-4 w-4 animate-spin" />}
+                Create
+              </button>
+            </div>
+            <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={overwriteExisting}
+                onChange={(event) => setOverwriteExisting(event.target.checked)}
+                className="h-4 w-4 rounded border-[#3A3A3A] bg-[#000000] accent-[#FF5A1F]"
+              />
+              Overwrite &amp; Regenerate Existing Leads (Consumes Credits)
+            </label>
+          </div>
 
           {/* Footer: stats + Process button */}
           <div className="px-6 py-4 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4">

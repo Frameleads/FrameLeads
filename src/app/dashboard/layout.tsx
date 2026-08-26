@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Settings2,
   Upload,
@@ -15,7 +15,15 @@ import {
   X,
   LayoutTemplate,
   Shield,
+  Folder,
+  MoreHorizontal,
 } from "lucide-react";
+
+interface LeadListSummary {
+  id: string;
+  name: string;
+  _count?: { leads: number };
+}
 
 const navItems = [
   {
@@ -55,13 +63,87 @@ const navItems = [
   },
 ];
 
-export default function DashboardLayout({
+function DashboardLayoutContent({
   children,
 }: {
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
+  const [lists, setLists] = useState<LeadListSummary[]>([]);
+  const [openListMenuId, setOpenListMenuId] = useState<string | null>(null);
+  const selectedListId = searchParams.get("list");
+
+  const loadLists = useCallback(async () => {
+    try {
+      const response = await fetch("/api/lists", { cache: "no-store" });
+      if (!response.ok) return;
+      const result = await response.json();
+      setLists(Array.isArray(result.lists) ? result.lists : []);
+    } catch {
+      // Keep navigation usable if lists cannot be loaded.
+    }
+  }, []);
+
+  useEffect(() => {
+    loadLists();
+    window.addEventListener("frameleads:lists-changed", loadLists);
+    return () => window.removeEventListener("frameleads:lists-changed", loadLists);
+  }, [loadLists]);
+
+  const handleDeleteList = async (list: LeadListSummary) => {
+    if (!window.confirm(`Delete the list “${list.name}”? Its leads will remain in the Sandbox.`)) return;
+
+    setOpenListMenuId(null);
+    const response = await fetch(`/api/lists/${encodeURIComponent(list.id)}`, { method: "DELETE" });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      window.alert(result?.error || "Failed to delete list.");
+      return;
+    }
+
+    await loadLists();
+    window.dispatchEvent(new Event("frameleads:lists-changed"));
+    if (selectedListId === list.id) router.push("/dashboard/sandbox");
+  };
+
+  const handleRenameList = async (list: LeadListSummary) => {
+    setOpenListMenuId(null);
+    const requestedName = window.prompt("Enter a new name for this list:", list.name);
+    const name = requestedName?.trim();
+    if (!name || name === list.name) return;
+
+    const response = await fetch(`/api/lists/${encodeURIComponent(list.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      window.alert(result?.error || "Failed to rename list.");
+      return;
+    }
+
+    await loadLists();
+    window.dispatchEvent(new Event("frameleads:lists-changed"));
+  };
+
+  const handleDuplicateList = async (list: LeadListSummary) => {
+    setOpenListMenuId(null);
+    const response = await fetch(`/api/lists/${encodeURIComponent(list.id)}/duplicate`, {
+      method: "POST",
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      window.alert(result?.error || "Failed to duplicate list.");
+      return;
+    }
+
+    await loadLists();
+    window.dispatchEvent(new Event("frameleads:lists-changed"));
+  };
 
 
   // ── Shared sidebar content (used in both mobile overlay & desktop) ──
@@ -80,22 +162,80 @@ export default function DashboardLayout({
       {/* Navigation */}
       <nav className="flex-1 px-3 py-5 space-y-1.5 overflow-y-auto">
         {navItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isSandbox = item.href === "/dashboard/sandbox";
+          const isActive = pathname === item.href && (!isSandbox || !selectedListId);
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              prefetch={true}
-              onClick={() => setIsOpen(false)}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-150 ${
-                isActive
-                  ? "bg-primary/10 text-primary border border-primary/20"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              <item.icon className="w-5 h-5" />
-              {item.label}
-            </Link>
+            <div key={item.href}>
+              <Link
+                href={item.href}
+                prefetch={true}
+                onClick={() => setIsOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-150 ${
+                  isActive
+                    ? "bg-primary/10 text-primary border border-primary/20"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                <item.icon className="w-5 h-5" />
+                {item.label}
+              </Link>
+              {isSandbox && pathname.includes("/sandbox") && (
+                <div className="ml-7 mt-1 space-y-1 border-l border-border/50 pl-3">
+                  {lists.map((list) => (
+                    <div key={list.id} className="group flex items-center gap-1">
+                      <Link
+                        href={`/dashboard/sandbox?list=${encodeURIComponent(list.id)}`}
+                        onClick={() => setIsOpen(false)}
+                        className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+                          pathname === "/dashboard/sandbox" && selectedListId === list.id
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        }`}
+                      >
+                        <Folder className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{list.name}</span>
+                        <span className="ml-auto text-[10px] opacity-60">{list._count?.leads || 0}</span>
+                      </Link>
+                      <div className="relative shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setOpenListMenuId((current) => current === list.id ? null : list.id)}
+                          aria-label={`Manage ${list.name}`}
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-foreground group-hover:opacity-100 focus:opacity-100"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                        {openListMenuId === list.id && (
+                          <div className="absolute right-0 top-8 z-[160] w-32 overflow-hidden rounded-lg border border-border/70 bg-[#111111] p-1 shadow-2xl shadow-black/60">
+                            <button
+                              type="button"
+                              onClick={() => handleRenameList(list)}
+                              className="w-full rounded-md px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/70"
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicateList(list)}
+                              className="w-full rounded-md px-3 py-2 text-left text-xs text-foreground transition-colors hover:bg-muted/70"
+                            >
+                              Duplicate
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteList(list)}
+                              className="w-full rounded-md px-3 py-2 text-left text-xs text-red-400 transition-colors hover:bg-red-500/10"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           );
         })}
       </nav>
@@ -167,6 +307,15 @@ export default function DashboardLayout({
         </div>
         <div className="p-4 md:p-8">{children}</div>
       </main>
+
     </div>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background">{children}</div>}>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </Suspense>
   );
 }

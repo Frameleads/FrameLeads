@@ -33,6 +33,15 @@ export default async function GovernancePage() {
   // Task 3: Chart Hydration (14-Day Lookback)
   const now = new Date();
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+  const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const metricsUserId = user?.id ?? '__unauthenticated__';
+
+  const [totalOutputVolume, currentMonthOutput] = await Promise.all([
+    prisma.generatedLead.count({ where: { userId: metricsUserId } }),
+    prisma.generatedLead.count({
+      where: { userId: metricsUserId, createdAt: { gte: currentMonthStart } },
+    }),
+  ]);
   
   // Initialize 14 days map
   const timeSeriesMap = new Map<string, { arr: number, latencyMsTotal: number, latencyCount: number }>();
@@ -83,6 +92,11 @@ export default async function GovernancePage() {
     };
   });
 
+  const positiveIntentCount = signals.filter((signal) => signal.intentScore >= 40).length;
+  const positiveIntentRate = signals.length > 0
+    ? (positiveIntentCount / signals.length) * 100
+    : 0;
+
   const metrics = {
     dealsProtected: {
       totalValue: dealsProtectedValue,
@@ -103,6 +117,15 @@ export default async function GovernancePage() {
     queue: {
       pendingCount,
       signalTriggeredCount: autoArchivedCount
+    },
+    macroMetrics: {
+      totalOutputVolume,
+      currentMonthOutput,
+      positiveIntentRate,
+      positiveIntentCount,
+      totalSignals: signals.length,
+      approvedSignalCount: approvedSignals.length,
+      approvedPipelineValue: dealsProtectedValue,
     },
     timeSeriesData
   };

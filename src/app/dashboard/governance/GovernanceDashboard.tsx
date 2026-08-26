@@ -75,6 +75,15 @@ interface GovernanceMetrics {
     pendingCount: number;
     signalTriggeredCount: number;
   };
+  macroMetrics: {
+    totalOutputVolume: number;
+    currentMonthOutput: number;
+    positiveIntentRate: number;
+    positiveIntentCount: number;
+    totalSignals: number;
+    approvedSignalCount: number;
+    approvedPipelineValue: number;
+  };
   timeSeriesData: TimeSeriesDataPoint[];
 }
 
@@ -224,6 +233,47 @@ export default function GovernanceDashboard({
       </div>
 
       {/* ── Primary Metrics Grid ────────────────────────────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Total Output Volume</p>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+            <p className="font-heading text-3xl font-bold tracking-tight text-white">{metrics.macroMetrics.totalOutputVolume.toLocaleString()}</p>
+            <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+              {metrics.macroMetrics.totalOutputVolume === 0
+                ? "Awaiting first deployment"
+                : `${metrics.macroMetrics.currentMonthOutput.toLocaleString()} this month`}
+            </span>
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-gray-400">Generated lead records stored in your workspace</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Positive Intent Rate</p>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+            <p className="font-heading text-3xl font-bold tracking-tight text-white">{metrics.macroMetrics.positiveIntentRate.toFixed(1)}%</p>
+            <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-400">
+              {metrics.macroMetrics.totalSignals === 0
+                ? "Awaiting first signal"
+                : `${metrics.macroMetrics.positiveIntentCount} of ${metrics.macroMetrics.totalSignals} qualified`}
+            </span>
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-gray-400">Inbound signals with an intent score of 40 or higher</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Pipeline Generated</p>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+            <p className="font-heading text-3xl font-bold tracking-tight text-white">{formatCurrency(metrics.macroMetrics.approvedPipelineValue)}</p>
+            <span className="rounded-full border border-[#FF5A36]/25 bg-[#FF5A36]/10 px-2.5 py-1 text-xs font-semibold text-[#FF5A36]">
+              {metrics.macroMetrics.approvedSignalCount === 0
+                ? "Awaiting first approval"
+                : `${metrics.macroMetrics.approvedSignalCount} approved signal${metrics.macroMetrics.approvedSignalCount === 1 ? "" : "s"}`}
+            </span>
+          </div>
+          <p className="mt-4 text-sm leading-relaxed text-gray-400">Pipeline value linked to approved signals</p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
 
         {/* ─── Metric 1: Deals Protected ────────────────────────────── */}

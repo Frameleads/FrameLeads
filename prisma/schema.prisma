@@ -131,3 +131,37 @@ model OutboundLog {
 
   @@index([inboxId, sentAt])
 }
+
+model GeneratedLead {
+  id              String   @id @default(cuid())
+  userId          String   // This links the lead to the specific logged-in Whop user
+  firstName       String
+  lastName        String
+  linkedInUrl     String?
+  companyName     String
+  websiteUrl      String?
+  score           Int?
+  targetGroup     String?
+  incidentDetails String?
+  emailDraft      String   @db.Text
+  linkedInDraft   String   @db.Text
+  coldCallDraft   String?  @db.Text
+  whatsAppDraft   String?  @db.Text
+  listId          String?
+  list            LeadList? @relation(fields: [listId], references: [id])
+  createdAt       DateTime @default(now())
+
+  @@index([userId, linkedInUrl])
+  @@index([listId])
+}
+
+model LeadList {
+  id        String          @id @default(cuid())
+  name      String
+  userId    String
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  leads     GeneratedLead[]
+
+  @@index([userId])
+}

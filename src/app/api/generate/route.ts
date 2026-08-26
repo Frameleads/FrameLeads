@@ -104,7 +104,7 @@ export async function POST(req: Request) {
     const cookieStore = await cookies();
     const userEmail = cookieStore.get('user_email')?.value;
 
-    const { 
+    let {
       leads, 
       batch_id, 
       timestamp, 
@@ -113,6 +113,8 @@ export async function POST(req: Request) {
       force_regenerate, 
       regenerate,
       preferredCtaStyle = 'Self-Serve Audit Link',
+      listId = null,
+      overwriteExisting = false,
       context = {}
     } = await req.json();
 
@@ -123,20 +125,107 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
+    const currentUser = userEmail
+      ? await prisma.user.findUnique({
+          where: { email: userEmail.trim().toLowerCase() },
+          select: { id: true },
+        })
+      : null;
+    const currentUserId = currentUser?.id || userEmail?.trim().toLowerCase();
+    const shouldOverwriteExisting = overwriteExisting === true;
+
+    listId = typeof listId === 'string' ? listId.trim() : null;
+    if (listId) {
+      const ownedList = currentUser
+        ? await prisma.leadList.findFirst({
+            where: { id: listId, userId: currentUser.id },
+            select: { id: true },
+          })
+        : null;
+      if (!ownedList) {
+        return NextResponse.json({ success: false, error: "Destination list not found." }, { status: 403 });
+      }
+    }
+
     const maxQuota = tier === 'ENTERPRISE' ? 20000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
     
     const remainingQuota = Math.max(0, maxQuota - (Number(creditsUsed) || 0));
 
-    const allowedLeads = leads.slice(0, remainingQuota);
-    const lockedLeads = leads.slice(remainingQuota);
+    const getLeadLinkedInUrl = (lead: any) => {
+      const value = lead.linkedin || lead.linkedInUrl || lead.linkedin_url;
+      return typeof value === 'string' ? value.trim() : '';
+    };
+    const linkedInUrls = Array.from(new Set(leads.map(getLeadLinkedInUrl).filter(Boolean))) as string[];
+    const existingRecords = currentUserId && linkedInUrls.length > 0
+      ? await prisma.generatedLead.findMany({
+          where: {
+            userId: currentUserId,
+            linkedInUrl: { in: linkedInUrls },
+          },
+          orderBy: { createdAt: 'desc' },
+        })
+      : [];
+    const existingByLinkedInUrl = new Map<string, (typeof existingRecords)[number]>();
+    for (const record of existingRecords) {
+      if (!record.linkedInUrl) continue;
+      const current = existingByLinkedInUrl.get(record.linkedInUrl);
+      if (!current || (listId && record.listId === listId && current.listId !== listId)) {
+        existingByLinkedInUrl.set(record.linkedInUrl, record);
+      }
+    }
+
+    const skippedCandidates: Array<{ existing: (typeof existingRecords)[number] }> = [];
+    const generationCandidates: any[] = [];
+    const handledLinkedInUrls = new Set<string>();
+    for (const lead of leads) {
+      const linkedInUrl = getLeadLinkedInUrl(lead);
+      if (linkedInUrl && handledLinkedInUrls.has(linkedInUrl)) continue;
+      if (linkedInUrl) handledLinkedInUrls.add(linkedInUrl);
+
+      const existing = linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined;
+      if (existing && !shouldOverwriteExisting) {
+        skippedCandidates.push({ existing });
+      } else {
+        generationCandidates.push(lead);
+      }
+    }
+
+    const skippedLeads = await Promise.all(skippedCandidates.map(async ({ existing }) => {
+      const movedLead = await prisma.generatedLead.update({
+        where: { id: existing.id },
+        data: { listId: listId || null },
+      });
+
+      return {
+        id: movedLead.id,
+        lead_id: movedLead.id,
+        first_name: [movedLead.firstName, movedLead.lastName].filter(Boolean).join(' '),
+        company_name: movedLead.companyName,
+        website_url: movedLead.websiteUrl,
+        linkedin_url: movedLead.linkedInUrl,
+        listId: movedLead.listId,
+        provided_incident_details: movedLead.incidentDetails,
+        enrichment_status: "completed",
+        generation_status: "completed",
+        generated_email: { body: movedLead.emailDraft },
+        generated_linkedin: { body: movedLead.linkedInDraft },
+        generated_script: movedLead.coldCallDraft ? { body: movedLead.coldCallDraft } : null,
+        generated_whatsapp: movedLead.whatsAppDraft ? { body: movedLead.whatsAppDraft } : null,
+        deployment_status: "pending",
+        skipped_existing: true,
+      };
+    }));
+
+    const allowedLeads = generationCandidates.slice(0, remainingQuota);
+    const lockedLeads = generationCandidates.slice(remainingQuota);
 
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
-    let processedLeads: any[] = [];
+    let processedLeads: any[] = [...skippedLeads];
 
-    if (apiKey) {
+    if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
 
-      processedLeads = await Promise.all(
+      const generatedLeads = await Promise.all(
         allowedLeads.map(async (lead: any, index: number) => {
           try {
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -224,11 +313,92 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               generated.email.body = finalEmailBody;
             }
 
+            const finalEmailBody = typeof generated.email?.body === 'string'
+              ? generated.email.body
+              : '';
+            const finalLinkedInBody = typeof generated.linkedin === 'string'
+              ? generated.linkedin
+              : typeof generated.linkedin?.body === 'string'
+                ? generated.linkedin.body
+                : '';
+            const finalColdCallBody = typeof generated.coldCall === 'string'
+              ? generated.coldCall
+              : typeof generated.coldCall?.body === 'string'
+                ? generated.coldCall.body
+                : '';
+            const finalWhatsAppBody = typeof generated.whatsapp === 'string'
+              ? generated.whatsapp
+              : typeof generated.whatsapp?.body === 'string'
+                ? generated.whatsapp.body
+                : '';
+
+            let persistedLeadId: string | null = null;
+
+            if (currentUserId) {
+              const firstName = lead.first_name || lead.firstName || 'Unknown';
+              const lastName = lead.last_name || lead.lastName || '';
+              const companyName = lead.company_name || lead.companyName || 'Unknown Company';
+              const websiteUrl = lead.website_url || lead.websiteUrl || null;
+              const linkedInUrl = getLeadLinkedInUrl(lead);
+              const rawScore = lead.score == null ? null : Number(lead.score);
+              const score = rawScore !== null && Number.isInteger(rawScore) ? rawScore : null;
+              const safeLinkedInUrl = linkedInUrl !== ''
+                ? linkedInUrl
+                : `missing-url-${Date.now()}-${Math.random()}`;
+              const existingLead = linkedInUrl
+                ? existingByLinkedInUrl.get(linkedInUrl)
+                : undefined;
+
+              const persistedLead = existingLead
+                ? await prisma.generatedLead.update({
+                    where: { id: existingLead.id },
+                    data: {
+                      firstName,
+                      lastName,
+                      companyName,
+                      websiteUrl,
+                      score,
+                      targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
+                      incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
+                      emailDraft: finalEmailBody,
+                      linkedInDraft: finalLinkedInBody,
+                      coldCallDraft: finalColdCallBody || null,
+                      whatsAppDraft: finalWhatsAppBody || null,
+                      listId: listId || null,
+                      createdAt: new Date(),
+                    },
+                  })
+                : await prisma.generatedLead.create({
+                    data: {
+                      userId: currentUserId,
+                      firstName,
+                      lastName,
+                      linkedInUrl: safeLinkedInUrl,
+                      companyName,
+                      websiteUrl,
+                      score,
+                      targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
+                      incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
+                      emailDraft: finalEmailBody,
+                      linkedInDraft: finalLinkedInBody,
+                      coldCallDraft: finalColdCallBody || null,
+                      whatsAppDraft: finalWhatsAppBody || null,
+                      listId: listId || null,
+                    },
+                  });
+              persistedLeadId = persistedLead.id;
+            }
+
+            const responseLeadId = persistedLeadId || lead.id || lead.lead_id || `lead_gen_${index}_${Date.now()}`;
+
             return {
-              lead_id: lead.lead_id || `lead_gen_${index}_${Date.now()}`,
+              id: responseLeadId,
+              lead_id: responseLeadId,
               first_name: lead.first_name || "Unknown",
               company_name: lead.company_name || "Unknown Company",
               website_url: lead.website_url || null,
+              linkedin_url: lead.linkedin_url || lead.linkedInUrl || lead.linkedin || null,
+              listId: listId || lead.listId || null,
               provided_incident_details: "Generated based on visceral architecture.",
               enrichment_status: "completed",
               generation_status: "completed",
@@ -244,7 +414,8 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
           }
         })
       );
-    } else {
+      processedLeads = [...processedLeads, ...generatedLeads];
+    } else if (allowedLeads.length > 0) {
       return NextResponse.json(
         { success: false, error: "Missing Anthropic API Key" },
         { status: 401 }
