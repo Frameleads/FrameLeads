@@ -1,10 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Info, CalendarCheck } from 'lucide-react';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X } from 'lucide-react';
 import EnterprisePaywall from '@/components/EnterprisePaywall';
 import CalendarPicker from '@/components/CalendarPicker';
+import { playUISound } from '@/lib/audio';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -28,6 +31,48 @@ function parseSlotLabel(label: string): string | null {
   return date.toISOString();
 }
 
+interface ImapConnectionForm {
+  email: string;
+  appPassword: string;
+  host: string;
+  port: string;
+}
+
+const DEFAULT_IMAP_FORM: ImapConnectionForm = {
+  email: '',
+  appPassword: '',
+  host: 'imap.gmail.com',
+  port: '993',
+};
+
+const ALLOWED_TRIAGE_SIGNALS = new Set([
+  'Meeting Requested',
+  'Pricing Inquiry',
+  'Referred to Colleague',
+  'Competitor Mentioned',
+  'Timing Objection',
+  'Requesting Resources',
+  'OOTO / Bounced',
+]);
+
+function parseTriageSignals(value: unknown) {
+  if (typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((signal) => signal.trim())
+    .filter((signal) => ALLOWED_TRIAGE_SIGNALS.has(signal))
+    .slice(0, 3);
+}
+
+function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
+  if (Array.isArray(signals)) {
+    return signals
+      .filter((signal): signal is string => typeof signal === 'string' && ALLOWED_TRIAGE_SIGNALS.has(signal))
+      .slice(0, 3);
+  }
+  return parseTriageSignals(legacyIntentRisk);
+}
+
 export default function TriageCommandCenter({
   initialData,
   userTier,
@@ -35,7 +80,8 @@ export default function TriageCommandCenter({
   initialData: any;
   userTier: string;
 }) {
-  const dbLeads = Array.isArray(initialData) && initialData.length > 0 
+  const router = useRouter();
+  const dbLeads = useMemo(() => Array.isArray(initialData) && initialData.length > 0
     ? initialData.map((s: any) => ({
         id: s.id,
         name: s.prospectName || 'Unknown Prospect',
@@ -47,15 +93,22 @@ export default function TriageCommandCenter({
         inboundSignal: s.rawEmail || '',
         intentScore: s.intentScore || 0,
         status: s.intentType || 'COLD',
-        draftText: s.aiDraft || '',
-        signalTags: [s.signalType || "Inbound", s.intentType || "COLD", s.sourceType || "UNKNOWN"].filter(Boolean),
+        recordStatus: s.status || 'PENDING',
+        draftText: s.aiDraft || 'Awaiting Triage Draft...',
+        signals: getPersistedSignals(s.signals, s.intentRisk),
         strategyLogic: s.signalAnalysis || "Awaiting strategy logic..."
       }))
-    : [];
+    : [], [initialData]);
 
   const [leads, setLeads] = useState<any[]>(dbLeads);
-  const [activeLeadId, setActiveLeadId] = useState(dbLeads.length > 0 ? dbLeads[0].id : null);
-  const activeLead = leads.find(l => l.id === activeLeadId) || leads[0] || null;
+  const [queueView, setQueueView] = useState<'active' | 'archived'>('active');
+  const visibleLeads = leads.filter((lead) =>
+    queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING',
+  );
+  const [activeLeadId, setActiveLeadId] = useState(
+    dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
+  );
+  const activeLead = visibleLeads.find(l => l.id === activeLeadId) || visibleLeads[0] || null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -68,13 +121,101 @@ export default function TriageCommandCenter({
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingSlotStart, setBookingSlotStart] = useState('');
   const [bookingSlotEnd, setBookingSlotEnd] = useState('');
-  const [isCleared, setIsCleared] = useState(dbLeads.length === 0);
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
   const [intentScore, setIntentScore] = useState(activeLead ? activeLead.intentScore : 0);
   const [temperature, setTemperature] = useState(activeLead ? (activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD') : '');
-  const [signalTags, setSignalTags] = useState<string[]>(activeLead ? activeLead.signalTags : []);
+  const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [strategyLogic, setStrategyLogic] = useState(activeLead ? activeLead.strategyLogic : '');
+  const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
+  const [showInboundSignalToast, setShowInboundSignalToast] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [isConnectInboxOpen, setIsConnectInboxOpen] = useState(false);
+  const [isConnectingInbox, setIsConnectingInbox] = useState(false);
+  const [imapConnectionError, setImapConnectionError] = useState('');
+  const [imapForm, setImapForm] = useState<ImapConnectionForm>(DEFAULT_IMAP_FORM);
+  const [isArchiving, setIsArchiving] = useState(false);
+  const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
+  const [archiveToast, setArchiveToast] = useState('');
+
+  useEffect(() => {
+    setMounted(true);
+
+    const loadMailboxSettings = async () => {
+      const response = await fetch('/api/inbox/credentials', { cache: 'no-store' }).catch(() => null);
+      if (!response?.ok) return;
+      const result = await response.json().catch(() => null);
+      if (!result?.mailbox) return;
+
+      setImapForm((current) => ({
+        ...current,
+        email: result.mailbox.email || '',
+        host: result.mailbox.host || current.host,
+        port: String(result.mailbox.port || 993),
+      }));
+    };
+
+    void loadMailboxSettings();
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let requestInFlight = false;
+    let activeController: AbortController | null = null;
+    let toastTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const pollNativeInbox = async () => {
+      if (requestInFlight || disposed) return;
+      requestInFlight = true;
+      activeController = new AbortController();
+
+      try {
+        const response = await fetch('/api/inbox/sync', {
+          method: 'POST',
+          cache: 'no-store',
+          signal: activeController.signal,
+        });
+        if (!response.ok || disposed) return;
+
+        const result = await response.json().catch(() => null);
+        if ((Number(result?.newSignalsAdded) || 0) <= 0 || disposed) return;
+
+        playUISound('notification');
+        setShowInboundSignalToast(true);
+        if (toastTimeout) clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => setShowInboundSignalToast(false), 4000);
+        router.refresh();
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          // Polling is intentionally silent; the next interval retries automatically.
+        }
+      } finally {
+        requestInFlight = false;
+        activeController = null;
+      }
+    };
+
+    const interval = window.setInterval(() => void pollNativeInbox(), 15_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      if (toastTimeout) clearTimeout(toastTimeout);
+      activeController?.abort();
+    };
+  }, [router]);
+
+  useEffect(() => {
+    setLeads(dbLeads);
+    setActiveLeadId((currentId: string | null) =>
+      currentId && dbLeads.some((lead: any) =>
+        lead.id === currentId && (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING'),
+      )
+        ? currentId
+        : dbLeads.find((lead: any) =>
+            queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING',
+          )?.id || null,
+    );
+  }, [dbLeads, queueView]);
 
   useEffect(() => {
     if (activeLead) {
@@ -82,7 +223,7 @@ export default function TriageCommandCenter({
       setDraftText(activeLead.draftText);
       setIntentScore(activeLead.intentScore);
       setTemperature(activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD');
-      setSignalTags(activeLead.signalTags);
+      setSignals(activeLead.signals);
       setStrategyLogic(activeLead.strategyLogic);
     }
   }, [activeLeadId, activeLead]);
@@ -91,8 +232,8 @@ export default function TriageCommandCenter({
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
 
   const getProgressBarColor = (score: number) => {
-    if (score >= 80) return 'bg-green-500';
-    if (score >= 40) return 'bg-yellow-500';
+    if (score >= 71) return 'bg-green-500';
+    if (score >= 31) return 'bg-yellow-500';
     return 'bg-red-500';
   };
 
@@ -105,6 +246,7 @@ export default function TriageCommandCenter({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           inboundSignal: inboundSignal,
+          signalId: activeLead?.id,
           timestamp: Date.now(),
           force_regenerate: true
         }),
@@ -113,13 +255,22 @@ export default function TriageCommandCenter({
       
       if (res.ok) {
         const data = await res.json();
-        if (data.draft_response) {
-          setDraftText(data.draft_response);
-          setIntentScore(data.intent_score || 0);
-          setTemperature(data.temperature || "");
-          setSignalTags(data.signal_tags || []);
-          setStrategyLogic(data.strategy_logic || "");
-          if (data.available_slots) setAvailableSlots(data.available_slots);
+        if (typeof data.intentScore === 'number') {
+          setIntentScore(data.intentScore);
+          setTemperature(data.category === 'HOT' ? '🔥 HOT' : data.category === 'WARM' ? '☀️ WARM' : '❄️ COLD');
+          setSignals(Array.isArray(data.signals) ? data.signals : []);
+          setStrategyLogic(typeof data.strategy === 'string' ? data.strategy : '');
+          setDraftText(typeof data.draftResponse === 'string' ? data.draftResponse : 'Awaiting Triage Draft...');
+          setLeads((current) => current.map((lead) => lead.id === activeLead?.id
+            ? {
+                ...lead,
+                intentScore: data.intentScore,
+                status: data.category,
+                signals: Array.isArray(data.signals) ? data.signals : [],
+                strategyLogic: typeof data.strategy === 'string' ? data.strategy : '',
+                draftText: typeof data.draftResponse === 'string' ? data.draftResponse : lead.draftText,
+              }
+            : lead));
           return;
         }
       }
@@ -161,13 +312,7 @@ export default function TriageCommandCenter({
         // Remove from local queue
         const newLeads = leads.filter(l => l.id !== activeLead.id);
         setLeads(newLeads);
-        
-        if (newLeads.length > 0) {
-          setActiveLeadId(newLeads[0].id);
-        } else {
-          setActiveLeadId(null);
-          setIsCleared(true);
-        }
+        setActiveLeadId(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
       } else {
         const errData = await res.json().catch(() => null);
         console.warn("Backend dispatch response non-200:", errData || res.statusText);
@@ -183,7 +328,7 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = intentScore >= 80;
+  const isHotLead = intentScore >= 71;
 
   const handleLockMeeting = async () => {
     if (!bookingSlotStart || !bookingSlotEnd) return;
@@ -203,6 +348,7 @@ export default function TriageCommandCenter({
       });
       const data = await res.json();
       if (data.success) {
+        playUISound('lock');
         setShowBookingModal(false);
         setBookingSuccess(true);
         setTimeout(() => setBookingSuccess(false), 5000);
@@ -210,13 +356,7 @@ export default function TriageCommandCenter({
         // Remove from local queue
         const newLeads = leads.filter(l => l.id !== activeLead?.id);
         setLeads(newLeads);
-        
-        if (newLeads.length > 0) {
-          setActiveLeadId(newLeads[0].id);
-        } else {
-          setActiveLeadId(null);
-          setIsCleared(true);
-        }
+        setActiveLeadId(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
       } else {
         setBookingError(data.error || 'Booking failed. Check your Google credentials.');
       }
@@ -227,19 +367,322 @@ export default function TriageCommandCenter({
     }
   };
 
-  if (isCleared && userTier === 'ENTERPRISE') {
+  const showArchiveToast = (message: string) => {
+    setArchiveToast(message);
+    window.setTimeout(() => setArchiveToast(''), 3500);
+  };
+
+  const handleQueueViewChange = (view: 'active' | 'archived') => {
+    setQueueView(view);
+    setActiveLeadId(
+      leads.find((lead) => view === 'archived'
+        ? lead.recordStatus === 'ARCHIVED'
+        : lead.recordStatus === 'PENDING')?.id || null,
+    );
+  };
+
+  const handleArchive = async () => {
+    if (!activeLead || activeLead.recordStatus !== 'PENDING') return;
+    setIsArchiving(true);
+
+    try {
+      const response = await fetch('/api/triage/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activeLead.id }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Unable to archive this lead.');
+
+      const updatedLeads = leads.map((lead) =>
+        lead.id === activeLead.id ? { ...lead, recordStatus: 'ARCHIVED' } : lead,
+      );
+      setLeads(updatedLeads);
+      setActiveLeadId(updatedLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
+      showArchiveToast('Lead archived');
+      router.refresh();
+    } catch (error) {
+      showArchiveToast(error instanceof Error ? error.message : 'Unable to archive this lead.');
+    } finally {
+      setIsArchiving(false);
+    }
+  };
+
+  const handlePermanentDelete = async () => {
+    if (!activeLead || activeLead.recordStatus !== 'ARCHIVED') return;
+    if (!window.confirm('Permanently delete this archived lead? This action cannot be undone.')) return;
+
+    setDeletingArchivedId(activeLead.id);
+    try {
+      const response = await fetch('/api/triage/archive', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: activeLead.id }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Unable to permanently delete this lead.');
+
+      const remainingLeads = leads.filter((lead) => lead.id !== activeLead.id);
+      setLeads(remainingLeads);
+      setActiveLeadId(remainingLeads.find((lead) => lead.recordStatus === 'ARCHIVED')?.id || null);
+      showArchiveToast('Lead permanently deleted');
+      router.refresh();
+    } catch (error) {
+      showArchiveToast(error instanceof Error ? error.message : 'Unable to permanently delete this lead.');
+    } finally {
+      setDeletingArchivedId(null);
+    }
+  };
+
+  const handleConnectInbox = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsConnectingInbox(true);
+    setImapConnectionError('');
+
+    try {
+      const response = await fetch('/api/inbox/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: imapForm.email,
+          appPassword: imapForm.appPassword,
+          host: imapForm.host,
+          port: Number(imapForm.port),
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || 'Unable to connect the inbox.');
+      }
+
+      setImapForm((current) => ({ ...current, appPassword: '' }));
+      setIsConnectInboxOpen(false);
+      setInboxConnectionMessage('Inbox connected successfully.');
+    } catch (error) {
+      setImapConnectionError(error instanceof Error ? error.message : 'Unable to connect the inbox.');
+    } finally {
+      setIsConnectingInbox(false);
+    }
+  };
+
+  const connectInboxButton = (
+    <button
+      type="button"
+      onClick={() => {
+        setImapConnectionError('');
+        setIsConnectInboxOpen(true);
+      }}
+      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#FF5A1F] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#FF5A1F]/90"
+    >
+      <Mail className="h-4 w-4" />
+      Connect Native Inbox
+    </button>
+  );
+
+  const inboxActions = (
+    <div className="flex flex-wrap items-center justify-center gap-3 md:justify-end">
+      {connectInboxButton}
+    </div>
+  );
+
+  const connectInboxModal = isConnectInboxOpen && mounted
+    ? createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={handleConnectInbox}
+            className="w-full max-w-xl overflow-hidden rounded-xl border border-[#242424] bg-[#1A1A1A] shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="connect-inbox-title"
+          >
+            <div className="flex items-start justify-between border-b border-[#242424] p-6">
+              <div>
+                <h2 id="connect-inbox-title" className="text-xl font-semibold text-white">
+                  Connect Native Inbox
+                </h2>
+                <p className="mt-1 text-sm text-[#888888]">
+                  Use an app password for Gmail, Outlook, or Yahoo.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsConnectInboxOpen(false)}
+                disabled={isConnectingInbox}
+                aria-label="Close inbox connection modal"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-[#888888] transition-colors hover:bg-[#242424] hover:text-white disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2">
+              <div>
+                <label htmlFor="imap-email" className="mb-1.5 block text-sm font-medium text-[#888888]">
+                  Email Address
+                </label>
+                <input
+                  id="imap-email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={imapForm.email}
+                  onChange={(event) => setImapForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="you@company.com"
+                  className="w-full rounded-lg border border-[#242424] bg-black px-4 py-3 text-white outline-none transition-colors placeholder:text-[#888888] focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="imap-password" className="mb-1.5 block text-sm font-medium text-[#888888]">
+                  App Password
+                </label>
+                <input
+                  id="imap-password"
+                  type="password"
+                  required
+                  autoComplete="new-password"
+                  value={imapForm.appPassword}
+                  onChange={(event) => setImapForm((current) => ({ ...current, appPassword: event.target.value }))}
+                  placeholder="Provider app password"
+                  className="w-full rounded-lg border border-[#242424] bg-black px-4 py-3 text-white outline-none transition-colors placeholder:text-[#888888] focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F]"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="imap-host" className="mb-1.5 block text-sm font-medium text-[#888888]">
+                  IMAP Host
+                </label>
+                <input
+                  id="imap-host"
+                  type="text"
+                  required
+                  list="supported-imap-hosts"
+                  value={imapForm.host}
+                  onChange={(event) => setImapForm((current) => ({ ...current, host: event.target.value }))}
+                  placeholder="imap.gmail.com"
+                  className="w-full rounded-lg border border-[#242424] bg-black px-4 py-3 text-white outline-none transition-colors placeholder:text-[#888888] focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F]"
+                />
+                <datalist id="supported-imap-hosts">
+                  <option value="imap.gmail.com" />
+                  <option value="outlook.office365.com" />
+                  <option value="imap.mail.yahoo.com" />
+                </datalist>
+              </div>
+
+              <div>
+                <label htmlFor="imap-port" className="mb-1.5 block text-sm font-medium text-[#888888]">
+                  Port
+                </label>
+                <input
+                  id="imap-port"
+                  type="number"
+                  required
+                  min={1}
+                  max={65535}
+                  value={imapForm.port}
+                  onChange={(event) => setImapForm((current) => ({ ...current, port: event.target.value }))}
+                  className="w-full rounded-lg border border-[#242424] bg-black px-4 py-3 text-white outline-none transition-colors placeholder:text-[#888888] focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F]"
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-[#242424] p-6">
+              {imapConnectionError && (
+                <p className="mb-4 rounded-lg border border-[#FF5A1F]/30 bg-black p-3 text-sm text-[#FF5A1F]">
+                  {imapConnectionError}
+                </p>
+              )}
+              <p className="mb-4 text-xs leading-relaxed text-[#888888]">
+                Your app password is encrypted before storage and is never returned to the browser.
+              </p>
+              <button
+                type="submit"
+                disabled={isConnectingInbox}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A1F] px-4 py-3 font-medium text-white transition-colors hover:bg-[#FF5A1F]/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isConnectingInbox && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isConnectingInbox ? 'Connecting...' : 'Connect Inbox'}
+              </button>
+            </div>
+          </form>
+        </div>,
+        document.body,
+      )
+    : null;
+
+  const inboundSignalToast = showInboundSignalToast && mounted
+    ? createPortal(
+        <div
+          role="status"
+          className="fixed right-6 top-6 z-[10000] rounded-xl border border-[#FF5A1F]/30 bg-[#121212] px-5 py-4 text-sm font-semibold text-white shadow-2xl shadow-[#FF5A1F]/10 animate-in fade-in slide-in-from-top-2 duration-300"
+        >
+          🔥 New inbound signal detected!
+        </div>,
+        document.body,
+      )
+    : null;
+
+  const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
+  const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
+  const queueTabs = (
+    <div className="inline-flex rounded-lg border border-[#242424] bg-[#121212] p-1">
+      <button
+        type="button"
+        onClick={() => handleQueueViewChange('active')}
+        className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors ${
+          queueView === 'active' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:text-white'
+        }`}
+      >
+        Active ({activeCount})
+      </button>
+      <button
+        type="button"
+        onClick={() => handleQueueViewChange('archived')}
+        className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors ${
+          queueView === 'archived' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:text-white'
+        }`}
+      >
+        Archived ({archivedCount})
+      </button>
+    </div>
+  );
+
+  const archiveToastElement = archiveToast ? (
+    <div role="status" className="fixed top-6 right-6 z-[10000] rounded-xl border border-[#333] bg-[#121212] px-5 py-4 text-sm font-medium text-white shadow-2xl shadow-black/60">
+      {archiveToast}
+    </div>
+  ) : null;
+
+  if (!activeLead && userTier === 'ENTERPRISE') {
     return (
       <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
-        <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl flex flex-col items-center justify-center text-center p-8">
-          <div className="w-16 h-16 border border-[#242424] rounded-2xl flex items-center justify-center mb-6 bg-[#1A1A1A]">
-            <Info className="w-6 h-6 text-[#FF5A1F]" />
+        <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl p-6">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <span className="text-xs font-mono text-[#888888] uppercase tracking-widest">
+              {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
+            </span>
+            {queueTabs}
           </div>
-          <h2 className="text-2xl font-bold text-white tracking-wide mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-            NO ACTIVE TRIAGE SIGNALS
-          </h2>
-          <p className="text-gray-500 max-w-md" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-            Awaiting campaign deployment and real inbound replies. New signals will appear here for review.
-          </p>
+          <div className="flex min-h-[55vh] flex-col items-center justify-center text-center p-8">
+            <div className="w-16 h-16 border border-[#242424] rounded-2xl flex items-center justify-center mb-6 bg-[#1A1A1A]">
+              <Info className="w-6 h-6 text-[#FF5A1F]" />
+            </div>
+            <h2 className="text-2xl font-bold text-white tracking-wide mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+              {queueView === 'archived' ? 'ARCHIVE VAULT EMPTY' : 'NO ACTIVE TRIAGE SIGNALS'}
+            </h2>
+            <p className="text-gray-500 max-w-md" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
+              {queueView === 'archived'
+                ? 'Rejected inbound signals will remain here until you permanently delete them.'
+                : 'Awaiting campaign deployment and real inbound replies. New signals will appear here for review.'}
+            </p>
+            <div className="mt-6 flex flex-col items-center gap-2">
+              {inboxActions}
+              {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
+            </div>
+          </div>
+          {connectInboxModal}
+          {inboundSignalToast}
+          {archiveToastElement}
         </div>
       </EnterprisePaywall>
     );
@@ -249,22 +692,25 @@ export default function TriageCommandCenter({
     <div className="flex flex-col min-h-screen overflow-x-hidden overflow-y-auto pb-24 bg-[#0D0D0D] text-[#F5F1E8] font-sans">
       
       {/* QUEUE HEADER */}
-      <div className="flex items-center gap-3 p-4 pb-0 shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 pb-0 shrink-0">
+        <div className="flex items-center gap-3">
         <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest text-[#888888]">
-          ACTIVE QUEUE
+          {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
         </span>
         <span className="bg-[#1A1A1A] border border-[#333] text-[#FF5A1F] font-mono text-[10px] px-2 py-0.5 rounded-sm">
-          [ {leads.length} ]
+          [ {visibleLeads.length} ]
         </span>
+        </div>
+        {queueTabs}
       </div>
 
       {/* HORIZONTAL QUEUE RIBBON (Top) */}
-      <div className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-4 overflow-x-auto flex-nowrap shrink-0 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
-        {leads.map(lead => (
+      <div className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-mandatory [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
+        {visibleLeads.map(lead => (
           <div
             key={lead.id}
             onClick={() => setActiveLeadId(lead.id)}
-            className={`w-[300px] min-w-[300px] flex-shrink-0 p-3 border rounded-md cursor-pointer transition-colors ${
+            className={`w-[82vw] min-w-[82vw] max-w-[300px] flex-shrink-0 snap-start p-3 border rounded-md cursor-pointer transition-colors sm:w-[300px] sm:min-w-[300px] ${
               lead.id === activeLeadId ? 'border-[#FF5A1F] bg-[#141414]' : 'border-[#1A1A1A] hover:bg-[#1A1A1A]'
             }`}
           >
@@ -291,17 +737,25 @@ export default function TriageCommandCenter({
             <h1 className="text-2xl font-bold text-white tracking-wide" style={{ fontFamily: 'Oxanium, sans-serif' }}>
               EXECUTIVE OVERRIDE QUEUE
             </h1>
-            <p className="text-gray-500 mt-1 text-sm">{leads.length} High-Priority Events Require Judgment</p>
+            <p className="text-gray-500 mt-1 text-sm">
+              {queueView === 'archived'
+                ? `${visibleLeads.length} Archived Events`
+                : `${visibleLeads.length} High-Priority Events Require Judgment`}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-2 md:items-end">
+            {inboxActions}
+            {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
           </div>
         </div>
 
-        <div className="flex flex-col xl:flex-row gap-12 flex-1">
+        <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           
           {/* LEFT PANE: The Context Engine (40%) */}
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
           
           {/* Prospect Identity & Metrics */}
-          <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg shadow-2xl">
+          <div className="rounded-lg border border-gray-800 bg-[#121212] p-5 shadow-2xl sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
@@ -320,22 +774,8 @@ export default function TriageCommandCenter({
             </div>
           </div>
 
-          {/* Dev-Mode Signal Injector */}
-          {process.env.NODE_ENV === 'development' && (
-            <div className="bg-[#121212] border border-orange-500/30 p-6 rounded-lg shadow-lg mb-6">
-              <label className="block text-xs font-bold text-orange-500 mb-3 uppercase tracking-widest" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-                🛠️ DEV MODE: Inject Custom Inbound Signal
-              </label>
-              <textarea
-                value={inboundSignal}
-                onChange={(e) => setInboundSignal(e.target.value)}
-                className="w-full h-24 p-4 bg-[#0a0a0a] text-gray-300 border border-orange-500/20 rounded text-sm focus:outline-none focus:border-orange-500/60 resize-none transition-colors"
-              />
-            </div>
-          )}
-
           {/* Inbound Raw Message */}
-          <div className="bg-[#121212] border border-gray-800 p-8 rounded-lg flex-grow">
+          <div className="flex-grow rounded-lg border border-gray-800 bg-[#121212] p-5 sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
@@ -366,7 +806,7 @@ export default function TriageCommandCenter({
                       <span className="text-sm font-medium text-gray-400">/ 100</span>
                     </div>
                   </div>
-                  <div className={`text-sm font-bold tracking-widest uppercase ${intentScore >= 80 ? 'text-green-500' : intentScore >= 40 ? 'text-yellow-500' : 'text-red-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
+                  <div className={`text-sm font-bold tracking-widest uppercase ${intentScore >= 71 ? 'text-green-500' : intentScore >= 31 ? 'text-yellow-500' : 'text-red-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
                     {temperature}
                   </div>
                 </div>
@@ -377,9 +817,9 @@ export default function TriageCommandCenter({
                 <div>
                   <h4 className="text-[10px] text-gray-500 uppercase tracking-widest mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>Why Now / Signals</h4>
                   <div className="flex flex-wrap gap-2">
-                    {signalTags.map((tag, idx) => (
-                      <span key={idx} className="px-3 py-1 bg-[#242424] text-[#FFFFFF] border border-[#888888] rounded-full text-xs font-medium">
-                        {tag}
+                    {signals.map((signal, index) => (
+                      <span key={index} className="px-3 py-1 text-xs border border-[#242424] rounded-full text-[#888888] bg-[#111111]">
+                        {signal}
                       </span>
                     ))}
                   </div>
@@ -402,7 +842,7 @@ export default function TriageCommandCenter({
             </div>
 
             {/* BOTTOM ROW: Draft Response & Buttons (Full Width) */}
-            <div className="w-full flex flex-col gap-3 h-auto min-h-min overflow-visible relative">
+              <div className="relative flex h-auto min-h-min w-full flex-col gap-3 overflow-visible">
               
               {/* 1. Header */}
               <div className="flex items-center justify-between w-full">
@@ -444,20 +884,38 @@ export default function TriageCommandCenter({
               <div className="w-full h-px bg-[#1A1A1A] my-2"></div>
 
               {/* 5. The Action Buttons (Stacked natively at the bottom) */}
-              <div className="w-full flex flex-col gap-3">
-                <button type="button" onClick={() => setIsCleared(true)} disabled={isGenerating || isDispatching || isBooking} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors">Reject & Archive</button>
-                <button type="button" onClick={handleRegenerate} disabled={isGenerating || isDispatching || isBooking} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222]">
-                  {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
-                </button>
-                <button type="button" onClick={handleDispatch} disabled={isGenerating || isDispatching || isBooking} className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
-                  {isDispatching ? 'Sending...' : 'Approve & Send'}
-                </button>
-                
-                {isHotLead && (
-                  <button type="button" onClick={() => setShowBookingModal(true)} disabled={isGenerating || isDispatching || isBooking} className="w-full py-3 text-sm font-bold border border-[#FF4F00] text-[#FF4F00] rounded-lg hover:bg-[#FF4F00]/10 flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                    {isBooking ? 'Locking...' : 'Lock Meeting & Dispatch'}
+              <div className="sticky bottom-0 z-20 -mx-4 flex w-[calc(100%+2rem)] flex-col gap-3 border-t border-[#1A1A1A] bg-[#0D0D0D]/95 p-4 backdrop-blur-md md:static md:mx-0 md:w-full md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+                {queueView === 'archived' ? (
+                  <button
+                    type="button"
+                    onClick={handlePermanentDelete}
+                    disabled={deletingArchivedId === activeLead.id}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 py-3 text-sm font-bold text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingArchivedId === activeLead.id
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <Trash2 className="h-4 w-4" />}
+                    {deletingArchivedId === activeLead.id ? 'Deleting...' : 'Permanently Delete'}
                   </button>
+                ) : (
+                  <>
+                    <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
+                      {isArchiving ? 'Archiving...' : 'Reject & Archive'}
+                    </button>
+                    <button type="button" onClick={handleRegenerate} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222]">
+                      {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                    </button>
+                    <button type="button" onClick={handleDispatch} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
+                      {isDispatching ? 'Sending...' : 'Approve & Send'}
+                    </button>
+
+                    {isHotLead && (
+                      <button type="button" onClick={() => setShowBookingModal(true)} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold border border-[#FF4F00] text-[#FF4F00] rounded-lg hover:bg-[#FF4F00]/10 flex items-center justify-center gap-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        {isBooking ? 'Locking...' : 'Lock Meeting & Dispatch'}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -587,6 +1045,9 @@ return (
         </div>
       )}
 
+      {connectInboxModal}
+      {inboundSignalToast}
+      {archiveToastElement}
       {pageContent}
     </EnterprisePaywall>
   );

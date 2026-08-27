@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { requireEnterpriseTier } from "@/lib/auth-guard";
 
 export async function POST(req: Request) {
@@ -74,14 +75,20 @@ export async function POST(req: Request) {
       dispatched = true;
     }
 
-    await prisma.inboundSignal.updateMany({
-      where: { id: signalId, userId: user.id },
-      data: {
-        status: "APPROVED",
-        approvedAt: new Date(),
-        aiDraft: finalText,
-      },
-    });
+    await prisma.$transaction([
+      prisma.inboundSignal.updateMany({
+        where: { id: signalId, userId: user.id },
+        data: {
+          status: "APPROVED",
+          approvedAt: new Date(),
+          aiDraft: finalText,
+        },
+      }),
+      prisma.inboundSignal.updateMany({
+        where: { id: signalId, userId: user.id, pipelineValue: { lte: 0 } },
+        data: { pipelineValue: DEFAULT_PIPELINE_VALUE },
+      }),
+    ]);
 
     return NextResponse.json({
       success: true,

@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { google } from "googleapis";
 import { prisma } from '@/lib/prisma';
+import { DEFAULT_PIPELINE_VALUE } from '@/lib/pipeline-value';
 import { requireEnterpriseTier } from '@/lib/auth-guard';
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -135,13 +136,19 @@ export async function POST(req: Request) {
     }
 
     // Task 2: Mutate Prisma Lifecycle Status
-    const updated = await prisma.inboundSignal.updateMany({
-      where: { id: leadId, userId: user.id },
-      data: { 
-        status: 'APPROVED',
-        approvedAt: new Date()
-      }
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.inboundSignal.updateMany({
+        where: { id: leadId, userId: user.id },
+        data: {
+          status: 'APPROVED',
+          approvedAt: new Date(),
+        },
+      }),
+      prisma.inboundSignal.updateMany({
+        where: { id: leadId, userId: user.id, pipelineValue: { lte: 0 } },
+        data: { pipelineValue: DEFAULT_PIPELINE_VALUE },
+      }),
+    ]);
 
     if (updated.count === 0) {
       return NextResponse.json({ success: false, error: 'Signal not found' }, { status: 404 });

@@ -74,6 +74,7 @@ interface GovernanceMetrics {
   queue: {
     pendingCount: number;
     signalTriggeredCount: number;
+    protectionSignalCount: number;
   };
   macroMetrics: {
     totalOutputVolume: number;
@@ -172,7 +173,9 @@ function ChartEmptyState({ label }: { label: string }) {
   return (
     <div className="h-[240px] w-full flex flex-col items-center justify-center gap-3">
       <BarChart3 className="w-8 h-8 text-gray-700" />
-      <p className="text-sm text-[#888888]">Awaiting campaign deployment</p>
+      <p className="text-sm text-[#888888]">
+        {label === "Protection Velocity" ? "No governed signals yet" : "No completed reviews yet"}
+      </p>
       <p className="text-[10px] text-gray-600 text-center">
         {label} will populate from your workspace signals.
       </p>
@@ -196,11 +199,9 @@ export default function GovernanceDashboard({
   const memoryTier = getMemoryTier(metrics.institutionalMemory.score);
 
   // ── Derived chart data ──────────────────────────────────────────────
-  // Check if time-series has any non-zero values to decide whether to
-  // render charts or the empty state.
-  const hasProtectionData = metrics.timeSeriesData.some(
-    (d) => d.protectedARR > 0
-  );
+  // Protection availability is bound to persisted queue records, not a
+  // deployment flag or a non-zero currency value.
+  const hasProtectionData = metrics.queue.protectionSignalCount > 0;
   const hasLatencyData = metrics.timeSeriesData.some(
     (d) => d.avgLatencyMin > 0
   );
@@ -266,11 +267,11 @@ export default function GovernanceDashboard({
             <p className="font-heading text-3xl font-bold tracking-tight text-white">{formatCurrency(metrics.macroMetrics.approvedPipelineValue)}</p>
             <span className="rounded-full border border-[#FF5A36]/25 bg-[#FF5A36]/10 px-2.5 py-1 text-xs font-semibold text-[#FF5A36]">
               {metrics.macroMetrics.approvedSignalCount === 0
-                ? "Awaiting first approval"
+                ? "No approved signals"
                 : `${metrics.macroMetrics.approvedSignalCount} approved signal${metrics.macroMetrics.approvedSignalCount === 1 ? "" : "s"}`}
             </span>
           </div>
-          <p className="mt-4 text-sm leading-relaxed text-gray-400">Pipeline value linked to approved signals</p>
+          <p className="mt-4 text-sm leading-relaxed text-gray-400">Pipeline value linked to approved and meeting-locked signals</p>
         </div>
       </div>
 
@@ -367,7 +368,9 @@ export default function GovernanceDashboard({
             </div>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-[#FF5A1F]" />
-              <span className="text-[10px] text-gray-500 uppercase tracking-wider">Live</span>
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider">
+                {metrics.queue.protectionSignalCount} record{metrics.queue.protectionSignalCount === 1 ? "" : "s"}
+              </span>
             </div>
           </div>
 

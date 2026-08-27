@@ -47,6 +47,7 @@ export async function POST(_request: Request, { params }: DuplicateListRouteCont
             linkedInUrl: lead.linkedInUrl,
             companyName: lead.companyName,
             websiteUrl: lead.websiteUrl,
+            email: lead.email,
             score: lead.score,
             targetGroup: lead.targetGroup,
             incidentDetails: lead.incidentDetails,

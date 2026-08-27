@@ -1,0 +1,5 @@
+ALTER TABLE "User"
+ADD COLUMN "imapEmail" TEXT,
+ADD COLUMN "imapAppPassword" TEXT,
+ADD COLUMN "imapHost" TEXT,
+ADD COLUMN "imapPort" INTEGER DEFAULT 993;

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { resolvePipelineValue } from '@/lib/pipeline-value';
 import Anthropic from '@anthropic-ai/sdk';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 
@@ -36,7 +37,9 @@ export async function POST(req: Request) {
     const leadFirstName = payload.lead_first_name || payload.firstName || leadEmail.split('@')[0] || "Unknown prospect";
     const companyName = payload.company_name || payload.companyName || "";
     const replyText = payload.reply_text || payload.text || payload.body || "";
-    const pipelineValue = Number(payload.pipeline_value ?? payload.pipelineValue ?? payload.deal_value ?? 0) || 0;
+    const pipelineValue = resolvePipelineValue(
+      payload.pipeline_value ?? payload.pipelineValue ?? payload.deal_value,
+    );
 
     if (!leadEmail || !replyText) {
       return NextResponse.json({ success: false, error: "A lead email and reply text are required." }, { status: 400 });

@@ -74,6 +74,7 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
     website_url: lead.websiteUrl,
     linkedin_url: lead.linkedInUrl,
     linkedInUrl: lead.linkedInUrl,
+    email: lead.email,
     listId: lead.listId,
     score: lead.score,
     target_group: lead.targetGroup,

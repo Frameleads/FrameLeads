@@ -10,6 +10,16 @@ export default function GovernanceLoading() {
       </div>
 
       {/* ── Primary Metrics Grid ────────────────────────────────────── */}
+      <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-[172px] animate-pulse rounded-xl border border-gray-800 bg-gray-900/60 p-6">
+            <div className="mb-5 h-3 w-36 rounded bg-[#242424]" />
+            <div className="h-9 w-28 rounded bg-[#242424]" />
+            <div className="mt-5 h-4 w-48 max-w-full rounded bg-[#1A1A1A]" />
+          </div>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-2xl border border-[#242424] bg-[#121212] p-6 md:p-7 h-[200px] animate-pulse">
@@ -27,6 +37,10 @@ export default function GovernanceLoading() {
             <div className="flex-1 w-full bg-[#1A1A1A] rounded-xl"></div>
           </div>
         ))}
+      </div>
+      <div className="h-[104px] animate-pulse rounded-2xl border border-[#242424] bg-[#121212] p-6">
+        <div className="h-5 w-48 rounded bg-[#1A1A1A]" />
+        <div className="mt-3 h-3 w-64 max-w-full rounded bg-[#1A1A1A]" />
       </div>
     </div>
   );

@@ -3,10 +3,20 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import TriageCommandCenter from "./TriageCommandCenter";
+import InboxTriageLoading from "./loading";
 
 
-export default async function InboxTriagePage() {
+export default function InboxTriagePage() {
+  return (
+    <Suspense fallback={<InboxTriageLoading />}>
+      <InboxTriageData />
+    </Suspense>
+  );
+}
+
+async function InboxTriageData() {
   const cookieStore = await cookies();
   const email = cookieStore.get("user_email")?.value;
   const user = email
@@ -18,10 +28,10 @@ export default async function InboxTriagePage() {
 
   // Phase 4: Priority-sorted query — SIGNAL_TRIGGERED items with
   // isHighPriority=true always surface at the top of the triage queue.
-  const pendingSignals = await prisma.inboundSignal.findMany({
+  const triageSignals = await prisma.inboundSignal.findMany({
     where: {
       userId: user?.id ?? "__unauthenticated__",
-      status: "PENDING",
+      status: { in: ["PENDING", "ARCHIVED"] },
     },
     orderBy: [
       { isHighPriority: "desc" },
@@ -30,7 +40,7 @@ export default async function InboxTriagePage() {
   });
   return (
     <TriageCommandCenter
-      initialData={pendingSignals}
+      initialData={triageSignals}
       userTier={user?.tier ?? "INACTIVE"}
     />
   );

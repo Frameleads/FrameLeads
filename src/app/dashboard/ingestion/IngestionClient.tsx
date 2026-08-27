@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Papa from "papaparse";
@@ -12,6 +13,7 @@ import {
   Loader2,
   AlertCircle,
   Shield,
+  X,
 } from "lucide-react";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -28,6 +30,7 @@ interface LeadPayload {
   company_name: string;
   website_url: string | null;
   linkedin_url: string | null;
+  email: string | null;
   provided_incident_details: string | null;
   enrichment_status: "skipped_not_needed" | "pending_scrape";
   generation_status: "queued" | "waiting_on_enrichment";
@@ -49,6 +52,15 @@ interface LeadListOption {
   name: string;
 }
 
+interface ManualContactForm {
+  firstName: string;
+  companyName: string;
+  websiteUrl: string;
+  linkedinUrl: string;
+  email: string;
+  incidentDetails: string;
+}
+
 // ── Constants ───────────────────────────────────────────────────────────
 
 const SCHEMA_FIELDS = [
@@ -56,6 +68,7 @@ const SCHEMA_FIELDS = [
   "company_name",
   "website_url",
   "linkedin_url",
+  "email",
   "provided_incident_details",
 ] as const;
 
@@ -66,11 +79,21 @@ const SCHEMA_LABELS: Record<SchemaField, string> = {
   company_name: "Company Name",
   website_url: "Website URL",
   linkedin_url: "LinkedIn URL",
+  email: "Email",
   provided_incident_details: "Incident Details",
 };
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
+
+const EMPTY_MANUAL_CONTACT: ManualContactForm = {
+  firstName: "",
+  companyName: "",
+  websiteUrl: "",
+  linkedinUrl: "",
+  email: "",
+  incidentDetails: "",
+};
 
 // ── Component ───────────────────────────────────────────────────────────
 
@@ -86,6 +109,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     company_name: "",
     website_url: "",
     linkedin_url: "",
+    email: "",
     provided_incident_details: ""
   });
   const [isProcessing, setIsProcessing] = useState(false);
@@ -96,8 +120,16 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   const [newListName, setNewListName] = useState("");
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [overwriteExisting, setOverwriteExisting] = useState(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState(false);
+  const [manualFormData, setManualFormData] = useState<ManualContactForm>(EMPTY_MANUAL_CONTACT);
+  const [isSavingManualContact, setIsSavingManualContact] = useState(false);
+  const [manualFormError, setManualFormError] = useState<string | null>(null);
+  const [successToast, setSuccessToast] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   const leadsGenerated = leadsProcessed;
+
+  useEffect(() => setMounted(true), []);
 
   // ── Load Campaign Context ───────────────────────────────────────────
 
@@ -215,10 +247,11 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
           company_name: "",
           website_url: "",
           linkedin_url: "",
+          email: "",
           provided_incident_details: ""
         };
 
-        const targetFields = ["first_name", "company_name", "website_url", "linkedin_url", "provided_incident_details"];
+        const targetFields = ["first_name", "company_name", "website_url", "linkedin_url", "email", "provided_incident_details"];
         
         targetFields.forEach((schemaField) => {
           const match = headers.find((col) => {
@@ -278,6 +311,10 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         fieldMappings.linkedin_url
           ? (row[fieldMappings.linkedin_url] ?? "").trim() || null
           : null;
+      const email =
+        fieldMappings.email
+          ? (row[fieldMappings.email] ?? "").trim() || null
+          : null;
       const incidentDetails =
         fieldMappings.provided_incident_details
           ? (row[fieldMappings.provided_incident_details] ?? "").trim() || null
@@ -291,6 +328,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         company_name: companyName,
         website_url: websiteUrl,
         linkedin_url: linkedInUrl,
+        email,
         provided_incident_details: incidentDetails,
         enrichment_status: hasWebsite ? "pending_scrape" : "skipped_not_needed",
         generation_status: hasWebsite ? "waiting_on_enrichment" : "queued",
@@ -380,6 +418,75 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
 
   // ── Derived state ─────────────────────────────────────────────────
 
+  const handleSaveManualContact = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setManualFormError(null);
+
+    const firstName = manualFormData.firstName.trim();
+    const companyName = manualFormData.companyName.trim();
+    if (!firstName || !companyName) {
+      setManualFormError("First Name and Company Name are required.");
+      return;
+    }
+    if (!campaignContext) {
+      setManualFormError("Define your Campaign Context before saving a contact.");
+      return;
+    }
+
+    const websiteUrl = manualFormData.websiteUrl.trim() || null;
+    const lead: LeadPayload = {
+      lead_id: `manual_${Date.now()}`,
+      first_name: firstName,
+      company_name: companyName,
+      website_url: websiteUrl,
+      linkedin_url: manualFormData.linkedinUrl.trim() || null,
+      email: manualFormData.email.trim() || null,
+      provided_incident_details: manualFormData.incidentDetails.trim() || null,
+      enrichment_status: websiteUrl ? "pending_scrape" : "skipped_not_needed",
+      generation_status: websiteUrl ? "waiting_on_enrichment" : "queued",
+    };
+
+    const payload = {
+      batch_id: `manual_batch_${Date.now()}`,
+      status: "processing",
+      context: campaignContext,
+      leads: [lead],
+      creditsUsed: leadsGenerated,
+      tier: userTier,
+      listId: selectedListId || null,
+      overwriteExisting,
+    };
+
+    setIsSavingManualContact(true);
+    try {
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(result?.error || `API returned ${response.status}.`);
+      }
+      if (!result?.leads || !Array.isArray(result.leads)) {
+        throw new Error("Invalid generation response.");
+      }
+
+      sessionStorage.setItem("frameleads_batch", JSON.stringify(result));
+      setIsManualModalOpen(false);
+      setManualFormData(EMPTY_MANUAL_CONTACT);
+      setSuccessToast("Contact saved successfully!");
+      window.dispatchEvent(new Event("frameleads:lists-changed"));
+      router.refresh();
+      window.setTimeout(() => setSuccessToast(null), 3000);
+    } catch (error) {
+      setManualFormError(error instanceof Error ? error.message : "Failed to save the contact.");
+    } finally {
+      setIsSavingManualContact(false);
+    }
+  };
+
   const mappedCount = Object.values(fieldMappings).filter(Boolean).length;
   const canProcess =
     csvRows.length > 0 &&
@@ -393,7 +500,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   return (
     <div className="max-w-5xl mx-auto space-y-8 px-4 sm:px-6 md:px-8 lg:px-0">
       <div className="mb-10 md:mb-12">
-        <h1 className="text-4xl font-bold tracking-tight font-heading">
+        <h1 className="text-3xl font-bold tracking-tight font-heading sm:text-4xl">
           Data Ingestion
         </h1>
         <p className="text-lg text-muted-foreground mt-3 leading-relaxed">
@@ -444,7 +551,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-2xl p-16 text-center transition-all duration-300 cursor-pointer min-h-[400px] flex flex-col items-center justify-center ${
+        className={`relative flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-all duration-300 sm:min-h-[360px] sm:p-10 md:min-h-[400px] md:p-16 ${
           isDragging
             ? "border-primary bg-primary/5 scale-[1.01]"
             : fileName
@@ -466,10 +573,10 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                 <Check className="w-10 h-10 text-green-500" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-foreground">
+                <p className="break-all text-xl font-semibold text-foreground sm:text-2xl">
                   {fileName}
                 </p>
-                <p className="text-lg text-muted-foreground mt-2">
+                <p className="mt-2 text-base text-muted-foreground sm:text-lg">
                   {csvColumns.length} columns &middot; {csvRows.length} rows
                   detected
                 </p>
@@ -481,16 +588,29 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                 <Upload className="w-10 h-10 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-2xl font-semibold text-foreground">
+                <p className="text-xl font-semibold text-foreground sm:text-2xl">
                   Drop your CSV here
                 </p>
-                <p className="text-lg text-muted-foreground mt-2">
+                <p className="mt-2 text-base text-muted-foreground sm:text-lg">
                   or click to browse &middot; .csv files only
                 </p>
               </div>
             </>
           )}
         </div>
+      </div>
+
+      <div className="text-center">
+        <button
+          type="button"
+          onClick={() => {
+            setManualFormError(null);
+            setIsManualModalOpen(true);
+          }}
+          className="mt-6 px-6 py-3 border border-[#242424] bg-[#1A1A1A] hover:bg-[#242424] text-[#FFFFFF] text-sm font-medium rounded-xl transition-all duration-200"
+        >
+          Or add a single contact manually
+        </button>
       </div>
 
       {/* 2x2 Apollo-style Mapping Grid */}
@@ -606,6 +726,180 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
             </button>
           </div>
         </div>
+      )}
+
+      {successToast && (
+        <div
+          role="status"
+          className="fixed right-6 top-6 z-[1000] rounded-xl border border-[#FF5A1F]/30 bg-[#1A1A1A] px-4 py-3 text-sm font-medium text-[#FFFFFF] shadow-2xl"
+        >
+          {successToast}
+        </div>
+      )}
+
+      {isManualModalOpen && mounted && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] bg-[#000000]/80 backdrop-blur-sm flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="manual-contact-title"
+        >
+          <form
+            onSubmit={handleSaveManualContact}
+            className="bg-[#1A1A1A] border border-[#242424] rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden"
+          >
+            <div className="max-h-[90vh] overflow-y-auto p-6">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="manual-contact-title" className="text-xl font-semibold text-[#FFFFFF]">
+                  Add a Single Contact
+                </h2>
+                <p className="mt-1 text-sm text-[#888888]">
+                  Enter the prospect details to generate outreach drafts.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsManualModalOpen(false)}
+                disabled={isSavingManualContact}
+                aria-label="Close manual contact form"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#888888] transition-colors hover:bg-[#242424] hover:text-[#FFFFFF] disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 mb-6">
+              <label className="block text-sm font-medium text-[#888888] mb-1">
+                First Name
+                <input
+                  type="text"
+                  required
+                  value={manualFormData.firstName}
+                  onChange={(event) => setManualFormData((current) => ({ ...current, firstName: event.target.value }))}
+                  className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                  placeholder="Sarah"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-[#888888] mb-1">
+                Company Name
+                <input
+                  type="text"
+                  required
+                  value={manualFormData.companyName}
+                  onChange={(event) => setManualFormData((current) => ({ ...current, companyName: event.target.value }))}
+                  className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                  placeholder="Acme Inc."
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-[#888888] mb-1">
+                Email
+                <input
+                  type="email"
+                  value={manualFormData.email}
+                  onChange={(event) => setManualFormData((current) => ({ ...current, email: event.target.value }))}
+                  className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                  placeholder="sarah@acme.com"
+                />
+              </label>
+
+              <label className="block text-sm font-medium text-[#888888] mb-1">
+                LinkedIn URL
+                <input
+                  type="text"
+                  value={manualFormData.linkedinUrl}
+                  onChange={(event) => setManualFormData((current) => ({ ...current, linkedinUrl: event.target.value }))}
+                  className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                  placeholder="https://linkedin.com/in/sarah"
+                />
+              </label>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-[#888888] mb-1">
+                  Website URL
+                  <input
+                    type="text"
+                    value={manualFormData.websiteUrl}
+                    onChange={(event) => setManualFormData((current) => ({ ...current, websiteUrl: event.target.value }))}
+                    className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                    placeholder="https://acme.com"
+                  />
+                </label>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-[#888888] mb-1">
+                  Incident Details
+                  <textarea
+                    value={manualFormData.incidentDetails}
+                    onChange={(event) => setManualFormData((current) => ({ ...current, incidentDetails: event.target.value }))}
+                    rows={3}
+                    className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                    placeholder="Describe the operational pain or buying signal..."
+                  />
+                </label>
+              </div>
+
+              <div className="md:col-span-2 pt-2">
+                <label htmlFor="manual-destination-list" className="block text-sm font-medium text-[#888888] mb-2">
+                  Destination List (Optional)
+                </label>
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <select
+                    id="manual-destination-list"
+                    value={selectedListId}
+                    onChange={(event) => setSelectedListId(event.target.value)}
+                    className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                  >
+                    <option value="">Unassigned (General Sandbox)</option>
+                    {availableLists.map((list) => (
+                      <option key={list.id} value={list.id}>{list.name}</option>
+                    ))}
+                  </select>
+
+                  <div className="flex w-full gap-2">
+                    <input
+                      type="text"
+                      value={newListName}
+                      onChange={(event) => setNewListName(event.target.value)}
+                      placeholder="New list name"
+                      maxLength={100}
+                      className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleCreateList}
+                      disabled={isCreatingList || !newListName.trim()}
+                      className="bg-[#1A1A1A] hover:bg-[#242424] border border-[#242424] text-[#FF5A1F] px-5 py-3 rounded-lg font-medium transition-colors whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {isCreatingList ? "Creating..." : "Create"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {manualFormError && (
+              <div className="mt-4 flex items-start gap-2 rounded-lg border border-[#FF5A1F]/30 bg-[#000000] p-3 text-sm text-[#FF5A1F]">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{manualFormError}</span>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={isSavingManualContact}
+              className="w-full bg-[#FF5A1F] hover:bg-[#FF5A1F]/90 text-[#FFFFFF] font-medium py-3 px-4 rounded-lg transition-all"
+            >
+              {isSavingManualContact && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSavingManualContact ? "Saving..." : "Save Contact"}
+            </button>
+            </div>
+          </form>
+        </div>,
+        document.body
       )}
     </div>
   );

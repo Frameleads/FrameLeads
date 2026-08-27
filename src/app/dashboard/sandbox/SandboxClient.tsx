@@ -23,6 +23,7 @@ import {
   Trash2,
   Linkedin
 } from "lucide-react";
+import { playUISound } from "@/lib/audio";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -57,12 +58,6 @@ interface Lead {
   whatsAppDraft?: string | null;
   listId?: string | null;
   deployment_status: string;
-}
-
-interface LeadListSummary {
-  id: string;
-  name: string;
-  _count?: { leads: number };
 }
 
 function parseChannel(channel: GeneratedChannel): { subject: string; body: string } {
@@ -118,6 +113,17 @@ function parseEmailDraft(channel: GeneratedChannel): { subject: string; body: st
     subject: "",
     body: cleanedLines.join("\n").trim(),
   };
+}
+
+function formatEmailBodyAsHtml(body: string) {
+  const escapedBody = body
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+
+  return `<div style="white-space: pre-wrap; font-family: Arial, sans-serif;">${escapedBody.replace(/\r?\n/g, "<br>")}</div>`;
 }
 
 function buildLinkedInHandoffUrl(rawUrl?: string | null): string | null {
@@ -225,28 +231,13 @@ export default function SandboxClient({
   const [draftText, setDraftText] = useState("");
   const [isClearing, setIsClearing] = useState(false);
   const [deletingLeadId, setDeletingLeadId] = useState<string | null>(null);
-  const [movingLeadId, setMovingLeadId] = useState<string | null>(null);
-  const [leadLists, setLeadLists] = useState<LeadListSummary[]>([]);
   const [handoffToast, setHandoffToast] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [emailSendSuccess, setEmailSendSuccess] = useState(false);
+  const [emailSendError, setEmailSendError] = useState("");
+  const [sentLeads, setSentLeads] = useState<Set<string>>(() => new Set());
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const selectedListId = searchParams.get("list");
-
-  const loadLeadLists = useCallback(async () => {
-    try {
-      const response = await fetch("/api/lists", { cache: "no-store" });
-      if (!response.ok) return;
-      const result = await response.json();
-      setLeadLists(Array.isArray(result.lists) ? result.lists : []);
-    } catch {
-      // Keep the Sandbox usable if list metadata is temporarily unavailable.
-    }
-  }, []);
-
-  useEffect(() => {
-    loadLeadLists();
-    window.addEventListener("frameleads:lists-changed", loadLeadLists);
-    return () => window.removeEventListener("frameleads:lists-changed", loadLeadLists);
-  }, [loadLeadLists]);
+  const detailPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setSearchQuery(initialQuery);
@@ -392,14 +383,51 @@ useEffect(() => {
 
   const selectedLead = leads.find((l) => l.lead_id === selectedId);
   const parsedEmailDraft = parseEmailDraft(selectedLead?.generated_email || null);
-  const gmailSubject = `Pipeline triage: ${selectedLead?.companyName || selectedLead?.company_name || "Your Pipeline"}`;
+  const emailSubject = `Pipeline triage: ${selectedLead?.companyName || selectedLead?.company_name || "Your Pipeline"}`;
   const recipientEmail = selectedLead?.email || selectedLead?.email_address || selectedLead?.emailAddress || "";
-  const gmailHref = selectedLead
-    ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(gmailSubject)}&body=${encodeURIComponent(parsedEmailDraft.body)}`
-    : "https://mail.google.com/mail/?view=cm&fs=1";
   const linkedInHandoffUrl = buildLinkedInHandoffUrl(
     selectedLead?.linkedInUrl || selectedLead?.linkedin_url
   );
+
+  const handleSendNativeEmail = async () => {
+    if (!selectedLead || !recipientEmail || !parsedEmailDraft.body.trim()) {
+      setEmailSendError("A recipient email and generated draft are required.");
+      return;
+    }
+
+    setIsSending(true);
+    setEmailSendError("");
+    setEmailSendSuccess(false);
+
+    try {
+      const response = await fetch("/api/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: recipientEmail,
+          subject: emailSubject,
+          htmlBody: formatEmailBodyAsHtml(parsedEmailDraft.body),
+        }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(result?.error || "Unable to send email.");
+      }
+
+      playUISound("send");
+      setSentLeads((current) => {
+        const next = new Set(current);
+        next.add(selectedLead.id);
+        return next;
+      });
+      setEmailSendSuccess(true);
+      setTimeout(() => setEmailSendSuccess(false), 3_500);
+    } catch (error) {
+      setEmailSendError(error instanceof Error ? error.message : "Unable to send email.");
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const getActiveText = useCallback(() => {
     if (!selectedLead) return "";
@@ -409,6 +437,7 @@ useEffect(() => {
         `First Name: ${selectedLead.raw_first_name || selectedLead.first_name || "—"}`,
         `Last Name: ${selectedLead.last_name || "—"}`,
         `Company Name: ${selectedLead.company_name || "—"}`,
+        `Email: ${selectedLead.email || selectedLead.email_address || selectedLead.emailAddress || "—"}`,
         `LinkedIn URL: ${selectedLead.linkedin_url || "—"}`,
         `Website URL: ${selectedLead.website_url || "—"}`,
         `Score: ${selectedLead.score ?? "—"}`,
@@ -485,6 +514,11 @@ useEffect(() => {
   const handleSelect = (lead: Lead) => {
     setSelectedId(lead.lead_id);
     setCopySuccess(false);
+    if (window.matchMedia("(max-width: 767px)").matches) {
+      window.requestAnimationFrame(() => {
+        detailPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
   };
 
   const handleClearSandbox = async () => {
@@ -541,46 +575,12 @@ useEffect(() => {
         );
         return remainingLeads;
       });
+      window.dispatchEvent(new Event("frameleads:lists-changed"));
       router.refresh();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "Failed to delete the lead.");
     } finally {
       setDeletingLeadId(null);
-    }
-  };
-
-  const handleMoveLead = async (lead: Lead, nextListId: string) => {
-    const listId = nextListId || null;
-    setMovingLeadId(lead.id);
-    try {
-      const response = await fetch(`/api/leads/${encodeURIComponent(lead.id)}/move`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listId }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(result?.error || "Failed to move the lead.");
-
-      setLeads((current) => {
-        const updatedLeads = current.map((item) =>
-          item.id === lead.id ? { ...item, listId } : item
-        );
-        const visibleLeads = selectedListId && selectedListId !== listId
-          ? updatedLeads.filter((item) => item.id !== lead.id)
-          : updatedLeads;
-        setSelectedId((currentId) =>
-          currentId === lead.lead_id && !visibleLeads.some((item) => item.lead_id === currentId)
-            ? visibleLeads[0]?.lead_id || ""
-            : currentId
-        );
-        return visibleLeads;
-      });
-      window.dispatchEvent(new Event("frameleads:lists-changed"));
-      router.refresh();
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Failed to move the lead.");
-    } finally {
-      setMovingLeadId(null);
     }
   };
 
@@ -747,7 +747,7 @@ useEffect(() => {
         escapeCsv(lead.first_name),
         escapeCsv(lead.website_url),
         escapeCsv(lead.linkedin_url),
-        escapeCsv(lead.email_address),
+        escapeCsv(lead.email || lead.email_address || lead.emailAddress),
         escapeCsv(emailSubject),
         escapeCsv(getChannelBody(lead.generated_email)),
         escapeCsv(getChannelBody(lead.generated_linkedin)),
@@ -779,11 +779,11 @@ useEffect(() => {
   console.log("Sandbox Props:", { userTier, monthlyQuota, leadsProcessed });
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 min-h-[calc(100vh-8rem)] lg:h-[calc(100vh-8rem)] relative">
+    <div className="relative flex min-h-[calc(100vh-8rem)] flex-col gap-6 md:h-[calc(100vh-8rem)] md:flex-row">
 
       
       {/* Left Panel Column */}
-      <div className="w-full lg:w-1/2 flex flex-col gap-4 min-h-[300px] lg:min-h-0 lg:h-full">
+      <div className="flex min-h-[300px] w-full flex-col gap-4 md:h-full md:min-h-0 md:w-1/2">
         
         {/* Tier Quota Header */}
         <div className="rounded-2xl border border-primary/30 bg-primary/10 px-5 py-6 mb-6 md:p-6 md:mb-0 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
@@ -839,7 +839,7 @@ useEffect(() => {
           </div>
         ) : (
         <div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden flex-1">
-        <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between">
+        <div className="flex flex-col items-start justify-between gap-3 border-b border-border/50 px-4 py-4 sm:flex-row sm:items-center sm:px-6">
           <div>
             <h3 className="text-sm font-medium font-heading">Leads</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -849,7 +849,7 @@ useEffect(() => {
             </p>
           </div>
           {completedCount > 0 && (
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <button
                 onClick={exportToCSV}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-primary bg-primary/10 border border-primary/20 rounded-md hover:bg-primary/20 hover:border-primary/40 transition-colors"
@@ -883,10 +883,11 @@ useEffect(() => {
           ) : leads.map((lead) => {
             const status = getStatus(lead);
             const isActive = lead.lead_id === selectedId;
+            const hasBeenEmailed = sentLeads.has(lead.id);
             return (
               <div
                 key={lead.lead_id}
-                className={`flex w-full items-center transition-all duration-150 ${
+                className={`flex w-full items-center transition-all duration-150 ${hasBeenEmailed ? "opacity-50" : ""} ${
                   isActive
                     ? "bg-primary/5 border-l-2 border-l-primary"
                     : "hover:bg-muted/30 border-l-2 border-l-transparent"
@@ -895,7 +896,7 @@ useEffect(() => {
                 <button
                   type="button"
                   onClick={() => handleSelect(lead)}
-                  className="min-w-0 flex-1 px-6 py-4 text-left"
+                  className="min-w-0 flex-1 px-4 py-4 text-left sm:px-6"
                 >
                   <div className="flex flex-row items-center w-full md:justify-between gap-3 md:gap-0">
                   <div className="flex-1 text-left">
@@ -914,24 +915,6 @@ useEffect(() => {
                   </div>
                   </div>
                 </button>
-                <div className="relative ml-2 shrink-0">
-                  <select
-                    value={lead.listId || ""}
-                    onChange={(event) => handleMoveLead(lead, event.target.value)}
-                    disabled={movingLeadId === lead.id}
-                    aria-label={`Move ${lead.first_name || "lead"} to list`}
-                    title="Move to List"
-                    className="h-8 max-w-32 appearance-none rounded-lg border border-border/60 bg-background py-1 pl-2 pr-7 text-[11px] text-muted-foreground outline-none transition-colors hover:border-primary/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">No list</option>
-                    {leadLists.map((list) => (
-                      <option key={list.id} value={list.id}>{list.name}</option>
-                    ))}
-                  </select>
-                  {movingLeadId === lead.id && (
-                    <Loader2 className="pointer-events-none absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-primary" />
-                  )}
-                </div>
                 <button
                   type="button"
                   onClick={() => handleDeleteLead(lead)}
@@ -976,8 +959,8 @@ useEffect(() => {
       </div>
 
       {/* Right Panel — AI Copy Editor */}
-      <div className="w-full lg:w-1/2 rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm flex flex-col overflow-hidden min-h-[400px] lg:min-h-0 lg:h-full">
-        <div className="px-6 py-4 border-b border-border/50 flex items-center justify-between w-full gap-2">
+      <div ref={detailPanelRef} className="flex min-h-[400px] w-full scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm md:h-full md:min-h-0 md:w-1/2">
+        <div className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
             <h3 className="text-sm font-medium font-heading truncate">
@@ -1022,7 +1005,7 @@ useEffect(() => {
             )}
           </div>
         </div>
-        <div className="px-6 py-3 border-b border-border/50 bg-muted/10 flex overflow-x-auto hide-scrollbar whitespace-nowrap gap-4 w-full pr-4">
+        <div className="hide-scrollbar flex w-full gap-4 overflow-x-auto whitespace-nowrap border-b border-border/50 bg-muted/10 px-4 py-3 sm:px-6">
           <button
             onClick={() => setActiveTab("email")}
             className={`text-sm font-medium pb-2 border-b-2 transition-colors ${
@@ -1064,7 +1047,12 @@ useEffect(() => {
             Intelligence
           </button>
         </div>
-        <div className="flex-1 p-6 overflow-y-auto relative">
+        <div className="relative flex-1 overflow-y-auto p-4 sm:p-6">
+          {activeTab === "email" && selectedLead && sentLeads.has(selectedLead.id) && (
+            <div className="mb-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#004225] bg-[#002514] text-[#00FF85] text-[10px] font-bold uppercase tracking-widest w-max">
+              <CheckCircle2 className="w-3 h-3" /> Deployed
+            </div>
+          )}
           {selectedLead && (selectedLead.generated_email || activeTab === "intelligence") ? (
             <>
             <div className={`w-full h-full whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground bg-transparent focus:outline-none ${selectedLead.generation_status === 'quota_locked' ? 'blur-md select-none opacity-50' : ''}`}>
@@ -1072,7 +1060,7 @@ useEffect(() => {
                 <div className="flex flex-col h-full">
                   {activeTab === "email" && (
                     <div className="text-xs font-bold text-gray-400 mb-2">
-                      Subject: {gmailSubject}
+                      Subject: {emailSubject}
                     </div>
                   )}
                   <textarea
@@ -1101,7 +1089,7 @@ useEffect(() => {
                           Subject
                         </p>
                         <p className="font-medium text-foreground">
-                          {gmailSubject}
+                          {emailSubject}
                         </p>
                       </div>
                       <div>
@@ -1112,15 +1100,28 @@ useEffect(() => {
                           {parsedEmailDraft.body || "No email generated."}
                         </div>
                       </div>
-                      <a
-                        href={gmailHref}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#FF5A1F] px-5 text-sm font-semibold text-white shadow-lg shadow-[#FF5A1F]/20 transition-all hover:bg-[#ff6b35] hover:shadow-[#FF5A1F]/30 active:scale-[0.99]"
+                      <button
+                        type="button"
+                        onClick={handleSendNativeEmail}
+                        disabled={isSending || sentLeads.has(selectedLead.id) || !recipientEmail || !parsedEmailDraft.body.trim()}
+                        className={`mt-2 inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold transition-all disabled:cursor-not-allowed ${
+                          sentLeads.has(selectedLead.id)
+                            ? "border border-gray-700 bg-gray-800 text-gray-300 shadow-none"
+                            : "bg-[#FF5A1F] text-white shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#ff6b35] hover:shadow-[#FF5A1F]/30 active:scale-[0.99] disabled:opacity-50 disabled:hover:bg-[#FF5A1F]"
+                        }`}
                       >
-                        <Mail className="h-4 w-4" />
-                        Send via Gmail
-                      </a>
+                        {!sentLeads.has(selectedLead.id) && (isSending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Mail className="h-4 w-4" />
+                        ))}
+                        {sentLeads.has(selectedLead.id) ? "✅ Email Sent" : isSending ? "Sending..." : "Send via Email"}
+                      </button>
+                      {emailSendError && (
+                        <p className="text-sm text-red-400" role="alert">
+                          {emailSendError}
+                        </p>
+                      )}
                     </div>
                   );
                 }
@@ -1130,6 +1131,7 @@ useEffect(() => {
                     { label: "First Name", value: selectedLead.raw_first_name || selectedLead.first_name || "—" },
                     { label: "Last Name", value: selectedLead.last_name || "—" },
                     { label: "Company Name", value: selectedLead.company_name || "—" },
+                    { label: "Email", value: selectedLead.email || selectedLead.email_address || selectedLead.emailAddress || "N/A" },
                     {
                       label: "LinkedIn URL",
                       value: selectedLead.linkedInUrl && selectedLead.linkedInUrl.includes('linkedin.com')
@@ -1140,9 +1142,6 @@ useEffect(() => {
                         : undefined
                     },
                     { label: "Website URL", value: selectedLead.website_url || "—", href: selectedLead.website_url ? (selectedLead.website_url.startsWith("http") ? selectedLead.website_url : `https://${selectedLead.website_url}`) : undefined },
-                    { label: "Score", value: selectedLead.score?.toString() || "—" },
-                    { label: "Target Group", value: selectedLead.target_group || "—" },
-                    { label: "Created At", value: selectedLead.created_at || "—" },
                   ];
 
                   return (
@@ -1189,6 +1188,7 @@ useEffect(() => {
                           {selectedLead.provided_incident_details || "No incident details recorded."}
                         </p>
                       </div>
+                      <div className="h-24 w-full shrink-0"></div>
                     </div>
                   );
                 }
@@ -1279,9 +1279,15 @@ useEffect(() => {
         </div>
       </div>
       {handoffToast && (
-        <div className="fixed bottom-6 right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60">
+        <div className="fixed top-6 right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60">
           <CheckCircle2 className="h-4 w-4" />
           Draft copied to clipboard!
+        </div>
+      )}
+      {emailSendSuccess && (
+        <div className="fixed top-6 right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60" role="status">
+          <CheckCircle2 className="h-4 w-4" />
+          🔥 Outreach deployed successfully!
         </div>
       )}
     </div>

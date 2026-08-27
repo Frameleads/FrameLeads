@@ -203,6 +203,7 @@ export async function POST(req: Request) {
         company_name: movedLead.companyName,
         website_url: movedLead.websiteUrl,
         linkedin_url: movedLead.linkedInUrl,
+        email: movedLead.email,
         listId: movedLead.listId,
         provided_incident_details: movedLead.incidentDetails,
         enrichment_status: "completed",
@@ -339,6 +340,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               const lastName = lead.last_name || lead.lastName || '';
               const companyName = lead.company_name || lead.companyName || 'Unknown Company';
               const websiteUrl = lead.website_url || lead.websiteUrl || null;
+              const email = lead.email || lead.email_address || lead.emailAddress || null;
               const linkedInUrl = getLeadLinkedInUrl(lead);
               const rawScore = lead.score == null ? null : Number(lead.score);
               const score = rawScore !== null && Number.isInteger(rawScore) ? rawScore : null;
@@ -357,6 +359,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
                       lastName,
                       companyName,
                       websiteUrl,
+                      email,
                       score,
                       targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
                       incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
@@ -376,6 +379,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
                       linkedInUrl: safeLinkedInUrl,
                       companyName,
                       websiteUrl,
+                      email,
                       score,
                       targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
                       incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
@@ -398,6 +402,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               company_name: lead.company_name || "Unknown Company",
               website_url: lead.website_url || null,
               linkedin_url: lead.linkedin_url || lead.linkedInUrl || lead.linkedin || null,
+              email: lead.email || lead.email_address || lead.emailAddress || null,
               listId: listId || lead.listId || null,
               provided_incident_details: "Generated based on visceral architecture.",
               enrichment_status: "completed",
@@ -427,6 +432,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
       first_name: lead.first_name || "Unknown",
       company_name: lead.company_name || "Unknown Company",
       website_url: lead.website_url || null,
+      email: lead.email || lead.email_address || lead.emailAddress || null,
       provided_incident_details: "Generated based on visceral architecture.",
       enrichment_status: "completed",
       generation_status: "quota_locked",

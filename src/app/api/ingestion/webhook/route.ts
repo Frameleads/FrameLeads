@@ -27,6 +27,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
 import { normalizeSignalPayload, type NormalizedSignal } from "@/lib/signal-normalizer";
 import {
@@ -251,7 +252,7 @@ export async function POST(req: Request) {
         prospectName: signal.prospectName,
         prospectEmail: signal.prospectEmail,
         prospectContext: `${signal.companyName} | Signal: ${signal.signalType.replace(/_/g, " ")}`,
-        pipelineValue: 0, // Unknown at signal ingestion — updated during triage.
+        pipelineValue: DEFAULT_PIPELINE_VALUE,
         dealStage: "Signal Detected",
         rawEmail: signal.rawSignalText,
         intentRisk: "High",

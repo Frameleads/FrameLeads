@@ -1,0 +1,2 @@
+ALTER TABLE "InboundSignal"
+ADD COLUMN "signals" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

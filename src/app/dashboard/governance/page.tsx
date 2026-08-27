@@ -1,10 +1,20 @@
 import { prisma } from '@/lib/prisma';
 import { cookies } from 'next/headers';
-import GovernanceDashboard from "./GovernanceDashboard";
+import { Suspense } from 'react';
+import GovernanceDashboard from './GovernanceDashboard';
+import GovernanceLoading from './loading';
 
 export const dynamic = 'force-dynamic';
 
-export default async function GovernancePage() {
+export default function GovernancePage() {
+  return (
+    <Suspense fallback={<GovernanceLoading />}>
+      <GovernanceData />
+    </Suspense>
+  );
+}
+
+async function GovernanceData() {
   const cookieStore = await cookies();
   const email = cookieStore.get('user_email')?.value;
   const user = email
@@ -14,83 +24,96 @@ export default async function GovernancePage() {
       })
     : null;
 
-  const signals = await prisma.inboundSignal.findMany({
-    where: { userId: user?.id ?? '__unauthenticated__' },
-    orderBy: { createdAt: 'asc' }
-  });
-
-  // Task 2: The Telemetry Math
-  const approvedSignals = signals.filter(s => s.status === 'APPROVED');
-  const pendingCount = signals.filter(s => s.status === 'PENDING').length;
-  const autoArchivedCount = signals.filter(s => s.status === 'AUTO_ARCHIVED').length;
-
-  const dealsProtectedValue = approvedSignals.reduce((sum, s) => sum + (s.pipelineValue || 0), 0);
-  const dealsProtectedCount = approvedSignals.length;
-
-  let totalLatencyMs = 0;
-  let latencyCount = 0;
-
-  // Task 3: Chart Hydration (14-Day Lookback)
+  const metricsUserId = user?.id ?? '__unauthenticated__';
   const now = new Date();
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
   const currentMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const metricsUserId = user?.id ?? '__unauthenticated__';
 
-  const [totalOutputVolume, currentMonthOutput] = await Promise.all([
+  // Resolve every dashboard metric on the server before hydrating the chart layout.
+  const [signals, protectedPipeline, totalOutputVolume, currentMonthOutput, rulesCount] = await Promise.all([
+    prisma.inboundSignal.findMany({
+      where: {
+        userId: metricsUserId,
+        status: { not: 'TRASHED' },
+      },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.inboundSignal.aggregate({
+      where: {
+        userId: metricsUserId,
+        status: 'APPROVED',
+      },
+      _sum: { pipelineValue: true },
+      _count: { id: true },
+    }),
     prisma.generatedLead.count({ where: { userId: metricsUserId } }),
     prisma.generatedLead.count({
       where: { userId: metricsUserId, createdAt: { gte: currentMonthStart } },
     }),
+    prisma.governanceRule.count({
+      where: { userId: metricsUserId, isActive: true },
+    }),
   ]);
-  
-  // Initialize 14 days map
-  const timeSeriesMap = new Map<string, { arr: number, latencyMsTotal: number, latencyCount: number }>();
+
+  const protectedSignals = signals.filter((signal) => signal.status === 'APPROVED');
+  const pendingCount = signals.filter((signal) => signal.status === 'PENDING').length;
+  const archivedCount = signals.filter((signal) => signal.status === 'ARCHIVED').length;
+  const protectionSignalCount = signals.length;
+  const signalTriggeredCount = signals.filter((signal) => signal.sourceType !== 'MANUAL').length;
+  const dealsProtectedValue = protectedPipeline._sum.pipelineValue ?? 0;
+  const dealsProtectedCount = protectedPipeline._count.id;
+
+  let totalLatencyMs = 0;
+  let latencyCount = 0;
+  const timeSeriesMap = new Map<string, { arr: number; latencyMsTotal: number; latencyCount: number }>();
+
   for (let i = 13; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-    const dayStr = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-    timeSeriesMap.set(dayStr, { arr: 0, latencyMsTotal: 0, latencyCount: 0 });
+    const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const day = `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+    timeSeriesMap.set(day, { arr: 0, latencyMsTotal: 0, latencyCount: 0 });
   }
 
-  for (const s of approvedSignals) {
-    if (!s.approvedAt) continue;
+  // Protection velocity follows qualified, actively governed signals.
+  for (const signal of protectedSignals) {
+    const activityDate = signal.approvedAt ?? signal.createdAt;
+    if (activityDate < fourteenDaysAgo) continue;
 
-    const created = new Date(s.createdAt).getTime();
-    const updated = new Date(s.approvedAt).getTime();
-    const latencyMs = updated - created;
-    if (latencyMs >= 0) {
-      totalLatencyMs += latencyMs;
-      latencyCount++;
-    }
+    const day = `${String(activityDate.getMonth() + 1).padStart(2, '0')}/${String(activityDate.getDate()).padStart(2, '0')}`;
+    const stats = timeSeriesMap.get(day);
+    if (stats) stats.arr += signal.pipelineValue ?? 0;
+  }
 
-    if (new Date(s.createdAt) >= fourteenDaysAgo) {
-      const dayStr = `${String(s.approvedAt.getMonth() + 1).padStart(2, '0')}/${String(s.approvedAt.getDate()).padStart(2, '0')}`;
-      if (timeSeriesMap.has(dayStr)) {
-        const stats = timeSeriesMap.get(dayStr)!;
-        stats.arr += (s.pipelineValue || 0);
-        if (latencyMs >= 0) {
-          stats.latencyMsTotal += latencyMs;
-          stats.latencyCount++;
-        }
+  // Review latency is calculated from every governed signal with a review timestamp.
+  for (const signal of signals) {
+    if (!signal.approvedAt) continue;
+
+    const latencyMs = signal.approvedAt.getTime() - signal.createdAt.getTime();
+    if (latencyMs < 0) continue;
+
+    totalLatencyMs += latencyMs;
+    latencyCount += 1;
+
+    if (signal.approvedAt >= fourteenDaysAgo) {
+      const day = `${String(signal.approvedAt.getMonth() + 1).padStart(2, '0')}/${String(signal.approvedAt.getDate()).padStart(2, '0')}`;
+      const stats = timeSeriesMap.get(day);
+      if (stats) {
+        stats.latencyMsTotal += latencyMs;
+        stats.latencyCount += 1;
       }
     }
   }
 
   const avgMilliseconds = latencyCount > 0 ? totalLatencyMs / latencyCount : 0;
   const avgMinutes = Math.round(avgMilliseconds / 60000);
-  const avgHours = parseFloat((avgMinutes / 60).toFixed(1));
+  const avgHours = Number((avgMinutes / 60).toFixed(1));
 
-  const rulesCount = await prisma.governanceRule.count({
-    where: { userId: user?.id ?? '__unauthenticated__', isActive: true },
-  });
-
-  const timeSeriesData = Array.from(timeSeriesMap.entries()).map(([day, stats]) => {
-    const avgLatencyMin = stats.latencyCount > 0 ? Math.round((stats.latencyMsTotal / stats.latencyCount) / 60000) : 0;
-    return {
-      day,
-      protectedARR: stats.arr,
-      avgLatencyMin
-    };
-  });
+  const timeSeriesData = Array.from(timeSeriesMap.entries()).map(([day, stats]) => ({
+    day,
+    protectedARR: stats.arr,
+    avgLatencyMin: stats.latencyCount > 0
+      ? Math.round(stats.latencyMsTotal / stats.latencyCount / 60000)
+      : 0,
+  }));
 
   const positiveIntentCount = signals.filter((signal) => signal.intentScore >= 40).length;
   const positiveIntentRate = signals.length > 0
@@ -101,22 +124,23 @@ export default async function GovernancePage() {
     dealsProtected: {
       totalValue: dealsProtectedValue,
       dealCount: dealsProtectedCount,
-      label: 'Total ARR Protected'
+      label: 'Qualified Pipeline Protected',
     },
     timeToApproval: {
       avgMilliseconds,
       avgMinutes,
       avgHours,
       sampleSize: latencyCount,
-      label: 'Average Latency'
+      label: 'Average Latency',
     },
     institutionalMemory: {
       score: rulesCount,
-      label: 'Codified Rules'
+      label: 'Codified Rules',
     },
     queue: {
       pendingCount,
-      signalTriggeredCount: autoArchivedCount
+      signalTriggeredCount,
+      protectionSignalCount,
     },
     macroMetrics: {
       totalOutputVolume,
@@ -124,10 +148,10 @@ export default async function GovernancePage() {
       positiveIntentRate,
       positiveIntentCount,
       totalSignals: signals.length,
-      approvedSignalCount: approvedSignals.length,
+      approvedSignalCount: dealsProtectedCount,
       approvedPipelineValue: dealsProtectedValue,
     },
-    timeSeriesData
+    timeSeriesData,
   };
 
   return (

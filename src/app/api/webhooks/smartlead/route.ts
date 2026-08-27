@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { resolvePipelineValue } from '@/lib/pipeline-value';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
         prospectName: lead_name,
         prospectEmail: lead_email || null,
         prospectContext: company_name || '',
-        pipelineValue: Number(deal_value) || 0,
+        pipelineValue: resolvePipelineValue(deal_value),
         dealStage: deal_stage || 'Inbound Reply',
         rawEmail: reply_text,
         intentRisk: 'HIGH', // Default/placeholder

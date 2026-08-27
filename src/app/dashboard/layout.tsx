@@ -168,7 +168,6 @@ function DashboardLayoutContent({
             <div key={item.href}>
               <Link
                 href={item.href}
-                prefetch={true}
                 onClick={() => setIsOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium transition-all duration-150 ${
                   isActive
@@ -244,7 +243,6 @@ function DashboardLayoutContent({
       <div className="px-3 py-4 border-t border-border/50 shrink-0">
         <Link
           href="/login"
-          prefetch={true}
           onClick={() => setIsOpen(false)}
           className="flex items-center gap-3 px-4 py-3 rounded-xl text-base font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all duration-150 w-full"
         >
@@ -305,16 +303,52 @@ function DashboardLayoutContent({
               "Dashboard"}
           </h2>
         </div>
-        <div className="p-4 md:p-8">{children}</div>
+        <div className="px-4 py-4 sm:px-6 sm:py-6 md:p-8">{children}</div>
       </main>
 
     </div>
   );
 }
 
+function DashboardLayoutFallback({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-background">
+      <div className="fixed inset-x-0 top-0 z-[100] flex h-16 items-center border-b border-border/50 bg-card/80 px-4 backdrop-blur-xl md:hidden">
+        <div className="flex items-center gap-3">
+          <div className="rounded-lg border border-[#242424] bg-[#1A1A1A] p-1.5">
+            <Zap className="h-4 w-4 text-[#FF5A1F]" />
+          </div>
+          <span className="font-heading text-lg font-bold tracking-wide text-white">FrameLeads</span>
+        </div>
+      </div>
+
+      <aside className="fixed inset-y-0 left-0 z-50 hidden w-72 flex-col border-r border-border/50 bg-card/30 backdrop-blur-xl md:flex">
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-border/50 px-6">
+          <div className="rounded-xl border border-[#242424] bg-[#1A1A1A] p-2">
+            <Zap className="h-5 w-5 text-[#FF5A1F]" />
+          </div>
+          <span className="font-heading text-xl font-bold tracking-wide text-white">FrameLeads</span>
+        </div>
+        <div className="space-y-3 px-5 py-6">
+          {[1, 2, 3, 4, 5, 6, 7].map((item) => (
+            <div key={item} className="h-11 animate-pulse rounded-xl bg-[#1A1A1A]" />
+          ))}
+        </div>
+      </aside>
+
+      <main className="min-h-screen pt-16 md:ml-72 md:pt-0">
+        <div className="hidden h-16 items-center border-b border-border/50 bg-card/30 px-8 backdrop-blur-xl md:flex">
+          <div className="h-3 w-24 animate-pulse rounded bg-[#242424]" />
+        </div>
+        <div className="px-4 py-4 sm:px-6 sm:py-6 md:p-8">{children}</div>
+      </main>
+    </div>
+  );
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-background">{children}</div>}>
+    <Suspense fallback={<DashboardLayoutFallback>{children}</DashboardLayoutFallback>}>
       <DashboardLayoutContent>{children}</DashboardLayoutContent>
     </Suspense>
   );

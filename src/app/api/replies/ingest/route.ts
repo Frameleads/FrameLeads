@@ -23,6 +23,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolvePipelineValue } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
 import {
   classifyReply,
@@ -65,6 +66,8 @@ export async function POST(req: Request) {
       );
     }
 
+    const pipelineValue = resolvePipelineValue(reply.pipelineValue);
+
     // ── Step 1: Thermal Classification ─────────────────────────────
     // ALL replies — including Micro-Commitment campaign replies — are
     // routed through the same ThermalClassifier. There is no branching
@@ -93,8 +96,8 @@ export async function POST(req: Request) {
           data: {
             userId: auth.userId,
             prospectName: reply.leadId,
-            prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${(reply.pipelineValue ?? 0).toLocaleString()}`,
-            pipelineValue: reply.pipelineValue ?? 0,
+            prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${pipelineValue.toLocaleString()}`,
+            pipelineValue,
             dealStage: "Active Engagement",
             rawEmail: reply.body,
             intentRisk: "High",
@@ -128,8 +131,8 @@ export async function POST(req: Request) {
           data: {
             userId: auth.userId,
             prospectName: reply.leadId,
-            prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${(reply.pipelineValue ?? 0).toLocaleString()}`,
-            pipelineValue: reply.pipelineValue ?? 0,
+            prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${pipelineValue.toLocaleString()}`,
+            pipelineValue,
             dealStage: "Needs Nurture",
             rawEmail: reply.body,
             intentRisk: "Medium",
