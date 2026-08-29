@@ -28,7 +28,7 @@ export default async function DeployAccessLayout({
   }
 
   return (
-    <CorePaywall userTier={user.tier} featureName="Deploy feature">
+    <CorePaywall userTier={user.tier} featureName="Deploy Dashboard">
       {children}
     </CorePaywall>
   );

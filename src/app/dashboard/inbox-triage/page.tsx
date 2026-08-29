@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
 import { Suspense } from "react";
+import CorePaywall from "@/components/CorePaywall";
 import TriageCommandCenter from "./TriageCommandCenter";
 import InboxTriageLoading from "./loading";
 
@@ -38,10 +39,14 @@ async function InboxTriageData() {
       { createdAt: "asc" },
     ],
   });
+  const userTier = user?.tier ?? "INACTIVE";
+
   return (
-    <TriageCommandCenter
-      initialData={triageSignals}
-      userTier={user?.tier ?? "INACTIVE"}
-    />
+    <CorePaywall userTier={userTier} featureName="Inbox Triage">
+      <TriageCommandCenter
+        initialData={triageSignals}
+        userTier={userTier}
+      />
+    </CorePaywall>
   );
 }

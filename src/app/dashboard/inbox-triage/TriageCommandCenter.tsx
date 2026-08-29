@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Info, CalendarCheck, Mail, Trash2, X } from 'lucide-react';
-import EnterprisePaywall from '@/components/EnterprisePaywall';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Lock as LockIcon } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
+import { ENTERPRISE_CHECKOUT_URL } from '@/lib/checkout';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -73,6 +74,28 @@ function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
   return parseTriageSignals(legacyIntentRisk);
 }
 
+function EnterpriseFeatureGate({ locked, children }: { locked: boolean; children: ReactNode }) {
+  if (!locked) return <>{children}</>;
+
+  return (
+    <div className="relative">
+      <div className="filter blur-md opacity-40 pointer-events-none select-none" aria-hidden="true">
+        {children}
+      </div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+        <LockIcon className="w-8 h-8 text-[#FF5A1F] mb-4" />
+        <button
+          type="button"
+          onClick={() => window.open(ENTERPRISE_CHECKOUT_URL, '_blank', 'noopener,noreferrer')}
+          className="bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
+        >
+          Upgrade to Enterprise to Unlock AI Intent Scoring
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function TriageCommandCenter({
   initialData,
   userTier,
@@ -81,6 +104,8 @@ export default function TriageCommandCenter({
   userTier: string;
 }) {
   const router = useRouter();
+  const isCoreTier = userTier === 'CORE';
+  const hasInboxAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
   const dbLeads = useMemo(() => Array.isArray(initialData) && initialData.length > 0
     ? initialData.map((s: any) => ({
         id: s.id,
@@ -141,6 +166,8 @@ export default function TriageCommandCenter({
   useEffect(() => {
     setMounted(true);
 
+    if (!hasInboxAccess) return;
+
     const loadMailboxSettings = async () => {
       const response = await fetch('/api/inbox/credentials', { cache: 'no-store' }).catch(() => null);
       if (!response?.ok) return;
@@ -156,9 +183,11 @@ export default function TriageCommandCenter({
     };
 
     void loadMailboxSettings();
-  }, []);
+  }, [hasInboxAccess]);
 
   useEffect(() => {
+    if (!hasInboxAccess) return;
+
     let disposed = false;
     let requestInFlight = false;
     let activeController: AbortController | null = null;
@@ -202,7 +231,7 @@ export default function TriageCommandCenter({
       if (toastTimeout) clearTimeout(toastTimeout);
       activeController?.abort();
     };
-  }, [router]);
+  }, [hasInboxAccess, router]);
 
   useEffect(() => {
     setLeads(dbLeads);
@@ -328,7 +357,7 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = intentScore >= 71;
+  const isHotLead = !isCoreTier && intentScore >= 71;
 
   const handleLockMeeting = async () => {
     if (!bookingSlotStart || !bookingSlotEnd) return;
@@ -653,10 +682,9 @@ export default function TriageCommandCenter({
     </div>
   ) : null;
 
-  if (!activeLead && userTier === 'ENTERPRISE') {
+  if (!activeLead) {
     return (
-      <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
-        <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl p-6">
+      <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl p-6">
           <div className="mb-8 flex items-center justify-between gap-4">
             <span className="text-xs font-mono text-[#888888] uppercase tracking-widest">
               {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
@@ -683,8 +711,7 @@ export default function TriageCommandCenter({
           {connectInboxModal}
           {inboundSignalToast}
           {archiveToastElement}
-        </div>
-      </EnterprisePaywall>
+      </div>
     );
   }
 
@@ -717,10 +744,11 @@ export default function TriageCommandCenter({
             <div className="flex items-center justify-between mb-2">
               <span className="font-semibold text-sm" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
               <span className={`font-mono text-[10px] px-2 py-0.5 rounded-sm ${
+                isCoreTier ? 'bg-[#242424] text-gray-400' :
                 lead.status === 'HOT' ? 'bg-[#FF5A1F]/10 text-[#FF5A1F]' : 
                 lead.status === 'WARM' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-[#242424] text-gray-400'
               }`}>
-                {lead.status}
+                {isCoreTier ? 'REPLY' : lead.status}
               </span>
             </div>
             <p className="text-xs text-muted-foreground truncate">{lead.inboundSignal}</p>
@@ -794,6 +822,7 @@ export default function TriageCommandCenter({
           <div className="w-full flex flex-col gap-6 h-full">
 
             {/* TOP ROW: Intent & Strategy (Stacked on mobile, Side-by-Side on Desktop) */}
+            <EnterpriseFeatureGate locked={isCoreTier}>
             <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Intent Intelligence Widget */}
@@ -840,6 +869,7 @@ export default function TriageCommandCenter({
               </div>
 
             </div>
+            </EnterpriseFeatureGate>
 
             {/* BOTTOM ROW: Draft Response & Buttons (Full Width) */}
               <div className="relative flex h-auto min-h-min w-full flex-col gap-3 overflow-visible">
@@ -902,11 +932,18 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    <button type="button" onClick={handleRegenerate} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222]">
-                      {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                    <button type="button" onClick={handleRegenerate} disabled={isCoreTier || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
+                      {isCoreTier ? 'Enterprise Required for Claude Classification' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
                     </button>
-                    <button type="button" onClick={handleDispatch} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
-                      {isDispatching ? 'Sending...' : 'Approve & Send'}
+                    <button
+                      type="button"
+                      onClick={() => isCoreTier ? window.open(ENTERPRISE_CHECKOUT_URL, '_blank', 'noopener,noreferrer') : void handleDispatch()}
+                      disabled={isGenerating || isDispatching || isBooking || isArchiving}
+                      className={isCoreTier
+                        ? "bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
+                        : "w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]"}
+                    >
+                      {isCoreTier ? 'Upgrade to Enterprise to Approve & Send' : isDispatching ? 'Sending...' : 'Approve & Send'}
                     </button>
 
                     {isHotLead && (
@@ -928,7 +965,7 @@ export default function TriageCommandCenter({
 );
 
 return (
-    <EnterprisePaywall userTier={userTier} featureName="Inbox Triage">
+    <>
       {/* Booking Confirmation Modal */}
       {showBookingModal && (
         <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-black/95 w-full h-full p-4 overflow-y-auto">
@@ -1049,6 +1086,6 @@ return (
       {inboundSignalToast}
       {archiveToastElement}
       {pageContent}
-    </EnterprisePaywall>
+    </>
   );
 }

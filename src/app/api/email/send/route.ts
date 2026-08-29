@@ -114,6 +114,13 @@ export async function POST(request: Request) {
       );
     }
 
+    if (process.env.NODE_ENV === 'development' && process.env.IMAP_TEST_BYPASS === 'true') {
+      return NextResponse.json({
+        success: true,
+        message: 'Mock email sent successfully (Dev Bypass Active)',
+      });
+    }
+
     const smtpSettings = resolveSmtpSettings(user.imapHost);
     if (!smtpSettings) {
       return NextResponse.json(

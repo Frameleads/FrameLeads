@@ -2,6 +2,7 @@ import { ImapFlow } from "imapflow";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
 import { encrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
 
@@ -30,6 +31,9 @@ async function getCurrentUser() {
 }
 
 export async function GET() {
+  const authError = await requireCoreOrEnterpriseTier();
+  if (authError) return authError;
+
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
@@ -50,6 +54,9 @@ export async function POST(request: Request) {
   let imapClient: ImapFlow | null = null;
 
   try {
+    const authError = await requireCoreOrEnterpriseTier();
+    if (authError) return authError;
+
     const requestOrigin = request.headers.get("origin");
     if (requestOrigin && requestOrigin !== new URL(request.url).origin) {
       return NextResponse.json({ success: false, error: "Invalid request origin." }, { status: 403 });
@@ -81,6 +88,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "App Password is required." }, { status: 400 });
     }
 
+    const configuredTestEmail = process.env.IMAP_TEST_EMAIL
+      ? normalizeEmail(process.env.IMAP_TEST_EMAIL)
+      : null;
+    const shouldBypassConnectionTest = process.env.NODE_ENV === "development" && (
+      process.env.IMAP_TEST_BYPASS === "true"
+      || body?.bypassConnectionTest === true
+      || configuredTestEmail === imapEmail
+    );
+
+    if (shouldBypassConnectionTest) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          imapEmail,
+          imapHost: resolvedHost.hostname,
+          imapPort,
+          imapPassword: encrypt(appPassword),
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        simulated: true,
+        mailbox: {
+          connected: true,
+          email: imapEmail,
+          host: resolvedHost.hostname,
+          port: imapPort,
+        },
+      });
+    }
+
     imapClient = new ImapFlow({
       host: resolvedHost.address,
       port: imapPort,
@@ -89,9 +128,10 @@ export async function POST(request: Request) {
       auth: { user: imapEmail, pass: appPassword },
       logger: false,
       disableAutoIdle: true,
-      connectionTimeout: 15_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 30_000,
+      verifyOnly: true,
+      connectionTimeout: 30_000,
+      greetingTimeout: 30_000,
+      socketTimeout: 60_000,
     });
     imapClient.on("error", () => undefined);
     await imapClient.connect();

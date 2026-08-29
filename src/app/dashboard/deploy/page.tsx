@@ -11,12 +11,12 @@ import {
   CheckCircle2,
   Inbox
 } from "lucide-react";
-import { useEnterprisePaywallLocked } from "@/components/EnterprisePaywall";
+import { useCorePaywallLocked } from "@/components/CorePaywall";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
 export default function DeployPage() {
-  const isEnterpriseLocked = useEnterprisePaywallLocked();
+  const isCoreLocked = useCorePaywallLocked();
   const [batchId, setBatchId] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [campaignId, setCampaignId] = useState("");
@@ -80,8 +80,8 @@ export default function DeployPage() {
   // ── Deploy Form ───────────────────────────────────────────────────
 
   // Locked tiers receive the real Deploy form as a non-interactive preview
-  // beneath the Enterprise paywall, even when no batch exists in this session.
-  const displayBatchId = batchId || (isEnterpriseLocked ? "enterprise_preview" : null);
+  // beneath the Core paywall, even when no batch exists in this session.
+  const displayBatchId = batchId || (isCoreLocked ? "core_preview" : null);
 
   if (!displayBatchId) {
     return (

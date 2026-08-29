@@ -29,6 +29,32 @@ export async function requireEnterpriseTier() {
   return null; // Authorized
 }
 
+export const requireCoreOrEnterpriseTier = async () => {
+  const cookieStore = await cookies();
+  const email = cookieStore.get('user_email')?.value;
+
+  if (!email) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized: Missing identity." },
+      { status: 403 }
+    );
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { email: email.trim().toLowerCase() },
+    select: { tier: true }
+  });
+
+  if (!user || (user.tier !== 'CORE' && user.tier !== 'ENTERPRISE')) {
+    return NextResponse.json(
+      { success: false, error: "Payment Required: Inbox Triage requires Core tier or higher." },
+      { status: 402 }
+    );
+  }
+
+  return null;
+};
+
 export async function requireMinimumCoreTier() {
   const cookieStore = await cookies();
   const session = cookieStore.get('frameleads_session')?.value;

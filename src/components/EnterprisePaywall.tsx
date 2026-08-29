@@ -3,6 +3,7 @@
 import { createContext, ReactNode, useContext } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { ENTERPRISE_CHECKOUT_URL } from "@/lib/checkout";
 
 interface Props {
   children: ReactNode;
@@ -35,12 +36,12 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
   // Otherwise, render the blurred paywall
   return (
     <EnterprisePaywallContext.Provider value={true}>
-      <div className="relative min-h-screen -m-4 md:-m-8">
-        <div className="p-4 md:p-8 pointer-events-none select-none">
+      <div className="relative w-full h-full">
+        <div className="filter blur-md opacity-40 pointer-events-none select-none">
           {children}
         </div>
 
-        <div className="absolute inset-0 z-50 backdrop-blur-md bg-[#1A1A1A]/40 flex items-center justify-center p-6 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 p-6 text-center">
           <div className="bg-[#1A1A1A] border border-[#242424] shadow-2xl p-8 rounded-2xl max-w-md w-full flex flex-col items-center">
             <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#FF5A1F]/20 flex items-center justify-center mb-6">
               <Lock className="w-6 h-6 text-[#FF5A1F]" />
@@ -52,16 +53,16 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
               The {featureName} is exclusively available on the Enterprise Tier to protect high-ticket pipelines.
             </p>
             <a
-              href="https://whop.com/brandflowstudio/frameleads-enterprise-autonomous-architecture/"
+              href={ENTERPRISE_CHECKOUT_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full h-12 bg-[#FF5A1F] text-[#FFFFFF] font-semibold rounded-xl shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#FF5A1F]/90 hover:shadow-[#FF5A1F]/30 transition-all mb-4 flex items-center justify-center"
+              className="bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
             >
               Upgrade to Enterprise
             </a>
             <button
               onClick={() => router.back()}
-              className="text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
+              className="mt-4 text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
             >
               Maybe Later
             </button>

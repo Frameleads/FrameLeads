@@ -24,6 +24,7 @@ import {
   Linkedin
 } from "lucide-react";
 import { playUISound } from "@/lib/audio";
+import { CORE_CHECKOUT_URL, ENTERPRISE_CHECKOUT_URL } from "@/lib/checkout";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -1246,19 +1247,21 @@ useEffect(() => {
                   <div className="w-12 h-12 rounded-full bg-[#1A1A1A] border border-[#FF5A1F]/20 flex items-center justify-center mb-4">
                     <Lock className="w-6 h-6 text-[#FF5A1F]" />
                   </div>
-                  <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">Premium Leads Locked</h3>
+                  <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">
+                    {userTier === 'MICRO_PILOT' ? 'CORE FEATURE LOCKED' : 'ENTERPRISE FEATURE LOCKED'}
+                  </h3>
                   <p className="text-sm text-[#888888] mb-6">You've hit your generation quota. Upgrade to unlock these high-intent prospects.</p>
                   <a 
-                    href={userTier === 'MICRO_PILOT' ? "https://whop.com/brandflowstudio/frameleads-24/" : "https://whop.com/brandflowstudio/frameleads-enterprise-autonomous-architecture/"}
+                    href={userTier === 'MICRO_PILOT' ? CORE_CHECKOUT_URL : ENTERPRISE_CHECKOUT_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="w-full h-11 flex items-center justify-center bg-[#FF5A1F] text-[#FFFFFF] font-semibold rounded-lg shadow-lg shadow-[#FF5A1F]/20 hover:bg-[#FF5A1F]/90 transition-colors mb-3"
+                    className="bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
                   >
-                    {userTier === 'MICRO_PILOT' ? 'Upgrade to Core tier' : 'Upgrade to Enterprise tier'}
+                    {userTier === 'MICRO_PILOT' ? 'Upgrade to Core' : 'Upgrade to Enterprise'}
                   </a>
                   <button 
                     onClick={() => setSelectedId("")}
-                    className="text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
+                    className="mt-3 text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
                   >
                     Maybe later
                   </button>

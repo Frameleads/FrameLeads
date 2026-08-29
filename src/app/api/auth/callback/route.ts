@@ -175,14 +175,34 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[WHOP OAUTH] Unable to verify membership during login:", error);
     if (error instanceof MembershipFilteredOutError) {
-      if (email !== "akramwmm@gmail.com") {
+      const developmentBypassActive = process.env.NODE_ENV === 'development'
+        && process.env.WHOP_TEST_BYPASS === 'true';
+
+      if (developmentBypassActive) {
+        // Development-only PLG testing: allow the normal user merge and
+        // session-minting flow to continue without a live Whop membership.
+        const requestedTestTier = process.env.WHOP_TEST_TIER;
+        const testTier = requestedTestTier === 'MICRO_PILOT'
+          || requestedTestTier === 'CORE'
+          || requestedTestTier === 'ENTERPRISE'
+          ? requestedTestTier
+          : 'ENTERPRISE';
+        const monthlyQuota = testTier === 'MICRO_PILOT'
+          ? 25
+          : testTier === 'CORE'
+            ? 500
+            : 20_000;
+
+        subscription = { tier: testTier, monthlyQuota };
+      } else if (email !== "akramwmm@gmail.com") {
         return clearOAuthCookies(
           NextResponse.redirect(
             new URL("/login?error=no_active_subscription", request.url),
           ),
         );
+      } else {
+        subscription = { tier: "ENTERPRISE", monthlyQuota: 20_000 };
       }
-      subscription = { tier: "ENTERPRISE", monthlyQuota: 20_000 };
     } else if (error instanceof UnrecognizedWhopProductError) {
       return clearOAuthCookies(
         NextResponse.redirect(

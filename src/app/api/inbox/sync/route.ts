@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
 import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { decrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
@@ -40,6 +41,9 @@ export async function POST() {
   let releaseMailboxLock: (() => void) | null = null;
 
   try {
+    const authError = await requireCoreOrEnterpriseTier();
+    if (authError) return authError;
+
     const cookieStore = await cookies();
     const sessionEmail = cookieStore.get("user_email")?.value;
     const user = sessionEmail
