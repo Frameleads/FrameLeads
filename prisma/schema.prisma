@@ -108,17 +108,19 @@ model User {
   // so the Domain Armor validator can block outbound from root domains.
   rootBrandDomain String?
 
-  inboxes        SendingInbox[]
-  inboundSignals InboundSignal[]
-  prospects      Prospect[]
-  icpProfile     ICPProfile?
-  qualifications ProspectQualification[]
-  aiUsageEvents  AIUsageEvent[]
-  companies      Company[]
-  memoryStates   ProspectMemoryState[]
-  memoryEvents   ProspectMemoryEvent[]
-  brain          FrameLeadsBrain?
-  brainEntries   BrainKnowledgeEntry[]
+  inboxes              SendingInbox[]
+  inboundSignals       InboundSignal[]
+  prospects            Prospect[]
+  icpProfile           ICPProfile?
+  qualifications       ProspectQualification[]
+  aiUsageEvents        AIUsageEvent[]
+  companies            Company[]
+  memoryStates         ProspectMemoryState[]
+  memoryEvents         ProspectMemoryEvent[]
+  brain                FrameLeadsBrain?
+  brainEntries         BrainKnowledgeEntry[]
+  revenuePlaybook      RevenuePlaybook?
+  revenuePlaybookRules RevenuePlaybookRule[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -330,6 +332,92 @@ model BrainKnowledgeEntry {
   @@unique([userId, sourceType, sourceKey])
   @@index([userId, category, verification, archivedAt])
   @@index([userId, brainId, archivedAt])
+}
+
+enum RevenueScenario {
+  GENERAL
+  PRICING
+  DISCOUNT
+  BUDGET
+  INTEGRATION
+  SECURITY
+  LEGAL
+  COMPLIANCE
+  PROCUREMENT
+  TIMING
+  NOT_NOW
+  FEATURE
+  FEATURE_GAP
+  IMPLEMENTATION
+  ONBOARDING
+  PROOF
+  CASE_STUDY
+  COMPETITOR
+  AUTHORITY
+  STAKEHOLDER
+  MEETING
+  DEMO
+  TRIAL
+  PILOT
+  POSITIVE_INTENT
+  OBJECTION
+  SILENCE_FOLLOWUP
+  NEGATIVE_REPLY
+  UNSUBSCRIBE
+  CUSTOM
+}
+
+enum RevenuePlaybookSource {
+  USER_ENTERED
+  SYSTEM_DEFAULT
+}
+
+enum RevenueDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model RevenuePlaybook {
+  id        String                @id @default(cuid())
+  userId    String                @unique
+  user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String                @default("Default Revenue Playbook")
+  revision  Int                   @default(0)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  rules     RevenuePlaybookRule[]
+
+  @@unique([userId, id])
+}
+
+model RevenuePlaybookRule {
+  id                     String                       @id @default(cuid())
+  userId                 String
+  user                   User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playbookId             String
+  playbook               RevenuePlaybook              @relation(fields: [userId, playbookId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  name                   String
+  scenario               RevenueScenario
+  customScenario         String?
+  objective              String                       @db.Text
+  guidance               String                       @db.Text
+  nextAction             String                       @db.Text
+  responsePrinciples     String[]                     @default([])
+  ctaGuidance            String?                      @db.Text
+  qualificationCondition ProspectQualificationStatus?
+  direction              RevenueDirection?
+  priority               Int                          @default(1)
+  enabled                Boolean                      @default(true)
+  source                 RevenuePlaybookSource        @default(USER_ENTERED)
+  sourceKey              String?
+  revision               Int                          @default(1)
+  archivedAt             DateTime?
+  createdAt              DateTime                     @default(now())
+  updatedAt              DateTime                     @updatedAt
+
+  @@unique([userId, source, sourceKey])
+  @@index([userId, scenario, enabled, archivedAt, priority], map: "RevenuePlaybookRule_lookup_idx")
+  @@index([userId, playbookId, archivedAt])
 }
 
 model Company {

@@ -51,7 +51,7 @@ export default function BrainEditor({ initial }: { initial: View }) {
     finally { setPending(false); }
   }
   return <main className="mx-auto max-w-3xl space-y-6">
-    <Link href="/dashboard/scout/settings" className="text-sm text-primary hover:underline">Back to ICP settings</Link>
+    <div className="flex gap-4"><Link href="/dashboard/scout/settings" className="text-sm text-primary hover:underline">Back to ICP settings</Link><Link href="/dashboard/playbook" className="text-sm text-primary hover:underline">Revenue Playbook</Link></div>
     <header><h1 className="text-2xl font-semibold">FrameLeads Brain</h1><p className="mt-2 text-sm text-muted-foreground">Persistent facts about your business. ICP and domain facts come from their existing settings and are read-only here.</p></header>
     <section className="rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">Current summary <span className="font-normal text-muted-foreground">· revision {view.revision}</span></h2><p className="mt-3 text-sm leading-6 text-muted-foreground">{view.compactSummary || 'No business knowledge saved yet.'}</p></section>
     <section className="rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">{draft.id ? 'Edit knowledge' : 'Add knowledge'}</h2><div className="mt-4 space-y-3">
