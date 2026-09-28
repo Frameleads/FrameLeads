@@ -23,7 +23,7 @@ CREATE TABLE "ICPProfile" (
       ("companySizeMin" IS NULL OR "companySizeMin" >= 0) AND
       ("companySizeMax" IS NULL OR "companySizeMax" >= 0) AND
       ("companySizeMin" IS NULL OR "companySizeMax" IS NULL OR "companySizeMin" <= "companySizeMax")
-);
+));
 
 CREATE TABLE "ProspectQualification" (
     "id" TEXT NOT NULL,
@@ -52,3 +52,4 @@ CREATE INDEX "ProspectQualification_userId_icpProfileId_idx" ON "ProspectQualifi
 ALTER TABLE "ICPProfile" ADD CONSTRAINT "ICPProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ALTER TABLE "ProspectQualification" ADD CONSTRAINT "ProspectQualification_userId_prospectId_fkey" FOREIGN KEY ("userId", "prospectId") REFERENCES "Prospect"("userId", "id") ON DELETE CASCADE ON UPDATE NO ACTION;
 ALTER TABLE "ProspectQualification" ADD CONSTRAINT "ProspectQualification_userId_icpProfileId_fkey" FOREIGN KEY ("userId", "icpProfileId") REFERENCES "ICPProfile"("userId", "id") ON DELETE CASCADE ON UPDATE NO ACTION;
+
