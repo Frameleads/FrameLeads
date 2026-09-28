@@ -70,7 +70,7 @@ export default function PlaybookEditor({ initial }: { initial: View }) {
     finally { setPending(false); }
   }
   return <main className="mx-auto max-w-3xl space-y-6">
-    <Link href="/dashboard/brain" className="text-sm text-primary hover:underline">Back to Brain</Link>
+    <div className="flex gap-4"><Link href="/dashboard/brain" className="text-sm text-primary hover:underline">Back to Brain</Link><Link href="/dashboard/constitution" className="text-sm text-primary hover:underline">Company Sales Constitution</Link></div>
     <header><h1 className="text-2xl font-semibold">Revenue Playbook</h1><p className="mt-2 text-sm text-muted-foreground">Preferred handling for recurring sales situations. These rules are guidance, not enforced limits or automatic actions.</p><p className="mt-2 text-xs text-muted-foreground">{view.name} · revision {view.revision}</p></header>
     <section className="rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">{draft.id ? 'Edit rule' : 'Add rule'}</h2><div className="mt-4 space-y-3">
       <label className="block text-sm">Name<Input className="mt-1" maxLength={120} value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>

@@ -20,6 +20,7 @@
     "test:prospect-memory": "node scripts/run-prospect-tool.cjs memory-test",
     "test:brain": "node scripts/run-prospect-tool.cjs brain-test",
     "test:playbook": "node scripts/run-prospect-tool.cjs playbook-test",
+    "test:constitution": "node scripts/run-prospect-tool.cjs constitution-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

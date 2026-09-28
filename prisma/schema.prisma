@@ -108,19 +108,22 @@ model User {
   // so the Domain Armor validator can block outbound from root domains.
   rootBrandDomain String?
 
-  inboxes              SendingInbox[]
-  inboundSignals       InboundSignal[]
-  prospects            Prospect[]
-  icpProfile           ICPProfile?
-  qualifications       ProspectQualification[]
-  aiUsageEvents        AIUsageEvent[]
-  companies            Company[]
-  memoryStates         ProspectMemoryState[]
-  memoryEvents         ProspectMemoryEvent[]
-  brain                FrameLeadsBrain?
-  brainEntries         BrainKnowledgeEntry[]
-  revenuePlaybook      RevenuePlaybook?
-  revenuePlaybookRules RevenuePlaybookRule[]
+  inboxes                SendingInbox[]
+  inboundSignals         InboundSignal[]
+  prospects              Prospect[]
+  icpProfile             ICPProfile?
+  qualifications         ProspectQualification[]
+  aiUsageEvents          AIUsageEvent[]
+  companies              Company[]
+  memoryStates           ProspectMemoryState[]
+  memoryEvents           ProspectMemoryEvent[]
+  brain                  FrameLeadsBrain?
+  brainEntries           BrainKnowledgeEntry[]
+  revenuePlaybook        RevenuePlaybook?
+  revenuePlaybookRules   RevenuePlaybookRule[]
+  salesConstitution      SalesConstitution?
+  salesConstitutionRules SalesConstitutionRule[]
+  constitutionEvents     SalesConstitutionRevisionEvent[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -418,6 +421,133 @@ model RevenuePlaybookRule {
   @@unique([userId, source, sourceKey])
   @@index([userId, scenario, enabled, archivedAt, priority], map: "RevenuePlaybookRule_lookup_idx")
   @@index([userId, playbookId, archivedAt])
+}
+
+enum ConstitutionCategory {
+  CLAIM
+  PRICING
+  DISCOUNT
+  COMMERCIAL_TERM
+  LEGAL
+  COMPLIANCE
+  SECURITY
+  PRIVACY
+  DATA_HANDLING
+  CONTRACT
+  CAPABILITY
+  COMPETITOR
+  OUTREACH
+  UNSUBSCRIBE
+  COMMUNICATION
+  COMMITMENT
+  APPROVAL
+  CUSTOM
+}
+
+enum ConstitutionEffect {
+  BLOCK
+  REQUIRE_HUMAN
+  REQUIRE_APPROVAL
+  REQUIRE_SAFE_RESPONSE
+}
+
+enum ConstitutionActionType {
+  OUTREACH
+  DISCOUNT
+  CONTRACT
+  CLAIM
+  TOPIC_RESPONSE
+  COMMITMENT
+}
+
+enum ConstitutionSource {
+  USER_ENTERED
+  SYSTEM_DEFAULT
+}
+
+enum ConstitutionSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ConstitutionScope {
+  GLOBAL
+  OUTBOUND
+  REPLY_DECISION
+  PRICING
+  COMMERCIAL
+  LEGAL
+  COMPLIANCE
+  SECURITY
+}
+
+enum ConstitutionChangeType {
+  CREATE
+  EDIT
+  ENABLE
+  DISABLE
+  ARCHIVE
+}
+
+model SalesConstitution {
+  id        String                           @id @default(cuid())
+  userId    String                           @unique
+  user      User                             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String                           @default("Company Sales Constitution")
+  revision  Int                              @default(0)
+  createdAt DateTime                         @default(now())
+  updatedAt DateTime                         @updatedAt
+  rules     SalesConstitutionRule[]
+  events    SalesConstitutionRevisionEvent[]
+
+  @@unique([userId, id])
+}
+
+model SalesConstitutionRule {
+  id             String                   @id @default(cuid())
+  userId         String
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  constitutionId String
+  constitution   SalesConstitution        @relation(fields: [userId, constitutionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  name           String
+  category       ConstitutionCategory
+  effect         ConstitutionEffect
+  severity       ConstitutionSeverity     @default(MEDIUM)
+  scope          ConstitutionScope        @default(GLOBAL)
+  description    String                   @db.Text
+  constraint     Json
+  actionTypes    ConstitutionActionType[] @default([])
+  priority       Int                      @default(1)
+  enabled        Boolean                  @default(true)
+  source         ConstitutionSource       @default(USER_ENTERED)
+  sourceKey      String?
+  revision       Int                      @default(1)
+  archivedAt     DateTime?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+
+  @@unique([userId, source, sourceKey])
+  @@index([userId, category, enabled, archivedAt, effect], map: "SalesConstitutionRule_lookup_idx")
+  @@index([userId, constitutionId, archivedAt], map: "SalesConstitutionRule_owner_idx")
+}
+
+model SalesConstitutionRevisionEvent {
+  id                   String                 @id @default(cuid())
+  userId               String
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  constitutionId       String
+  constitution         SalesConstitution      @relation(fields: [userId, constitutionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  constitutionRevision Int
+  ruleId               String
+  changeType           ConstitutionChangeType
+  actorId              String
+  beforeState          Json?
+  afterState           Json?
+  createdAt            DateTime               @default(now())
+
+  @@index([userId, constitutionId, createdAt], map: "SalesConstitutionEvent_history_idx")
 }
 
 model Company {
