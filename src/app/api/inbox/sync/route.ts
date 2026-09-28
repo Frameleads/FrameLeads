@@ -11,6 +11,7 @@ import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { decrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
 import { POST as classifyTriageSignal } from "@/app/api/triage/route";
+import { scheduleInboundDecisions } from '@/lib/decision/schedule';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -187,6 +188,9 @@ export async function POST() {
       const rawBody = parsedMessage.text?.trim() || htmlBody || "(No text body)";
       const cleanBody = rawBody.split(/(On\s.+?wrote:|From:\s.+?Sent:\s.+?To:)/i)[0].trim();
       const subject = parsedMessage.subject?.trim() || "";
+      const autoSubmitted = parsedMessage.headers.get('auto-submitted');
+      const isAutoReply = typeof autoSubmitted === 'string' &&
+        /^auto-replied(?:\s*;|\s*$)/i.test(autoSubmitted.trim());
       const prospectName = [matched.lead.firstName, matched.lead.lastName]
         .filter(Boolean)
         .join(" ");
@@ -212,7 +216,7 @@ export async function POST() {
         status: "PENDING",
         isHighPriority: false,
         sourceType: "IMAP_NATIVE",
-        signalType: "EMAIL_REPLY",
+        signalType: isAutoReply ? 'SYSTEM_AUTO_REPLY' : 'EMAIL_REPLY',
       });
     }
 
@@ -221,6 +225,7 @@ export async function POST() {
     }
 
     const insertedSignals = await createInboundSignals(prisma, signalsToCreate);
+    scheduleInboundDecisions(user.id, insertedSignals.map(signal => signal.id));
 
     releaseMailboxLock?.();
     releaseMailboxLock = null;

@@ -21,6 +21,7 @@
     "test:brain": "node scripts/run-prospect-tool.cjs brain-test",
     "test:playbook": "node scripts/run-prospect-tool.cjs playbook-test",
     "test:constitution": "node scripts/run-prospect-tool.cjs constitution-test",
+    "test:decision": "node scripts/run-prospect-tool.cjs decision-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

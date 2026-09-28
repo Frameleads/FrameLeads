@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
@@ -74,6 +74,96 @@ function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
   return parseTriageSignals(legacyIntentRisk);
 }
 
+type DecisionPacket = { id: string; status: string; primaryIntent: string | null;
+  source: string;
+  secondaryIntents: string[]; confidenceScore: number | null; interpretation: string | null;
+  recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
+  reviewReasons: string[]; shadowMode: boolean; trace?: { icpState: unknown; policyResult: unknown;
+    contextReferences: unknown; memoryState: unknown } | null };
+
+function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
+  onDecision: (signalId: string, status: string) => void }) {
+  const [packet, setPacket] = useState<DecisionPacket | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setPacket(null);
+    setError('');
+    fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`)
+      .then(async response => {
+        if (!response.ok) throw new Error('Could not load the decision packet.');
+        return response.json();
+      })
+      .then(data => { if (active) { setPacket(data.decision ?? null);
+        if (data.decision) onDecision(signalId, data.decision.status); } })
+      .catch(() => { if (active) setError('Could not load the decision packet.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [signalId, onDecision]);
+  useEffect(() => {
+    if (packet?.status !== 'PENDING') return;
+    const timer = window.setInterval(() => {
+      void fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`)
+        .then(response => response.ok ? response.json() : null)
+        .then(data => { if (data?.decision) { setPacket(data.decision); onDecision(signalId, data.decision.status); } })
+        .catch(() => { /* The saved packet remains visible; polling can retry. */ });
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [packet?.status, signalId, onDecision]);
+  async function run(retry: boolean) {
+    if (running) return;
+    setRunning(true);
+    setError('');
+    try {
+      const response = await fetch('/api/decisions/triage', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signalId, retryOfDecisionId: retry ? packet?.id : undefined }) });
+      if (!response.ok) throw new Error('Decision analysis failed. The reply is safely stored; retry when ready.');
+      const result = await response.json();
+      if (result.decision) { setPacket(result.decision); onDecision(signalId, result.decision.status); }
+      else setError('Prospect identity is unresolved. Review this reply manually.');
+    } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
+    finally { setRunning(false); }
+  }
+  const label = packet?.status === 'READY' ? 'Ready' : packet?.status === 'NEEDS_REVIEW' ? 'Needs review'
+    : packet?.status === 'PENDING' ? 'Analyzing' : packet?.status === 'FAILED' ? 'Failed' : 'Not analyzed';
+  const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
+  const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
+  return <section aria-label="Decision packet" className="rounded-lg border border-[#333] bg-[#121212] p-5 sm:p-6">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div><h2 className="text-sm font-semibold uppercase tracking-wider text-white">Decision packet</h2>
+        <p className="mt-1 text-xs text-gray-400">{label} · {packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'} · Human review remains in control</p></div>
+      <button type="button" disabled={running || loading || packet?.status === 'PENDING'}
+        onClick={() => void run(Boolean(packet))}
+        className="rounded border border-[#FF5A1F] px-3 py-2 text-xs font-semibold text-[#FF5A1F] hover:bg-[#FF5A1F]/10 disabled:opacity-40">
+        {running ? 'Analyzing reply…' : packet ? 'Re-analyze' : 'Analyze reply'}
+      </button>
+    </div>
+    {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
+    {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
+    {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
+    {packet && <div className="mt-5 space-y-3 text-sm text-gray-300">
+      <p><span className="text-gray-500">Primary intent:</span> {packet.primaryIntent?.replaceAll('_', ' ') ?? 'Unresolved'}
+        {packet.confidenceScore != null && <span className="ml-2 text-gray-500">{packet.confidenceScore}% confidence</span>}</p>
+      {packet.secondaryIntents?.length > 0 && <p><span className="text-gray-500">Also:</span> {packet.secondaryIntents.join(', ').replaceAll('_', ' ')}</p>}
+      {packet.interpretation && <p>{packet.interpretation}</p>}
+      <p><span className="text-gray-500">ICP:</span> {icp?.qualification ?? 'Unknown'} {icp?.fitTier ? `· ${icp.fitTier}` : ''}</p>
+      <p><span className="text-gray-500">Opportunity tier:</span> {icp?.valueBand ?? 'Unknown'}</p>
+      <p><span className="text-gray-500">Constitution:</span> {policy.length ? policy.map(item => item.decision ?? 'Review').join(', ') : 'Review required'}</p>
+      {policy.some(item => item.matchedRuleIds?.length) && <p className="break-words text-xs text-gray-500">Applicable rule IDs: {policy.flatMap(item => item.matchedRuleIds ?? []).join(', ')}</p>}
+      <p><span className="text-gray-500">Recommended next step:</span> {packet.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually'}</p>
+      {packet.reviewReasons?.length > 0 && <p className="text-amber-400">Review: {packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p>}
+      {packet.suggestedReply && <div><p className="text-gray-500">Suggested draft · review before use</p>
+        <p className="mt-1 whitespace-pre-wrap rounded border border-[#333] p-3">{packet.suggestedReply}</p></div>}
+      {packet.explanation && <p className="text-gray-400">{packet.explanation}</p>}
+      {packet.shadowMode && <p className="text-xs text-gray-500">Shadow mode · this packet does not send or route a reply.</p>}
+    </div>}
+  </section>;
+}
+
 function EnterpriseFeatureGate({ locked, children }: { locked: boolean; children: ReactNode }) {
   if (!locked) return <>{children}</>;
 
@@ -121,14 +211,21 @@ export default function TriageCommandCenter({
         recordStatus: s.status || 'PENDING',
         draftText: s.aiDraft || 'Awaiting Triage Draft...',
         signals: getPersistedSignals(s.signals, s.intentRisk),
-        strategyLogic: s.signalAnalysis || "Awaiting strategy logic..."
+        strategyLogic: s.signalAnalysis || "Awaiting strategy logic...",
+        decisionStatus: s.decisionStatus || null,
+        decisionSource: s.decisionSource || null,
       }))
     : [], [initialData]);
 
   const [leads, setLeads] = useState<any[]>(dbLeads);
+  const updateDecisionStatus = useCallback((signalId: string, status: string) => {
+    setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, decisionStatus: status } : lead));
+  }, []);
   const [queueView, setQueueView] = useState<'active' | 'archived'>('active');
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const visibleLeads = leads.filter((lead) =>
-    queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING',
+    (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING') &&
+    (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW'),
   );
   const [activeLeadId, setActiveLeadId] = useState(
     dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
@@ -655,6 +752,10 @@ export default function TriageCommandCenter({
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
     <div className="inline-flex rounded-lg border border-[#242424] bg-[#121212] p-1">
+      <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(value => !value)}
+        className={`rounded-md px-3 py-2 text-xs font-semibold ${needsReviewOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
+        Needs review
+      </button>
       <button
         type="button"
         onClick={() => handleQueueViewChange('active')}
@@ -696,10 +797,10 @@ export default function TriageCommandCenter({
               <Info className="w-6 h-6 text-[#FF5A1F]" />
             </div>
             <h2 className="text-2xl font-bold text-white tracking-wide mb-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-              {queueView === 'archived' ? 'ARCHIVE VAULT EMPTY' : 'NO ACTIVE TRIAGE SIGNALS'}
+              {needsReviewOnly ? 'NO REPLIES NEED REVIEW' : queueView === 'archived' ? 'ARCHIVE VAULT EMPTY' : 'NO ACTIVE TRIAGE SIGNALS'}
             </h2>
             <p className="text-gray-500 max-w-md" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-              {queueView === 'archived'
+              {needsReviewOnly ? 'No decision packets in this queue currently need review.' : queueView === 'archived'
                 ? 'Rejected inbound signals will remain here until you permanently delete them.'
                 : 'Awaiting campaign deployment and real inbound replies. New signals will appear here for review.'}
             </p>
@@ -752,6 +853,9 @@ export default function TriageCommandCenter({
               </span>
             </div>
             <p className="text-xs text-muted-foreground truncate">{lead.inboundSignal}</p>
+            {lead.decisionStatus && <p className={`mt-2 text-[10px] font-mono uppercase ${lead.decisionStatus === 'NEEDS_REVIEW' ? 'text-amber-400' : lead.decisionStatus === 'FAILED' ? 'text-red-400' : 'text-gray-500'}`}>
+              Decision: {lead.decisionStatus.replaceAll('_', ' ')}
+            </p>}
           </div>
         ))}
       </div>
@@ -776,6 +880,8 @@ export default function TriageCommandCenter({
             {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
           </div>
         </div>
+
+        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus} />
 
         <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           

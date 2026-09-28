@@ -3,6 +3,7 @@ import { attachableProspectId, identityTransaction, ProspectIdentityConflict, re
 import { type IdentityInput } from './normalization';
 import type { ProspectMetadata } from './metadata';
 import { MEMORY_EVENT, recordProspectMemoryEventInTransaction } from './memory';
+import { materializeInboundSignalInTransaction } from '../decision/conversation';
 
 type LeadData = Omit<Prisma.GeneratedLeadUncheckedCreateInput, 'prospectId'>;
 type SignalData = Omit<Prisma.InboundSignalCreateManyInput, 'prospectId'> & { userId: string };
@@ -79,15 +80,27 @@ export async function inboundProspectInTransaction(tx: Prisma.TransactionClient,
   return resolveProspectInTransaction(tx, { ...identity, userId: data.userId, email: data.prospectEmail || identity.email });
 }
 
-export function createInboundSignal(db: PrismaClient, args: { data: SignalData }, identity?: InboundIdentity) {
-  return identityTransaction(db, async tx => {
+export async function createInboundSignal(db: PrismaClient, args: { data: SignalData }, identity?: InboundIdentity) {
+  const sourceKey = args.data.sourceMessageId?.trim();
+  try { return await identityTransaction(db, async tx => {
+    if (sourceKey) {
+      const existing = await tx.inboundSignal.findFirst({ where: { userId: args.data.userId, sourceMessageId: sourceKey } });
+      if (existing) return existing;
+    }
     const result = await inboundProspectInTransaction(tx, args.data, identity);
     const signal = await tx.inboundSignal.create({ data: { ...args.data, prospectId: attachableProspectId(result, args.data.userId) } });
     if (signal.prospectId) await recordProspectMemoryEventInTransaction(tx, { userId: args.data.userId, prospectId: signal.prospectId,
       eventType: MEMORY_EVENT.INBOUND_RECEIVED, sourceType: 'INBOUND_SIGNAL', sourceId: signal.id,
       description: 'Inbound reply received.', importance: 3, occurredAt: signal.createdAt });
+    await materializeInboundSignalInTransaction(tx, signal);
     return signal;
-  });
+  }); } catch (error) {
+    if (sourceKey && (error as { code?: string }).code === 'P2002') {
+      const existing = await db.inboundSignal.findFirst({ where: { userId: args.data.userId, sourceMessageId: sourceKey } });
+      if (existing) return existing;
+    }
+    throw error;
+  }
 }
 
 export function createInboundSignals(db: PrismaClient, data: SignalData[]) {
@@ -97,11 +110,14 @@ export function createInboundSignals(db: PrismaClient, data: SignalData[]) {
       const result = await inboundProspectInTransaction(tx, signal);
       linked.push({ ...signal, prospectId: attachableProspectId(result, signal.userId) });
     }
-    const inserted = await tx.inboundSignal.createManyAndReturn({ data: linked, skipDuplicates: true, select: { id: true, userId: true, prospectId: true, createdAt: true } });
+    const inserted = await tx.inboundSignal.createManyAndReturn({ data: linked, skipDuplicates: true,
+      select: { id: true, userId: true, prospectId: true, createdAt: true, rawEmail: true,
+        sourceMessageId: true, sourceType: true, signalType: true } });
     for (const signal of inserted) if (signal.userId && signal.prospectId) await recordProspectMemoryEventInTransaction(tx, {
       userId: signal.userId, prospectId: signal.prospectId, eventType: MEMORY_EVENT.INBOUND_RECEIVED,
       sourceType: 'INBOUND_SIGNAL', sourceId: signal.id, description: 'Inbound reply received.', importance: 3, occurredAt: signal.createdAt,
     });
+    for (const signal of inserted) await materializeInboundSignalInTransaction(tx, signal);
     return inserted;
   });
 }

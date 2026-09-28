@@ -4,6 +4,7 @@ import { createInboundSignal, identityFromFullName } from '@/lib/prospects/persi
 import { resolvePipelineValue } from '@/lib/pipeline-value';
 import Anthropic from '@anthropic-ai/sdk';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
+import { scheduleInboundDecisions } from '@/lib/decision/schedule';
 
 const SYSTEM_PROMPT = `You are an elite sales triage AI. Read this inbound email reply. Score the buying intent from 0-100. Categorize it as HOT (score >= 80), WARM (score 40-79), or COLD (score < 40). Evaluate your confidence in this intent classification. If it is a clear rejection or unsubscribe, score confidence > 90. If it is ambiguous, sarcastic, or complex, score < 70. Return strictly a JSON object: { "intentScore": number, "status": "HOT" | "WARM" | "COLD", "signalAnalysis": "1 sentence explanation", "confidenceScore": number }.`;
 
@@ -32,6 +33,8 @@ export async function POST(req: Request) {
     }
 
     const payload = await req.json();
+    const externalId = payload.message_id ?? payload.messageId ?? payload.reply_id ?? payload.replyId;
+    const sourceMessageId = typeof externalId === 'string' && externalId.trim() ? externalId.trim().slice(0, 200) : null;
 
     // Dynamically extract fields. This handles both standard Smartlead and Instantly shapes.
     const leadEmail = payload.lead_email || payload.email || "";
@@ -45,6 +48,17 @@ export async function POST(req: Request) {
     if (!leadEmail || !replyText) {
       return NextResponse.json({ success: false, error: "A lead email and reply text are required." }, { status: 400 });
     }
+
+    const newSignal = await createInboundSignal(prisma, {
+      data: {
+        userId: auth.userId, prospectName: leadFirstName, prospectContext: companyName,
+        prospectEmail: leadEmail, rawEmail: replyText, intentScore: 0, confidenceScore: 0,
+        intentType: 'UNASSESSED', signalAnalysis: 'Awaiting analysis', intentRisk: 'Unknown',
+        aiDraft: 'Awaiting Triage Draft...', pipelineValue, dealStage: 'Inbound Reply',
+        isHighPriority: false, sourceType: 'WEBHOOK', signalType: 'EMAIL_REPLY', sourceMessageId, status: 'PENDING'
+      }
+    }, identityFromFullName(leadFirstName, companyName));
+    scheduleInboundDecisions(auth.userId, [newSignal.id]);
 
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     
@@ -84,28 +98,16 @@ export async function POST(req: Request) {
       finalLifecycleStatus = 'PENDING';
     }
 
-    // Insert into PostgreSQL via Prisma
-    const newSignal = await createInboundSignal(prisma, {
-      data: {
-        userId: auth.userId,
-        prospectName: leadFirstName,
-        prospectContext: companyName,
-        prospectEmail: leadEmail,
-        rawEmail: replyText,
-        intentScore: finalIntentScore || 0,
-        confidenceScore: finalConfidenceScore || 0,
-        intentType: finalIntentType || "COLD",
-        signalAnalysis: finalSignalAnalysis || "",
-        intentRisk: "Unknown", // Default or you could derive this via AI too
-        aiDraft: "Awaiting Triage Draft...",
-        pipelineValue,
-        dealStage: "Inbound Reply",
-        isHighPriority: finalIntentType === "HOT" || finalIntentType === "WARM",
-        sourceType: "WEBHOOK",
-        signalType: "EMAIL_REPLY",
-        status: finalLifecycleStatus
-      }
-    }, identityFromFullName(leadFirstName, companyName));
+    try {
+      await prisma.inboundSignal.update({ where: { id: newSignal.id }, data: {
+        intentScore: finalIntentScore || 0, confidenceScore: finalConfidenceScore || 0,
+        intentType: finalIntentType || 'COLD', signalAnalysis: finalSignalAnalysis || '',
+        isHighPriority: finalIntentType === 'HOT' || finalIntentType === 'WARM',
+        status: finalLifecycleStatus,
+      } });
+    } catch (updateError) {
+      console.error('Legacy classification update failed after inbound persistence', updateError);
+    }
 
     return NextResponse.json({ success: true, id: newSignal.id }, { status: 200 });
   } catch (error) {

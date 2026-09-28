@@ -26,6 +26,7 @@ import { prisma } from "@/lib/prisma";
 import { createInboundSignal } from '@/lib/prospects/persistence';
 import { resolvePipelineValue } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
+import { scheduleInboundDecisions } from '@/lib/decision/schedule';
 import {
   classifyReply,
   type InboundReply,
@@ -99,6 +100,9 @@ export async function POST(req: Request) {
         const signal = await createInboundSignal(prisma, {
           data: {
             userId: auth.userId,
+            sourceMessageId: reply.replyId,
+            sourceType: 'WEBHOOK',
+            signalType: 'EMAIL_REPLY',
             generatedLeadId: ownedLead?.id || null,
             prospectEmail: typeof payload.prospectEmail === 'string' ? payload.prospectEmail : null,
             prospectName: reply.leadId,
@@ -112,6 +116,7 @@ export async function POST(req: Request) {
             status: "PENDING",
           },
         });
+        scheduleInboundDecisions(auth.userId, [signal.id]);
 
         return NextResponse.json({
           success: true,
@@ -136,6 +141,9 @@ export async function POST(req: Request) {
         const signal = await createInboundSignal(prisma, {
           data: {
             userId: auth.userId,
+            sourceMessageId: reply.replyId,
+            sourceType: 'WEBHOOK',
+            signalType: 'EMAIL_REPLY',
             generatedLeadId: ownedLead?.id || null,
             prospectEmail: typeof payload.prospectEmail === 'string' ? payload.prospectEmail : null,
             prospectName: reply.leadId,
@@ -149,6 +157,7 @@ export async function POST(req: Request) {
             status: "PENDING",
           },
         });
+        scheduleInboundDecisions(auth.userId, [signal.id]);
 
         return NextResponse.json({
           success: true,
@@ -170,9 +179,16 @@ export async function POST(req: Request) {
         // COLD — Log the classification but do NOT create a triage signal.
         // The reply is archived silently. No human bandwidth is consumed.
         // In production, this would write to an analytics/archive table.
-        console.log(
-          `[REPLY INGESTION] Auto-archived COLD reply ${reply.replyId}: "${reply.body.slice(0, 80)}..."`
-        );
+        const signal = await createInboundSignal(prisma, { data: {
+          userId: auth.userId, sourceMessageId: reply.replyId, sourceType: 'WEBHOOK',
+          signalType: 'EMAIL_REPLY', generatedLeadId: ownedLead?.id || null,
+          prospectEmail: typeof payload.prospectEmail === 'string' ? payload.prospectEmail : null,
+          prospectName: reply.leadId,
+          prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply`,
+          pipelineValue, dealStage: 'Archived Engagement', rawEmail: reply.body,
+          intentRisk: 'Low', intentType: classification.score, aiDraft: '', status: 'ARCHIVED',
+        } });
+        scheduleInboundDecisions(auth.userId, [signal.id]);
 
         return NextResponse.json({
           success: true,
@@ -184,7 +200,7 @@ export async function POST(req: Request) {
           },
           routing: {
             action: classification.routingAction,
-            signalId: null,
+            signalId: signal.id,
             message: "Auto-archived. No human review required.",
           },
         });

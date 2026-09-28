@@ -124,6 +124,10 @@ model User {
   salesConstitution      SalesConstitution?
   salesConstitutionRules SalesConstitutionRule[]
   constitutionEvents     SalesConstitutionRevisionEvent[]
+  conversations          Conversation[]
+  conversationMessages   ConversationMessage[]
+  decisions              Decision[]
+  decisionTraces         DecisionTrace[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -219,6 +223,9 @@ model Prospect {
   company               Company?               @relation(fields: [userId, companyId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
   memoryState           ProspectMemoryState?
   memoryEvents          ProspectMemoryEvent[]
+  conversation          Conversation?
+  conversationMessages  ConversationMessage[]
+  decisions             Decision[]
 
   @@unique([userId, id])
   @@unique([userId, normalizedEmail])
@@ -260,6 +267,175 @@ model ProspectMemoryEvent {
   @@unique([userId, prospectId, sourceType, sourceId, eventType], map: "ProspectMemoryEvent_source_key")
   @@index([userId, prospectId, occurredAt])
   @@index([userId, prospectId, eventType, occurredAt])
+}
+
+enum ConversationStatus {
+  OPEN
+  CLOSED
+}
+
+enum ConversationDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum ConversationSourceType {
+  INBOUND_SIGNAL
+  OUTBOUND_LOG
+}
+
+model Conversation {
+  id            String                @id @default(cuid())
+  userId        String
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospectId    String
+  prospect      Prospect              @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  status        ConversationStatus    @default(OPEN)
+  lastMessageAt DateTime?
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  messages      ConversationMessage[]
+  decisions     Decision[]
+
+  @@unique([userId, id])
+  @@unique([userId, prospectId])
+  @@index([userId, lastMessageAt])
+}
+
+model ConversationMessage {
+  id             String                 @id @default(cuid())
+  userId         String
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation           @relation(fields: [userId, conversationId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  prospectId     String
+  prospect       Prospect               @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  direction      ConversationDirection
+  sourceType     ConversationSourceType
+  sourceId       String
+  providerId     String?
+  body           String?                @db.Text
+  occurredAt     DateTime
+  createdAt      DateTime               @default(now())
+  decisions      Decision[]
+
+  @@unique([userId, id])
+  @@unique([userId, sourceType, sourceId], map: "ConversationMessage_source_key")
+  @@index([userId, conversationId, occurredAt])
+}
+
+enum DecisionType {
+  INBOUND_TRIAGE
+}
+
+enum DecisionStatus {
+  PENDING
+  READY
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum DecisionSource {
+  DETERMINISTIC
+  GEMINI
+  UNAVAILABLE
+}
+
+enum TriageIntent {
+  POSITIVE_INTEREST
+  MEETING_REQUEST
+  PRICING_INQUIRY
+  PRICING_OBJECTION
+  TIMING_OBJECTION
+  COMPETITOR_OBJECTION
+  TRUST_OBJECTION
+  BUDGET_OBJECTION
+  FEATURE_QUESTION
+  FEATURE_GAP
+  INTEGRATION_QUESTION
+  SECURITY
+  PROCUREMENT
+  LEGAL
+  COMPLIANCE
+  REFERRAL
+  WRONG_PERSON
+  NOT_INTERESTED
+  UNSUBSCRIBE
+  OUT_OF_OFFICE
+  NEUTRAL_QUESTION
+  CONFUSED
+  NEGOTIATION
+  EXISTING_CUSTOMER
+  SPAM
+  OTHER
+}
+
+model Decision {
+  id                    String              @id @default(cuid())
+  userId                String
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospectId            String
+  prospect              Prospect            @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  conversationId        String
+  conversation          Conversation        @relation(fields: [userId, conversationId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  inputMessageId        String
+  inputMessage          ConversationMessage @relation(fields: [userId, inputMessageId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  decisionType          DecisionType        @default(INBOUND_TRIAGE)
+  status                DecisionStatus      @default(PENDING)
+  source                DecisionSource      @default(UNAVAILABLE)
+  contextFingerprint    String
+  primaryIntent         TriageIntent?
+  secondaryIntents      TriageIntent[]      @default([])
+  intentSignals         Json?
+  confidenceScore       Int?
+  interpretation        String?             @db.Text
+  recommendedNextAction String?             @db.Text
+  suggestedReply        String?             @db.Text
+  requiresReview        Boolean             @default(true)
+  reviewReasons         String[]            @default([])
+  explanation           String?             @db.Text
+  provider              AIProvider?
+  model                 String?
+  shadowMode            Boolean             @default(true)
+  supersedesDecisionId  String?
+  automationMode        String?
+  assignedOwnerId       String?
+  revenueAtRiskScore    Int?
+  slaDueAt              DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  trace                 DecisionTrace?
+
+  @@unique([userId, id])
+  @@unique([userId, inputMessageId, decisionType, contextFingerprint], map: "Decision_context_key")
+  @@index([userId, prospectId, createdAt])
+  @@index([userId, inputMessageId])
+  @@index([userId, status, createdAt])
+}
+
+model DecisionTrace {
+  id                   String   @id @default(cuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId           String   @unique
+  decision             Decision @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  inputMessageId       String
+  contextFingerprint   String
+  memoryState          Json?
+  icpState             Json?
+  brainRevision        Int?
+  playbookRevision     Int?
+  constitutionRevision Int?
+  intentOutput         Json?
+  policyResult         Json?
+  playbookRuleIds      String[] @default([])
+  brainEntryIds        String[] @default([])
+  contextReferences    Json?
+  engineVersion        String
+  explanation          String   @db.Text
+  createdAt            DateTime @default(now())
+
+  @@unique([userId, decisionId])
 }
 
 enum BrainKnowledgeCategory {

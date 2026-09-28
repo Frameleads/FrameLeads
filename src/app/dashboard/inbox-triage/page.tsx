@@ -7,6 +7,7 @@ import { Suspense } from "react";
 import CorePaywall from "@/components/CorePaywall";
 import TriageCommandCenter from "./TriageCommandCenter";
 import InboxTriageLoading from "./loading";
+import { resolveScoutUser } from "@/lib/scout-data";
 
 
 export default function InboxTriagePage() {
@@ -19,13 +20,9 @@ export default function InboxTriagePage() {
 
 async function InboxTriageData() {
   const cookieStore = await cookies();
-  const email = cookieStore.get("user_email")?.value;
-  const user = email
-    ? await prisma.user.findUnique({
-        where: { email: email.trim().toLowerCase() },
-        select: { id: true, tier: true },
-      })
-    : null;
+  const user = await resolveScoutUser(prisma,
+    cookieStore.get('frameleads_session')?.value, cookieStore.get('user_email')?.value);
+  const userTier = user ? (await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true } }))?.tier ?? 'INACTIVE' : 'INACTIVE';
 
   // Phase 4: Priority-sorted query — SIGNAL_TRIGGERED items with
   // isHighPriority=true always surface at the top of the triage queue.
@@ -39,12 +36,22 @@ async function InboxTriageData() {
       { createdAt: "asc" },
     ],
   });
-  const userTier = user?.tier ?? "INACTIVE";
+  const decisionRows = triageSignals.length ? await prisma.decision.findMany({
+    where: { userId: user!.id, inputMessage: { sourceType: 'INBOUND_SIGNAL',
+      sourceId: { in: triageSignals.map(signal => signal.id) } } },
+    orderBy: { createdAt: 'desc' },
+    select: { status: true, source: true, inputMessage: { select: { sourceId: true } } },
+  }) : [];
+  const latestBySignal = new Map<string, { status: string; source: string }>();
+  for (const row of decisionRows) if (!latestBySignal.has(row.inputMessage.sourceId))
+    latestBySignal.set(row.inputMessage.sourceId, { status: row.status, source: row.source });
 
   return (
     <CorePaywall userTier={userTier} featureName="Inbox Triage">
       <TriageCommandCenter
-        initialData={triageSignals}
+        initialData={triageSignals.map(signal => ({ ...signal,
+          decisionStatus: latestBySignal.get(signal.id)?.status ?? null,
+          decisionSource: latestBySignal.get(signal.id)?.source ?? null }))}
         userTier={userTier}
       />
     </CorePaywall>
