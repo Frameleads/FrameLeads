@@ -135,6 +135,7 @@ model User {
   decisionActions        DecisionActionEvent[]
   decisionAssignments    DecisionAssignment[]
   decisionExecutions     DecisionExecutionAttempt[]
+  revenueRiskAssessments DecisionRevenueRisk[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -417,6 +418,7 @@ model Decision {
   actionEvents          DecisionActionEvent[]
   assignment            DecisionAssignment?
   executionAttempt      DecisionExecutionAttempt?
+  revenueRisk           DecisionRevenueRisk?
 
   @@unique([userId, id])
   @@unique([userId, inputMessageId, decisionType, contextFingerprint], map: "Decision_context_key")
@@ -448,6 +450,48 @@ model DecisionTrace {
   createdAt            DateTime @default(now())
 
   @@unique([userId, decisionId])
+}
+
+enum RevenueRiskBand {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RevenueRiskConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum RevenueRiskStatus {
+  APPLICABLE
+  INSUFFICIENT_DATA
+  NOT_APPLICABLE
+}
+
+model DecisionRevenueRisk {
+  id               String                @id @default(cuid())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId       String
+  decision         Decision              @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  status           RevenueRiskStatus
+  score            Int?
+  band             RevenueRiskBand?
+  confidence       RevenueRiskConfidence
+  components       Json
+  reasons          String[]              @default([])
+  sourceReferences Json
+  scoringVersion   String
+  inputFingerprint String
+  evaluatedAt      DateTime              @default(now())
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([userId, decisionId])
+  @@index([userId, status, score])
 }
 
 enum BrainKnowledgeCategory {

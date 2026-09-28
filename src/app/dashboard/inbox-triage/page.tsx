@@ -8,6 +8,7 @@ import CorePaywall from "@/components/CorePaywall";
 import TriageCommandCenter from "./TriageCommandCenter";
 import InboxTriageLoading from "./loading";
 import { resolveScoutUser } from "@/lib/scout-data";
+import { assessRevenueAtRiskBatch } from '@/lib/revenue-risk/service';
 
 
 export default function InboxTriagePage() {
@@ -40,18 +41,23 @@ async function InboxTriageData() {
     where: { userId: user!.id, inputMessage: { sourceType: 'INBOUND_SIGNAL',
       sourceId: { in: triageSignals.map(signal => signal.id) } } },
     orderBy: { createdAt: 'desc' },
-    select: { status: true, source: true, inputMessage: { select: { sourceId: true } } },
+    select: { id: true, status: true, source: true, inputMessage: { select: { sourceId: true } } },
   }) : [];
-  const latestBySignal = new Map<string, { status: string; source: string }>();
+  const latestBySignal = new Map<string, { id: string; status: string; source: string }>();
   for (const row of decisionRows) if (!latestBySignal.has(row.inputMessage.sourceId))
-    latestBySignal.set(row.inputMessage.sourceId, { status: row.status, source: row.source });
+    latestBySignal.set(row.inputMessage.sourceId, { id: row.id, status: row.status, source: row.source });
+  const riskRows = user && latestBySignal.size ? await assessRevenueAtRiskBatch({ userId: user.id,
+    decisionIds: [...latestBySignal.values()].map(row => row.id) }) : [];
+  const riskByDecision = new Map(riskRows.map(row => [row.decisionId, row]));
 
   return (
     <CorePaywall userTier={userTier} featureName="Inbox Triage">
       <TriageCommandCenter
         initialData={triageSignals.map(signal => ({ ...signal,
           decisionStatus: latestBySignal.get(signal.id)?.status ?? null,
-          decisionSource: latestBySignal.get(signal.id)?.source ?? null }))}
+          decisionSource: latestBySignal.get(signal.id)?.source ?? null,
+          decisionId: latestBySignal.get(signal.id)?.id ?? null,
+          revenueRisk: latestBySignal.get(signal.id)?.id ? riskByDecision.get(latestBySignal.get(signal.id)!.id) ?? null : null }))}
         userTier={userTier}
       />
     </CorePaywall>

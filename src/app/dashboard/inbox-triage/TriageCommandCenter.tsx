@@ -9,6 +9,7 @@ import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Lock as LockIcon } from 
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
 import { ENTERPRISE_CHECKOUT_URL } from '@/lib/checkout';
+import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -82,9 +83,12 @@ type DecisionPacket = { id: string; status: string; primaryIntent: string | null
     contextReferences: unknown; memoryState: unknown } | null };
 type AutomationPacket = { decisionId: string; resolvedMode: string; state: string; reasons: string[];
   ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
+type RevenueRiskView = { status: string; score: number | null; band: string | null;
+  confidence: string; reasons: string[]; evaluatedAt?: string };
 
-function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
-  onDecision: (signalId: string, status: string) => void }) {
+function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: string;
+  onDecision: (signalId: string, status: string) => void;
+  onRisk: (signalId: string, risk: RevenueRiskView) => void }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -94,6 +98,7 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
   const [editedReply, setEditedReply] = useState('');
   const [actionReason, setActionReason] = useState('');
   const [actionError, setActionError] = useState('');
+  const [risk, setRisk] = useState<RevenueRiskView | null>(null);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -129,6 +134,15 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
       .catch(() => { if (active) setActionError('Automation state could not load.'); });
     return () => { active = false; };
   }, [packet?.id, signalId]);
+  useEffect(() => {
+    if (!packet?.id) { setRisk(null); return; }
+    let active = true;
+    fetch(`/api/revenue-risk?decisionId=${encodeURIComponent(packet.id)}`)
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (active && data?.risk) { setRisk(data.risk); onRisk(signalId, data.risk); } })
+      .catch(() => { /* Persisted Inbox assessment remains available after a transient refresh failure. */ });
+    return () => { active = false; };
+  }, [packet?.id, signalId, onRisk]);
   async function refreshAutomation() {
     const response = await fetch(`/api/automation/decision?signalId=${encodeURIComponent(signalId)}`);
     if (response.ok) setAutomation((await response.json()).automation ?? null);
@@ -207,6 +221,13 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
       {packet.suggestedReply && <div><p className="text-gray-500">Suggested draft · review before use</p>
         <p className="mt-1 whitespace-pre-wrap rounded border border-[#333] p-3">{packet.suggestedReply}</p></div>}
       {packet.explanation && <p className="text-gray-400">{packet.explanation}</p>}
+      {risk && <div className="rounded border border-[#333] p-3" aria-label="Revenue priority">
+        <p className="text-xs uppercase tracking-wide text-gray-400">Revenue-at-Risk priority</p>
+        {risk.status === 'APPLICABLE' ? <p className="mt-1 font-semibold text-white">{risk.score} / 100 · {risk.band} <span className="text-xs font-normal text-gray-400">· {risk.confidence} confidence</span></p> :
+          <p className="mt-1 text-sm text-gray-300">{risk.status === 'NOT_APPLICABLE' ? 'Not applicable to revenue' : 'Insufficient data to rank'}</p>}
+        <ul className="mt-2 space-y-1 text-xs text-gray-400">{risk.reasons.slice(0, 4).map(reason => <li key={reason}>• {reason}</li>)}</ul>
+        <p className="mt-2 text-[11px] text-gray-500">Priority index, not a dollar-loss estimate. It does not change execution permissions.</p>
+      </div>}
       {automation && <div className="space-y-2 rounded border border-[#333] p-3" aria-label="Governed execution">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Governed execution</strong>
           <a href="/dashboard/automation" className="text-xs text-[#FF5A1F] underline focus-visible:outline">Automation settings</a></div>
@@ -287,6 +308,7 @@ export default function TriageCommandCenter({
         strategyLogic: s.signalAnalysis || "Awaiting strategy logic...",
         decisionStatus: s.decisionStatus || null,
         decisionSource: s.decisionSource || null,
+        revenueRisk: s.revenueRisk || null,
       }))
     : [], [initialData]);
 
@@ -294,12 +316,17 @@ export default function TriageCommandCenter({
   const updateDecisionStatus = useCallback((signalId: string, status: string) => {
     setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, decisionStatus: status } : lead));
   }, []);
+  const updateRevenueRisk = useCallback((signalId: string, risk: RevenueRiskView) => {
+    setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, revenueRisk: risk } : lead));
+  }, []);
   const [queueView, setQueueView] = useState<'active' | 'archived'>('active');
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
-  const visibleLeads = leads.filter((lead) =>
+  const [riskFirst, setRiskFirst] = useState(false);
+  const filteredLeads = leads.filter((lead) =>
     (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING') &&
     (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW'),
   );
+  const visibleLeads = riskFirst ? sortInboxByRevenueRisk(filteredLeads) : filteredLeads;
   const [activeLeadId, setActiveLeadId] = useState(
     dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
   );
@@ -825,6 +852,10 @@ export default function TriageCommandCenter({
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
     <div className="inline-flex rounded-lg border border-[#242424] bg-[#121212] p-1">
+      <button type="button" aria-pressed={riskFirst} onClick={() => setRiskFirst(value => !value)}
+        className={`rounded-md px-3 py-2 text-xs font-semibold ${riskFirst ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
+        Revenue priority
+      </button>
       <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(value => !value)}
         className={`rounded-md px-3 py-2 text-xs font-semibold ${needsReviewOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
         Needs review
@@ -929,6 +960,8 @@ export default function TriageCommandCenter({
             {lead.decisionStatus && <p className={`mt-2 text-[10px] font-mono uppercase ${lead.decisionStatus === 'NEEDS_REVIEW' ? 'text-amber-400' : lead.decisionStatus === 'FAILED' ? 'text-red-400' : 'text-gray-500'}`}>
               Decision: {lead.decisionStatus.replaceAll('_', ' ')}
             </p>}
+            {lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
+            {lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
           </div>
         ))}
       </div>
@@ -954,7 +987,7 @@ export default function TriageCommandCenter({
           </div>
         </div>
 
-        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus} />
+        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus} onRisk={updateRevenueRisk} />
 
         <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           
