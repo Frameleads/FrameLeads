@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { authenticatedAutomationUserId, validMutationOrigin } from '@/lib/automation/auth';
 import { actOnDecision } from '@/lib/automation/actions';
+import { syncResponseSLAForDecision } from '@/lib/response-sla/service';
+import { assessRevenueAtRisk } from '@/lib/revenue-risk/service';
 
 export async function POST(request: Request) {
   const userId = await authenticatedAutomationUserId();
@@ -14,6 +16,10 @@ export async function POST(request: Request) {
     const result = await actOnDecision({ userId, decisionId: body.decisionId,
       action: body.action, requestKey: body.requestKey, editedReply: body.editedReply,
       reason: body.reason, queue: body.queue });
+    try { await assessRevenueAtRisk({ userId, decisionId: body.decisionId }); }
+    catch { console.error('[RESPONSE_SLA] Risk assessment unavailable after action'); }
+    try { await syncResponseSLAForDecision({ userId, decisionId: body.decisionId }); }
+    catch { console.error('[RESPONSE_SLA] Action committed; SLA sync will retry on Inbox refresh'); }
     return NextResponse.json({ state: result.state, reasons: 'reasons' in result ? result.reasons : [], reused: result.reused });
   } catch (error) {
     if (error instanceof TypeError) return NextResponse.json({ error: error.message }, { status: 400 });

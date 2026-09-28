@@ -10,6 +10,7 @@ import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
 import { ENTERPRISE_CHECKOUT_URL } from '@/lib/checkout';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
+import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/deadline';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -85,10 +86,15 @@ type AutomationPacket = { decisionId: string; resolvedMode: string; state: strin
   ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
 type RevenueRiskView = { status: string; score: number | null; band: string | null;
   confidence: string; reasons: string[]; evaluatedAt?: string };
+type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED';
+  startedAt: string; dueAt: string; breachedAt: string | null; resolvedAt: string | null;
+  escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
+  riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: string;
+function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPercent }: { signalId: string;
   onDecision: (signalId: string, status: string) => void;
-  onRisk: (signalId: string, risk: RevenueRiskView) => void }) {
+  onRisk: (signalId: string, risk: RevenueRiskView) => void;
+  onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -99,6 +105,10 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: strin
   const [actionReason, setActionReason] = useState('');
   const [actionError, setActionError] = useState('');
   const [risk, setRisk] = useState<RevenueRiskView | null>(null);
+  const [sla, setSLA] = useState<ResponseSLAView | null>(null);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer); }, []);
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -143,6 +153,20 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: strin
       .catch(() => { /* Persisted Inbox assessment remains available after a transient refresh failure. */ });
     return () => { active = false; };
   }, [packet?.id, signalId, onRisk]);
+  useEffect(() => {
+    if (!packet?.id) { setSLA(null); return; }
+    let active = true;
+    fetch(`/api/response-sla?decisionId=${encodeURIComponent(packet.id)}`)
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (active && data) { setSLA(data.sla ?? null); onSLA(signalId, data.sla ?? null); } })
+      .catch(() => { /* The persisted Inbox SLA remains visible after a transient refresh failure. */ });
+    return () => { active = false; };
+  }, [packet?.id, signalId, onSLA]);
+  async function refreshSLA() {
+    if (!packet?.id) return;
+    const response = await fetch(`/api/response-sla?decisionId=${encodeURIComponent(packet.id)}`);
+    if (response.ok) { const next = (await response.json()).sla ?? null; setSLA(next); onSLA(signalId, next); }
+  }
   async function refreshAutomation() {
     const response = await fetch(`/api/automation/decision?signalId=${encodeURIComponent(signalId)}`);
     if (response.ok) setAutomation((await response.json()).automation ?? null);
@@ -159,6 +183,7 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: strin
       const result = await response.json();
       if (result.state === 'FAILED_UNCERTAIN') setActionError('Send outcome is uncertain. Check the provider before taking another action.');
       await refreshAutomation();
+      await refreshSLA();
     } catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Action could not be completed.'); }
     finally { setActionBusy(false); }
   }
@@ -228,6 +253,20 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk }: { signalId: strin
         <ul className="mt-2 space-y-1 text-xs text-gray-400">{risk.reasons.slice(0, 4).map(reason => <li key={reason}>• {reason}</li>)}</ul>
         <p className="mt-2 text-[11px] text-gray-500">Priority index, not a dollar-loss estimate. It does not change execution permissions.</p>
       </div>}
+      {sla && <div className="rounded border border-[#333] p-3" aria-label="Response SLA">
+        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Response SLA</strong>
+          <a href="/dashboard/response-sla" className="text-xs text-[#FF5A1F] underline">SLA settings</a></div>
+        {(() => { const display = displayResponseSLA({ status: sla.status, startedAt: new Date(sla.startedAt),
+          dueAt: new Date(sla.dueAt), dueSoonPercent }, new Date(clock));
+          return <p className={`mt-1 text-sm ${display.state === 'OVERDUE' ? 'text-red-300' : display.state === 'DUE_SOON' ? 'text-amber-300' : 'text-gray-300'}`}>
+            {display.state === 'OVERDUE' ? `BREACHED · ${display.minutes}m overdue` :
+              display.state === 'DUE_SOON' ? `Due soon · ${display.minutes}m remaining` :
+                display.state === 'ACTIVE' ? `${display.minutes}m remaining` : display.state.replaceAll('_', ' ')}
+          </p>; })()}
+        <p className="mt-1 text-xs text-gray-400">Due: {new Date(sla.dueAt).toLocaleString()} · Risk at start: {sla.riskBandAtStart ?? 'UNKNOWN'}</p>
+        {sla.escalationLevel > 0 && <p className="mt-1 text-xs text-amber-300">Escalated to human review{sla.assignmentId ? ' · assignment recorded' : ''}</p>}
+        {sla.resolutionReason && <p className="mt-1 text-xs text-gray-500">{sla.resolutionReason.replaceAll('_', ' ')}</p>}
+      </div>}
       {automation && <div className="space-y-2 rounded border border-[#333] p-3" aria-label="Governed execution">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Governed execution</strong>
           <a href="/dashboard/automation" className="text-xs text-[#FF5A1F] underline focus-visible:outline">Automation settings</a></div>
@@ -283,9 +322,11 @@ function EnterpriseFeatureGate({ locked, children }: { locked: boolean; children
 export default function TriageCommandCenter({
   initialData,
   userTier,
+  slaDueSoonPercent = 75,
 }: {
   initialData: any;
   userTier: string;
+  slaDueSoonPercent?: number;
 }) {
   const router = useRouter();
   const isCoreTier = userTier === 'CORE';
@@ -309,6 +350,7 @@ export default function TriageCommandCenter({
         decisionStatus: s.decisionStatus || null,
         decisionSource: s.decisionSource || null,
         revenueRisk: s.revenueRisk || null,
+        responseSLA: s.responseSLA || null,
       }))
     : [], [initialData]);
 
@@ -319,14 +361,25 @@ export default function TriageCommandCenter({
   const updateRevenueRisk = useCallback((signalId: string, risk: RevenueRiskView) => {
     setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, revenueRisk: risk } : lead));
   }, []);
+  const updateResponseSLA = useCallback((signalId: string, sla: ResponseSLAView | null) => {
+    setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, responseSLA: sla } : lead));
+  }, []);
   const [queueView, setQueueView] = useState<'active' | 'archived'>('active');
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
-  const [riskFirst, setRiskFirst] = useState(false);
+  const [orderBy, setOrderBy] = useState<'received' | 'risk' | 'sla'>('received');
+  const [urgentSLAOnly, setUrgentSLAOnly] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer); }, []);
   const filteredLeads = leads.filter((lead) =>
     (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING') &&
-    (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW'),
+    (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW') &&
+    (!urgentSLAOnly || (lead.responseSLA && ['DUE_SOON', 'OVERDUE'].includes(displayResponseSLA({
+      status: lead.responseSLA.status, startedAt: new Date(lead.responseSLA.startedAt),
+      dueAt: new Date(lead.responseSLA.dueAt), dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state))),
   );
-  const visibleLeads = riskFirst ? sortInboxByRevenueRisk(filteredLeads) : filteredLeads;
+  const visibleLeads = orderBy === 'risk' ? sortInboxByRevenueRisk(filteredLeads) :
+    orderBy === 'sla' ? sortInboxByResponseSLA(filteredLeads, new Date(clock), slaDueSoonPercent) : filteredLeads;
   const [activeLeadId, setActiveLeadId] = useState(
     dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
   );
@@ -851,10 +904,18 @@ export default function TriageCommandCenter({
   const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
-    <div className="inline-flex rounded-lg border border-[#242424] bg-[#121212] p-1">
-      <button type="button" aria-pressed={riskFirst} onClick={() => setRiskFirst(value => !value)}
-        className={`rounded-md px-3 py-2 text-xs font-semibold ${riskFirst ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
+    <div className="inline-flex max-w-full flex-wrap rounded-lg border border-[#242424] bg-[#121212] p-1">
+      <button type="button" aria-pressed={orderBy === 'risk'} onClick={() => setOrderBy(current => current === 'risk' ? 'received' : 'risk')}
+        className={`rounded-md px-3 py-2 text-xs font-semibold ${orderBy === 'risk' ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
         Revenue priority
+      </button>
+      <button type="button" aria-pressed={orderBy === 'sla'} onClick={() => setOrderBy(current => current === 'sla' ? 'received' : 'sla')}
+        className={`rounded-md px-3 py-2 text-xs font-semibold ${orderBy === 'sla' ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
+        SLA due
+      </button>
+      <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(value => !value)}
+        className={`rounded-md px-3 py-2 text-xs font-semibold ${urgentSLAOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
+        Due soon / overdue
       </button>
       <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(value => !value)}
         className={`rounded-md px-3 py-2 text-xs font-semibold ${needsReviewOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
@@ -962,6 +1023,11 @@ export default function TriageCommandCenter({
             </p>}
             {lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
             {lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
+            {lead.responseSLA && <p className={`mt-1 text-[10px] font-mono ${lead.responseSLA.status === 'BREACHED' || new Date(lead.responseSLA.dueAt).getTime() <= clock ? 'text-red-300' : 'text-gray-400'}`}>
+              SLA: {displayResponseSLA({ status: lead.responseSLA.status,
+                startedAt: new Date(lead.responseSLA.startedAt), dueAt: new Date(lead.responseSLA.dueAt),
+                dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state.replaceAll('_', ' ')}
+            </p>}
           </div>
         ))}
       </div>
@@ -987,7 +1053,8 @@ export default function TriageCommandCenter({
           </div>
         </div>
 
-        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus} onRisk={updateRevenueRisk} />
+        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus}
+          onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} />
 
         <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           

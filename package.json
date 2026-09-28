@@ -24,6 +24,7 @@
     "test:decision": "node scripts/run-prospect-tool.cjs decision-test",
     "test:automation": "node scripts/run-prospect-tool.cjs automation-test",
     "test:revenue-risk": "node scripts/run-prospect-tool.cjs revenue-risk-test",
+    "test:response-sla": "node scripts/run-prospect-tool.cjs response-sla-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

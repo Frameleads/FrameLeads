@@ -136,6 +136,8 @@ model User {
   decisionAssignments    DecisionAssignment[]
   decisionExecutions     DecisionExecutionAttempt[]
   revenueRiskAssessments DecisionRevenueRisk[]
+  responseSLAPolicy      ResponseSLAPolicy?
+  responseSLAInstances   ResponseSLAInstance[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -419,6 +421,7 @@ model Decision {
   assignment            DecisionAssignment?
   executionAttempt      DecisionExecutionAttempt?
   revenueRisk           DecisionRevenueRisk?
+  responseSLA           ResponseSLAInstance?
 
   @@unique([userId, id])
   @@unique([userId, inputMessageId, decisionType, contextFingerprint], map: "Decision_context_key")
@@ -492,6 +495,61 @@ model DecisionRevenueRisk {
 
   @@unique([userId, decisionId])
   @@index([userId, status, score])
+}
+
+enum ResponseSLAStatus {
+  ACTIVE
+  BREACHED
+  RESOLVED
+  CANCELLED
+}
+
+model ResponseSLAPolicy {
+  id                      String   @id @default(cuid())
+  userId                  String   @unique
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled                 Boolean  @default(true)
+  criticalMinutes         Int      @default(15)
+  highMinutes             Int      @default(60)
+  mediumMinutes           Int      @default(240)
+  lowMinutes              Int      @default(1440)
+  unknownMinutes          Int      @default(240)
+  dueSoonPercent          Int      @default(75)
+  breachEscalationEnabled Boolean  @default(true)
+  revision                Int      @default(1)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model ResponseSLAInstance {
+  id                    String                 @id @default(cuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId            String
+  decision              Decision               @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  prospectId            String
+  status                ResponseSLAStatus      @default(ACTIVE)
+  startedAt             DateTime
+  dueAt                 DateTime
+  breachedAt            DateTime?
+  resolvedAt            DateTime?
+  cancelledAt           DateTime?
+  lastEvaluatedAt       DateTime?
+  escalationLevel       Int                    @default(0)
+  escalationReason      String?
+  riskScoreAtStart      Int?
+  riskBandAtStart       RevenueRiskBand?
+  riskConfidenceAtStart RevenueRiskConfidence?
+  policyRevision        Int
+  assignmentId          String?
+  assignment            DecisionAssignment?    @relation(fields: [userId, assignmentId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  resolutionReason      String?                @db.Text
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@unique([userId, decisionId])
+  @@index([userId, status, dueAt])
+  @@index([userId, prospectId])
 }
 
 enum BrainKnowledgeCategory {
@@ -1220,17 +1278,19 @@ model DecisionAutomationResolution {
 }
 
 model DecisionAssignment {
-  id         String                   @id @default(cuid())
-  userId     String
-  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  decisionId String
-  decision   Decision                 @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
-  status     DecisionAssignmentStatus @default(OPEN)
-  queue      DecisionRouteQueue       @default(HUMAN_REVIEW)
-  reason     String                   @db.Text
-  assignedAt DateTime                 @default(now())
-  resolvedAt DateTime?
+  id           String                   @id @default(cuid())
+  userId       String
+  user         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId   String
+  decision     Decision                 @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  status       DecisionAssignmentStatus @default(OPEN)
+  queue        DecisionRouteQueue       @default(HUMAN_REVIEW)
+  reason       String                   @db.Text
+  assignedAt   DateTime                 @default(now())
+  resolvedAt   DateTime?
+  slaInstances ResponseSLAInstance[]
 
+  @@unique([userId, id])
   @@unique([userId, decisionId])
   @@index([userId, status, assignedAt])
 }

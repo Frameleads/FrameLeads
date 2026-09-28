@@ -9,6 +9,8 @@ import TriageCommandCenter from "./TriageCommandCenter";
 import InboxTriageLoading from "./loading";
 import { resolveScoutUser } from "@/lib/scout-data";
 import { assessRevenueAtRiskBatch } from '@/lib/revenue-risk/service';
+import { syncResponseSLAsBatch } from '@/lib/response-sla/service';
+import { getResponseSLAPolicy } from '@/lib/response-sla/policy';
 
 
 export default function InboxTriagePage() {
@@ -49,6 +51,11 @@ async function InboxTriageData() {
   const riskRows = user && latestBySignal.size ? await assessRevenueAtRiskBatch({ userId: user.id,
     decisionIds: [...latestBySignal.values()].map(row => row.id) }) : [];
   const riskByDecision = new Map(riskRows.map(row => [row.decisionId, row]));
+  const decisionIds = [...latestBySignal.values()].map(row => row.id);
+  const slaRows = user && decisionIds.length ? await syncResponseSLAsBatch({ userId: user.id,
+    decisionIds, risks: riskRows }) : [];
+  const slaByDecision = new Map(slaRows.filter(row => row != null).map(row => [row!.decisionId, row!]));
+  const slaPolicy = user ? await getResponseSLAPolicy(user.id) : null;
 
   return (
     <CorePaywall userTier={userTier} featureName="Inbox Triage">
@@ -57,7 +64,9 @@ async function InboxTriageData() {
           decisionStatus: latestBySignal.get(signal.id)?.status ?? null,
           decisionSource: latestBySignal.get(signal.id)?.source ?? null,
           decisionId: latestBySignal.get(signal.id)?.id ?? null,
-          revenueRisk: latestBySignal.get(signal.id)?.id ? riskByDecision.get(latestBySignal.get(signal.id)!.id) ?? null : null }))}
+          revenueRisk: latestBySignal.get(signal.id)?.id ? riskByDecision.get(latestBySignal.get(signal.id)!.id) ?? null : null,
+          responseSLA: latestBySignal.get(signal.id)?.id ? slaByDecision.get(latestBySignal.get(signal.id)!.id) ?? null : null }))}
+        slaDueSoonPercent={slaPolicy?.dueSoonPercent ?? 75}
         userTier={userTier}
       />
     </CorePaywall>
