@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { installMemoryFixture } from './memory-fixture';
 import assert from 'node:assert/strict';
 import { ICPQualificationPolicy, ProspectQualificationStatus, ProspectResearchStatus, type ICPProfile, type PrismaClient } from '@prisma/client';
 import { evaluateICP, qualifyProspect, qualifyProspectsBatch, saveICPProfile } from '../src/lib/prospects/qualification';
@@ -106,6 +107,8 @@ test('O: batch qualifies in pages with tenant scope and no AI or network adapter
       updateMany: async ({ where, data }: any) => { const row = updated.get(where.prospectId); if (!row || row.override !== 'AUTO') return { count: 0 }; Object.assign(row, data); return { count: 1 }; },
     },
   };
+  installMemoryFixture(db);
+  (db as any).$transaction = async (work: any) => work(db);
   const result = await qualifyProspectsBatch({ userId: 'tenant-a', pageSize: 2 }, db as never);
   assert.deepEqual(result, { processed: 3, qualified: 2, rejected: 0, needsReview: 1, nextCursor: null });
   assert.deepEqual([...updated.keys()], ids);

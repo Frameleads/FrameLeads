@@ -115,6 +115,8 @@ model User {
   qualifications ProspectQualification[]
   aiUsageEvents  AIUsageEvent[]
   companies      Company[]
+  memoryStates   ProspectMemoryState[]
+  memoryEvents   ProspectMemoryEvent[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -208,12 +210,49 @@ model Prospect {
   aiUsageEvents         AIUsageEvent[]
   companyId             String?
   company               Company?               @relation(fields: [userId, companyId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  memoryState           ProspectMemoryState?
+  memoryEvents          ProspectMemoryEvent[]
 
   @@unique([userId, id])
   @@unique([userId, normalizedEmail])
   @@unique([userId, normalizedLinkedInUrl])
   @@index([userId, fallbackIdentityKey])
   @@index([userId, companyId])
+}
+
+model ProspectMemoryState {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospectId     String
+  prospect       Prospect  @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  rollingSummary String    @default("") @db.Text
+  eventCount     Int       @default(0)
+  lastEventAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([userId, prospectId])
+  @@index([userId, lastEventAt])
+}
+
+model ProspectMemoryEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospectId  String
+  prospect    Prospect @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  eventType   String
+  sourceType  String
+  sourceId    String
+  description String   @db.Text
+  importance  Int      @default(1)
+  occurredAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, prospectId, sourceType, sourceId, eventType], map: "ProspectMemoryEvent_source_key")
+  @@index([userId, prospectId, occurredAt])
+  @@index([userId, prospectId, eventType, occurredAt])
 }
 
 model Company {

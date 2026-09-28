@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { PrismaClient } from '@prisma/client';
 import { SandboxHandoffError, sendProspectToSandbox } from '../src/lib/prospects/sandbox-handoff';
 import { scoutHandoffEligible } from '../src/lib/scout-view';
+import { installMemoryFixture } from './memory-fixture';
 
 function fixture() {
   const prospect = { id: 'p1', userId: 'tenant-a', firstName: 'Sarah', lastName: 'Chen',
@@ -26,6 +27,7 @@ function fixture() {
     companyIntelligence: { updateMany: async () => { companyUpdates++; throw new Error('Company cache must not change'); } },
     aIUsageEvent: { create: async () => { usageCreates++; throw new Error('No AI usage expected'); } },
   };
+  const memory = installMemoryFixture(tx);
   const db = { ...tx, $transaction: async (work: any, options: any) => {
     assert.equal(options.isolationLevel, 'Serializable');
     return work(tx);
@@ -33,7 +35,7 @@ function fixture() {
   const send = (userId = 'tenant-a') => sendProspectToSandbox({ userId, prospectId: 'p1' }, db, {
     qualify: async () => qualification,
   });
-  return { send, db, prospect, intelligence, leads,
+  return { send, db, prospect, intelligence, leads, memory,
     setQualification: (value: any) => { qualification = value; },
     setResearch: (status: string) => { intelligence.researchStatus = status; },
     counts: () => ({ prospectCreates, usageCreates, companyUpdates }),
@@ -54,6 +56,7 @@ test('qualified READY handoff creates one execution lead on the same Prospect an
   assert.equal(second.leadId, first.leadId);
   assert.equal(second.reusedLead, true);
   assert.equal(f.leads.length, 1);
+  assert.equal(f.memory.events.filter(event => event.eventType === 'SANDBOX_HANDOFF').length, 1);
   assert.deepEqual(f.intelligence, before);
   assert.deepEqual(f.counts(), { prospectCreates: 0, usageCreates: 0, companyUpdates: 0 });
 });

@@ -17,6 +17,8 @@ import { analyzeScoutWithUsage, AIUsageRecordingError } from './research-call';
 import { attachCompanyToProspect } from './company';
 import { getOrResearchCompany } from './company-research';
 import { qualifyProspect } from './qualification';
+import { MEMORY_EVENT, recordProspectMemoryEventInTransaction } from './memory';
+import { randomUUID } from 'node:crypto';
 
 export class InvalidResearchOutput extends Error {
   constructor(message: string) { super(`Invalid ICP research output: ${message}`); }
@@ -268,6 +270,7 @@ export async function researchProspectICP(
   }
   const lease = await acquireLease(db, scope, existing);
   if (!lease) return currentResult(db, scope, ['research_already_in_progress'], true);
+  const researchRunId = randomUUID();
 
   try {
     const sources = await collectProspectEvidence(db, prospect, lease.id);
@@ -305,7 +308,12 @@ export async function researchProspectICP(
           researchStatus: ProspectResearchStatus.READY, researchResultCommitted: true,
         }),
         });
-        if (updated.count) await tx.prospectEvidence.deleteMany({ where: { userId: scope.userId, prospectIntelligenceId: lease.id, isUserProvided: false } });
+        if (updated.count) {
+          await tx.prospectEvidence.deleteMany({ where: { userId: scope.userId, prospectIntelligenceId: lease.id, isUserProvided: false } });
+          await recordProspectMemoryEventInTransaction(tx, { ...scope, eventType: MEMORY_EVENT.RESEARCH_COMPLETED,
+            sourceType: 'PROSPECT_INTELLIGENCE', sourceId: researchRunId,
+            description: `Scout research ready. Fit: ${companyIntel.fitTier}; score: ${companyIntel.fitScore}.`, importance: 2 });
+        }
         return updated;
       });
       if (!changed.count) return currentResult(db, scope, ['research_lease_lost'], true);
@@ -347,6 +355,9 @@ export async function researchProspectICP(
       if (personEvidence.length) await tx.prospectEvidence.createMany({
         data: personEvidence.map(row => ({ ...validateEvidence(row), userId: scope.userId, prospectIntelligenceId: lease.id })),
       });
+      if (status === ProspectResearchStatus.READY) await recordProspectMemoryEventInTransaction(tx, { ...scope,
+        eventType: MEMORY_EVENT.RESEARCH_COMPLETED, sourceType: 'PROSPECT_INTELLIGENCE',
+        sourceId: researchRunId, description: `Scout research ready. Fit: ${assessment.patch.fitTier ?? 'unknown'}; score: ${assessment.patch.fitScore ?? 'unknown'}.`, importance: 2 });
       return true;
     });
     if (!committed) return currentResult(db, scope, ['research_lease_lost'], true);

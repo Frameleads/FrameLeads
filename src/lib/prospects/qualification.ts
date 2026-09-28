@@ -3,6 +3,8 @@ import { prisma } from '../prisma';
 import { normalizeWebsiteDomain } from './normalization';
 import { normalizeCountry, parseCompanySize } from './metadata';
 import { ProspectIntelligenceNotFound } from './intelligence';
+import { MEMORY_EVENT, recordProspectMemoryEvent } from './memory';
+import { identityTransaction } from './identity';
 
 export type QualificationContext = {
   websiteUrl: string | null;
@@ -169,19 +171,23 @@ function sourceType(leads: { list: { userId: string; sourceType: LeadSourceType 
 }
 
 async function persistAutomaticQualification(db: PrismaClient, scope: { userId: string; prospectId: string }, profile: ICPProfile, decision: QualificationDecision) {
-  const existing = await db.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
-  if (existing?.override !== undefined && existing.override !== QualificationOverride.AUTO) return existing;
-  const data = { ...decision, icpProfileId: profile.id, profileUpdatedAt: profile.updatedAt, policyVersion: POLICY_VERSION, evaluatedAt: new Date() };
-  if (!existing) {
-    try { return await db.prospectQualification.create({ data: { ...scope, ...data } }); }
-    catch (error) {
-      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') throw error;
-    }
-  }
-  await db.prospectQualification.updateMany({ where: { ...scope, override: QualificationOverride.AUTO }, data });
-  const current = await db.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
-  if (!current) throw new Error('Qualification was concurrently removed');
-  return current;
+  const work = async (tx: Prisma.TransactionClient) => {
+    const existing = await tx.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
+    if (existing?.override !== undefined && existing.override !== QualificationOverride.AUTO) return existing;
+    const data = { ...decision, icpProfileId: profile.id, profileUpdatedAt: profile.updatedAt, policyVersion: POLICY_VERSION, evaluatedAt: new Date() };
+    const current = existing
+      ? await (async () => {
+          await tx.prospectQualification.updateMany({ where: { ...scope, override: QualificationOverride.AUTO }, data });
+          return tx.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
+        })()
+      : await tx.prospectQualification.create({ data: { ...scope, ...data } });
+    if (!current) throw new Error('Qualification was concurrently removed');
+    if (existing?.status !== current.status) await recordProspectMemoryEvent({ ...scope, eventType: MEMORY_EVENT.QUALIFICATION_CHANGED,
+      sourceType: 'QUALIFICATION', sourceId: `${current.id}:${current.status}:${current.evaluatedAt?.toISOString() ?? data.evaluatedAt.toISOString()}`,
+      description: `ICP qualification: ${current.status}. ${current.qualificationReason}` }, tx as unknown as PrismaClient);
+    return current;
+  };
+  return '$transaction' in db ? identityTransaction(db, work) : work(db as unknown as Prisma.TransactionClient);
 }
 
 export async function setQualificationOverride(
@@ -193,21 +199,36 @@ export async function setQualificationOverride(
   const prospect = await db.prospect.findUnique({ where: { userId_id: { userId: scope.userId, id: scope.prospectId } }, select: { id: true } });
   if (!prospect) throw new ProspectIntelligenceNotFound();
   if (input.override === QualificationOverride.AUTO) {
-    await db.prospectQualification.updateMany({ where: scope, data: { override: QualificationOverride.AUTO, overriddenAt: null } });
-    return qualifyProspect(scope, db);
+    return identityTransaction(db, async tx => {
+      const previous = await tx.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
+      await tx.prospectQualification.updateMany({ where: scope, data: { override: QualificationOverride.AUTO, overriddenAt: null } });
+      const result = await qualifyProspect(scope, tx as unknown as PrismaClient);
+      if (previous && previous.override !== QualificationOverride.AUTO) await recordProspectMemoryEvent({ ...scope,
+        eventType: MEMORY_EVENT.QUALIFICATION_OVERRIDE, sourceType: 'QUALIFICATION',
+        sourceId: `${previous.id}:AUTO:${previous.overriddenAt?.toISOString() ?? 'legacy'}`,
+        description: 'Human qualification override cleared; automatic qualification restored.', importance: 3 }, tx as unknown as PrismaClient);
+      return result;
+    });
   }
-  const profile = await db.iCPProfile.upsert({ where: { userId: scope.userId }, create: { userId: scope.userId }, update: {} });
-  const qualified = input.override === QualificationOverride.USER_QUALIFIED;
-  const data = {
-    status: qualified ? ProspectQualificationStatus.QUALIFIED : ProspectQualificationStatus.REJECTED,
-    reasonCode: QualificationReasonCode.USER_OVERRIDE,
-    qualificationReason: qualified ? 'User chose to keep and qualify this prospect.' : 'User chose to exclude this prospect.',
-    override: input.override, overriddenAt: new Date(), policyVersion: POLICY_VERSION,
-  };
-  return db.prospectQualification.upsert({
-    where: { userId_prospectId: scope },
-    create: { ...scope, icpProfileId: profile.id, profileUpdatedAt: profile.updatedAt, ...data },
-    update: data,
+  return identityTransaction(db, async tx => {
+    const profile = await tx.iCPProfile.upsert({ where: { userId: scope.userId }, create: { userId: scope.userId }, update: {} });
+    const qualified = input.override === QualificationOverride.USER_QUALIFIED;
+    const data = {
+      status: qualified ? ProspectQualificationStatus.QUALIFIED : ProspectQualificationStatus.REJECTED,
+      reasonCode: QualificationReasonCode.USER_OVERRIDE,
+      qualificationReason: qualified ? 'User chose to keep and qualify this prospect.' : 'User chose to exclude this prospect.',
+      override: input.override, overriddenAt: new Date(), policyVersion: POLICY_VERSION,
+    };
+    const previous = await tx.prospectQualification.findUnique({ where: { userId_prospectId: scope } });
+    const updated = await tx.prospectQualification.upsert({
+      where: { userId_prospectId: scope },
+      create: { ...scope, icpProfileId: profile.id, profileUpdatedAt: profile.updatedAt, ...data },
+      update: data,
+    });
+    if (previous?.override !== updated.override) await recordProspectMemoryEvent({ ...scope, eventType: MEMORY_EVENT.QUALIFICATION_OVERRIDE,
+      sourceType: 'QUALIFICATION', sourceId: `${updated.id}:${updated.override}:${updated.overriddenAt?.toISOString() ?? 'auto'}`,
+      description: `Human qualification override: ${updated.status}.`, importance: 3 }, tx as unknown as PrismaClient);
+    return updated;
   });
 }
 

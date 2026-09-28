@@ -4,6 +4,7 @@ import { Prisma, type PrismaClient, type Prospect } from '@prisma/client';
 import { buildFallbackIdentityKey, normalizeCompanyName, normalizeEmail, normalizeLinkedInUrl, normalizePersonName, normalizeWebsiteDomain } from '../src/lib/prospects/normalization';
 import { identityTransaction, resolveOrCreateProspect } from '../src/lib/prospects/identity';
 import { inboundProspectInTransaction, saveGeneratedLead } from '../src/lib/prospects/persistence';
+import { installMemoryFixture } from './memory-fixture';
 
 // Isolated repository double: no environment or database access. DB races require a separate PostgreSQL run.
 function fixture() {
@@ -40,6 +41,7 @@ function fixture() {
       create: async ({ data }: any) => { const lead = { id: `l${leads.length + 1}`, ...data }; leads.push(lead); return lead; },
     },
   };
+  installMemoryFixture(tx);
   const db = { $transaction: async (fn: any, options: any) => {
     assert.equal(options.isolationLevel, 'Serializable');
     const backup = structuredClone(rows);

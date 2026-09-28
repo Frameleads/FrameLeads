@@ -7,6 +7,7 @@ import {
 import { evaluateICP, qualifyProspect, setQualificationOverride, validateICPProfile } from '../src/lib/prospects/qualification';
 import { qualificationLabel } from '../src/lib/scout-view';
 import { researchProspectICP } from '../src/lib/prospects/research';
+import { installMemoryFixture } from './memory-fixture';
 
 const profile = (fields: Partial<ICPProfile> = {}): ICPProfile => ({
   id: 'icp', userId: 'tenant-a', name: 'Default', isActive: true, qualificationPolicy: ICPQualificationPolicy.CONSERVATIVE,
@@ -71,6 +72,8 @@ function persistenceFixture() {
       upsert: async ({ create, update }: any) => { record = record ? { ...record, ...update } : { id: 'q1', ...create }; return record; },
     },
   } as unknown as PrismaClient;
+  installMemoryFixture(db);
+  (db as any).$transaction = async (work: any) => work(db);
   return { db, current: () => record, set: (value: any) => { record = value; } };
 }
 

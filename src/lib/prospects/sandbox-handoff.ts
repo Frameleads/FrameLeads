@@ -2,6 +2,7 @@ import { ProspectResearchStatus, QualificationOverride, ProspectQualificationSta
 import { prisma } from '../prisma';
 import { identityTransaction } from './identity';
 import { qualifyProspect } from './qualification';
+import { MEMORY_EVENT, recordProspectMemoryEventInTransaction } from './memory';
 
 export type SandboxHandoffFailure = 'NOT_FOUND' | 'QUALIFICATION_REQUIRED' | 'RESEARCH_REQUIRED';
 
@@ -42,6 +43,9 @@ export async function sendProspectToSandbox(
       linkedInUrl: prospect.linkedInUrl, email: prospect.email,
       emailDraft: '', linkedInDraft: '',
     }, select: { id: true } });
+
+    await recordProspectMemoryEventInTransaction(tx, { ...scope, eventType: MEMORY_EVENT.SANDBOX_HANDOFF,
+      sourceType: 'GENERATED_LEAD', sourceId: lead.id, description: 'Prospect sent to Sandbox.', importance: 2 });
 
     return {
       prospectId: prospect.id, leadId: lead.id, reusedLead: Boolean(existing),

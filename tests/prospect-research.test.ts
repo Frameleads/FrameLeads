@@ -6,6 +6,7 @@ import {
 } from '@prisma/client';
 import { researchProspectICP as researchService, validateResearchOutput } from '../src/lib/prospects/research';
 import { ICP_SYSTEM_PROMPT, type ResearchRequest, type ResearchProvider } from '../src/lib/prospects/research-provider';
+import { installMemoryFixture } from './memory-fixture';
 
 const scope = { userId: 'tenant-a', prospectId: 'prospect-a' };
 const otherTenant = { userId: 'tenant-b', prospectId: 'prospect-a' };
@@ -78,6 +79,7 @@ function fixture({ claim = sourceClaim, userEvidence = true, ready = false, jobT
       createMany: async ({ data }: any) => { for (const row of data) evidence.push({ id: `e${nextEvidence++}`, ...row }); return { count: data.length }; },
     },
   };
+  const memory = installMemoryFixture(tx);
   const db = {
     ...tx,
     iCPProfile: { findUnique: async () => null },
@@ -87,7 +89,7 @@ function fixture({ claim = sourceClaim, userEvidence = true, ready = false, jobT
       catch (error) { intelligence = previous.intelligence; evidence = previous.evidence; nextEvidence = previous.nextEvidence; throw error; }
     },
   } as unknown as PrismaClient;
-  return { db, prospect, current: () => intelligence, evidence: () => evidence, leads };
+  return { db, prospect, current: () => intelligence, evidence: () => evidence, leads, memory };
 }
 
 function stub(value: unknown | ((request: ResearchRequest) => unknown)): ResearchProvider & { requests: ResearchRequest[] } {
@@ -118,6 +120,7 @@ test('C/F/G: supplied evidence yields scored READY assessment, null exact value,
   assert.equal(result.intelligence.fitTier, 'STRONG');
   assert.equal(result.intelligence.estimatedValueAmount, null);
   assert.equal(result.intelligence.whyNow, 'Current hiring is a verified timing signal.');
+  assert.equal(f.memory.events.filter(event => event.eventType === 'RESEARCH_COMPLETED').length, 1);
   assert.ok(result.intelligence.researchedAt instanceof Date);
   assert.equal(result.evidenceCount, 2);
   assert.equal(f.evidence().find(e => !e.isUserProvided)?.sourceUrl, 'https://acme.example/careers');
@@ -203,8 +206,10 @@ test('M: READY is reused by default; forceRefresh makes one new analysis call', 
   await researchProspectICP(scope, { db: f.db, provider });
   const cached = await researchProspectICP(scope, { db: f.db, provider });
   assert.equal(cached.reused, true); assert.equal(provider.requests.length, 1);
+  assert.equal(f.memory.events.filter(event => event.eventType === 'RESEARCH_COMPLETED').length, 1);
   await researchProspectICP({ ...scope, forceRefresh: true }, { db: f.db, provider });
   assert.equal(provider.requests.length, 2);
+  assert.equal(f.memory.events.filter(event => event.eventType === 'RESEARCH_COMPLETED').length, 2);
 });
 
 test('AI ledger records each fresh provider call once; gate and READY reuse record none', async () => {

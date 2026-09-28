@@ -156,7 +156,7 @@ export async function recordSend(
   leadId: string,
   channel: string = "email"
 ): Promise<void> {
-  await prisma.outboundLog.create({
+  const log = await prisma.outboundLog.create({
     data: {
       inboxId,
       leadId,
@@ -165,6 +165,18 @@ export async function recordSend(
       sentAt: new Date(),
     },
   });
+  try {
+    const lead = await prisma.generatedLead.findUnique({ where: { id: leadId }, select: { userId: true, prospectId: true } });
+    if (lead?.prospectId) {
+      const { MEMORY_EVENT, recordProspectMemoryEvent } = await import('./prospects/memory');
+      await recordProspectMemoryEvent({ userId: lead.userId, prospectId: lead.prospectId,
+        eventType: MEMORY_EVENT.OUTBOUND_SENT, sourceType: 'OUTBOUND_LOG', sourceId: log.id,
+        description: 'Outbound message sent.', importance: 2, occurredAt: log.sentAt });
+    }
+  } catch (error) {
+    // The email and canonical send log already succeeded. Lazy memory initialization can replay this log.
+    console.error('[PROSPECT_MEMORY_OUTBOUND]', { outboundLogId: log.id, error });
+  }
 }
 
 /**

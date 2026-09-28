@@ -17,6 +17,7 @@
     "test:ai-usage": "node scripts/run-prospect-tool.cjs usage-test",
     "test:company-cache": "node scripts/run-prospect-tool.cjs company-test",
     "test:scout-handoff": "node scripts/run-prospect-tool.cjs handoff-test",
+    "test:prospect-memory": "node scripts/run-prospect-tool.cjs memory-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

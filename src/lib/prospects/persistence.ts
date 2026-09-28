@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from '@prisma/client';
 import { attachableProspectId, identityTransaction, ProspectIdentityConflict, resolveProspectInTransaction, type Resolution } from './identity';
 import { type IdentityInput } from './normalization';
 import type { ProspectMetadata } from './metadata';
+import { MEMORY_EVENT, recordProspectMemoryEventInTransaction } from './memory';
 
 type LeadData = Omit<Prisma.GeneratedLeadUncheckedCreateInput, 'prospectId'>;
 type SignalData = Omit<Prisma.InboundSignalCreateManyInput, 'prospectId'> & { userId: string };
@@ -30,9 +31,13 @@ export async function saveGeneratedLead(db: PrismaClient, data: LeadData, existi
       });
     }
     const linkedData = { ...data, prospectId: prospectId || existing?.prospectId || null };
-    return existing
+    const lead = existing
       ? tx.generatedLead.update({ where: { id: existing.id, userId: data.userId }, data: { ...linkedData, createdAt: new Date() } })
       : tx.generatedLead.create({ data: linkedData });
+    const saved = await lead;
+    if (saved.prospectId) await recordProspectMemoryEventInTransaction(tx, { userId: data.userId, prospectId: saved.prospectId,
+      eventType: MEMORY_EVENT.LEAD_LINKED, sourceType: 'GENERATED_LEAD', sourceId: saved.id, description: 'Lead linked to prospect.' });
+    return saved;
   });
 }
 
@@ -46,7 +51,11 @@ export async function enrichExistingLeadProspect(db: PrismaClient, userId: strin
     if (lead.prospectId && prospectId && lead.prospectId !== prospectId) throw new ProspectIdentityConflict({
       status: 'conflict', prospectId: null, reason: 'existing_lead_identity_mismatch', candidateIds: [lead.prospectId, prospectId],
     });
-    if (prospectId && !lead.prospectId) await tx.generatedLead.update({ where: { id: lead.id, userId }, data: { prospectId } });
+    if (prospectId && !lead.prospectId) {
+      await tx.generatedLead.update({ where: { id: lead.id, userId }, data: { prospectId } });
+      await recordProspectMemoryEventInTransaction(tx, { userId, prospectId, eventType: MEMORY_EVENT.LEAD_LINKED,
+        sourceType: 'GENERATED_LEAD', sourceId: lead.id, description: 'Lead linked to prospect.' });
+    }
     return resolution;
   });
 }
@@ -73,7 +82,11 @@ export async function inboundProspectInTransaction(tx: Prisma.TransactionClient,
 export function createInboundSignal(db: PrismaClient, args: { data: SignalData }, identity?: InboundIdentity) {
   return identityTransaction(db, async tx => {
     const result = await inboundProspectInTransaction(tx, args.data, identity);
-    return tx.inboundSignal.create({ data: { ...args.data, prospectId: attachableProspectId(result, args.data.userId) } });
+    const signal = await tx.inboundSignal.create({ data: { ...args.data, prospectId: attachableProspectId(result, args.data.userId) } });
+    if (signal.prospectId) await recordProspectMemoryEventInTransaction(tx, { userId: args.data.userId, prospectId: signal.prospectId,
+      eventType: MEMORY_EVENT.INBOUND_RECEIVED, sourceType: 'INBOUND_SIGNAL', sourceId: signal.id,
+      description: 'Inbound reply received.', importance: 3, occurredAt: signal.createdAt });
+    return signal;
   });
 }
 
@@ -84,7 +97,12 @@ export function createInboundSignals(db: PrismaClient, data: SignalData[]) {
       const result = await inboundProspectInTransaction(tx, signal);
       linked.push({ ...signal, prospectId: attachableProspectId(result, signal.userId) });
     }
-    return tx.inboundSignal.createManyAndReturn({ data: linked, skipDuplicates: true, select: { id: true } });
+    const inserted = await tx.inboundSignal.createManyAndReturn({ data: linked, skipDuplicates: true, select: { id: true, userId: true, prospectId: true, createdAt: true } });
+    for (const signal of inserted) if (signal.userId && signal.prospectId) await recordProspectMemoryEventInTransaction(tx, {
+      userId: signal.userId, prospectId: signal.prospectId, eventType: MEMORY_EVENT.INBOUND_RECEIVED,
+      sourceType: 'INBOUND_SIGNAL', sourceId: signal.id, description: 'Inbound reply received.', importance: 3, occurredAt: signal.createdAt,
+    });
+    return inserted;
   });
 }
 
