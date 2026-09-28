@@ -19,7 +19,7 @@ export async function getDecisionReplay(input: { userId: string; decisionId: str
       inputMessage: { select: { id: true, sourceType: true, sourceId: true, direction: true,
         body: true, occurredAt: true, providerId: true } } } });
   if (!decision) throw new Error('Decision not found for tenant');
-  const [resolutions, actions, assignment, execution, risk, sla] = await Promise.all([
+  const [resolutions, actions, assignment, execution, risk, sla, outcomes] = await Promise.all([
     db.decisionAutomationResolution.findMany({ where: { userId: input.userId, decisionId: decision.id },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: HISTORY_LIMIT + 1 }),
     db.decisionActionEvent.findMany({ where: { userId: input.userId, decisionId: decision.id },
@@ -28,6 +28,8 @@ export async function getDecisionReplay(input: { userId: string; decisionId: str
     db.decisionExecutionAttempt.findUnique({ where: { userId_decisionId: { userId: input.userId, decisionId: decision.id } } }),
     db.decisionRevenueRisk.findUnique({ where: { userId_decisionId: { userId: input.userId, decisionId: decision.id } } }),
     db.responseSLAInstance.findUnique({ where: { userId_decisionId: { userId: input.userId, decisionId: decision.id } } }),
+    db.decisionOutcome.findMany({ where: { userId: input.userId, decisionId: decision.id },
+      orderBy: { revision: 'desc' }, take: 25 }),
   ]);
   const resolutionHistoryTruncated = resolutions.length > HISTORY_LIMIT;
   const actionHistoryTruncated = actions.length > HISTORY_LIMIT;
@@ -89,6 +91,9 @@ export async function getDecisionReplay(input: { userId: string; decisionId: str
   }
   for (const row of humanActions) add(row.createdAt, `HUMAN_${row.action}`, `Human ${row.action.toLowerCase().replaceAll('_', ' ')}`,
     row.reason, 'DECISION_ACTION', row.id);
+  for (const row of outcomes) add(row.createdAt, 'BUSINESS_OUTCOME_RECORDED',
+    row.revision === 1 ? 'Business outcome recorded' : 'Business outcome corrected',
+    `${row.outcomeType} · Occurred ${row.occurredAt.toISOString()}`, 'DECISION_OUTCOME', row.id);
   if (execution) {
     add(execution.startedAt, 'EXECUTION_STARTED', 'Execution attempt started', execution.mode,
       'EXECUTION_ATTEMPT', execution.id);
@@ -163,6 +168,13 @@ export async function getDecisionReplay(input: { userId: string; decisionId: str
       failureClass: execution.failureClass,
       outbound: outboundLog ? { id: outboundLog.id, status: outboundLog.status,
         channel: outboundLog.channel, sentAt: outboundLog.sentAt.toISOString() } : null } : null,
+    outcomes: { current: outcomes[0] ? { id: outcomes[0].id, revision: outcomes[0].revision,
+      outcomeType: outcomes[0].outcomeType, source: outcomes[0].source,
+      note: text(outcomes[0].note, 500), occurredAt: outcomes[0].occurredAt.toISOString(),
+      recordedAt: outcomes[0].createdAt.toISOString() } : null,
+      history: outcomes.map(row => ({ id: row.id, revision: row.revision, outcomeType: row.outcomeType,
+        source: row.source, note: text(row.note, 500), occurredAt: row.occurredAt.toISOString(),
+        recordedAt: row.createdAt.toISOString() })), truncated: outcomes.length === 25 },
     finalState: { state: finalState, slaStatus: sla?.status ?? null }, timeline,
   };
 }

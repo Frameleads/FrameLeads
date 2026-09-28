@@ -138,6 +138,8 @@ model User {
   revenueRiskAssessments DecisionRevenueRisk[]
   responseSLAPolicy      ResponseSLAPolicy?
   responseSLAInstances   ResponseSLAInstance[]
+  decisionOutcomes       DecisionOutcome[]
+  learningSuggestions    LearningSuggestion[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -236,6 +238,7 @@ model Prospect {
   conversation          Conversation?
   conversationMessages  ConversationMessage[]
   decisions             Decision[]
+  decisionOutcomes      DecisionOutcome[]
   automationHold        ProspectHold?
 
   @@unique([userId, id])
@@ -422,6 +425,7 @@ model Decision {
   executionAttempt      DecisionExecutionAttempt?
   revenueRisk           DecisionRevenueRisk?
   responseSLA           ResponseSLAInstance?
+  outcomes              DecisionOutcome[]
 
   @@unique([userId, id])
   @@unique([userId, inputMessageId, decisionType, contextFingerprint], map: "Decision_context_key")
@@ -550,6 +554,89 @@ model ResponseSLAInstance {
   @@unique([userId, decisionId])
   @@index([userId, status, dueAt])
   @@index([userId, prospectId])
+}
+
+enum DecisionOutcomeType {
+  MEETING_BOOKED
+  OPPORTUNITY_ADVANCED
+  WON
+  LOST
+  NOT_INTERESTED
+  BAD_FIT
+  NO_RESPONSE
+  OTHER
+}
+
+enum DecisionOutcomeSource {
+  HUMAN_RECORDED
+}
+
+/// Append-only human business-outcome revisions. The highest revision is the effective outcome.
+model DecisionOutcome {
+  id             String                @id @default(cuid())
+  userId         String
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId     String
+  decision       Decision              @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  prospectId     String
+  prospect       Prospect              @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  revision       Int
+  idempotencyKey String
+  outcomeType    DecisionOutcomeType
+  source         DecisionOutcomeSource @default(HUMAN_RECORDED)
+  note           String?               @db.Text
+  occurredAt     DateTime
+  recordedById   String
+  createdAt      DateTime              @default(now())
+
+  @@unique([userId, decisionId, revision])
+  @@unique([userId, idempotencyKey])
+  @@index([userId, decisionId, createdAt])
+  @@index([userId, occurredAt])
+}
+
+enum LearningSuggestionType {
+  SLA_REVIEW
+}
+
+enum LearningSuggestionStatus {
+  OPEN
+  ACCEPTED_FOR_REVIEW
+  REJECTED
+  ARCHIVED
+}
+
+/// Observational evidence for a human to review; never a policy mutation.
+model LearningSuggestion {
+  id                     String                   @id @default(cuid())
+  userId                 String
+  user                   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  suggestionType         LearningSuggestionType
+  status                 LearningSuggestionStatus @default(OPEN)
+  dimension              String
+  fingerprint            String
+  title                  String
+  explanation            String                   @db.Text
+  evidenceSnapshot       Json
+  sampleSize             Int
+  observedCount          Int
+  observedSuccessCount   Int
+  comparisonCount        Int
+  comparisonSuccessCount Int
+  observedRate           Int
+  comparisonRate         Int
+  dateFrom               DateTime
+  dateTo                 DateTime
+  targetSubsystem        String
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  reviewedAt             DateTime?
+  reviewedById           String?
+  reviewNote             String?                  @db.Text
+
+  @@unique([userId, fingerprint])
+  @@index([userId, status, createdAt])
+  @@index([userId, suggestionType, dimension, status])
 }
 
 enum BrainKnowledgeCategory {

@@ -27,6 +27,7 @@
     "test:response-sla": "node scripts/run-prospect-tool.cjs response-sla-test",
     "test:decision-sandbox": "node scripts/run-prospect-tool.cjs decision-sandbox-test",
     "test:decision-replay": "node scripts/run-prospect-tool.cjs decision-replay-test",
+    "test:outcome-learning": "node scripts/run-prospect-tool.cjs outcome-learning-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

@@ -6,7 +6,7 @@ import { getDecisionReplay } from '../src/lib/decision/replay';
 const tenant = 'tenant-a';
 const at = (minute: number) => new Date(`2026-09-29T12:${String(minute).padStart(2, '0')}:00.000Z`);
 function fixture() {
-  const reads: string[] = [], writes: string[] = [];
+  const reads: string[] = [], writes: string[] = [], outcomes: any[] = [];
   let missing = false, ambiguousOutbound = false;
   const decision: any = { id: 'decision-a', userId: tenant, prospectId: 'prospect-a',
     conversationId: 'conversation-a', inputMessageId: 'message-a', decisionType: 'INBOUND_TRIAGE',
@@ -77,6 +77,8 @@ function fixture() {
       own('risk', where); return missing ? null : risk; } }),
     responseSLAInstance: model('sla', { findUnique: async ({ where }: any) => {
       own('sla', where); return missing ? null : sla; } }),
+    decisionOutcome: model('outcome', { findMany: async ({ where }: any) => {
+      own('outcome', where); return outcomes; } }),
     conversationMessage: model('message', { findMany: async ({ where }: any) => {
       own('message', where); assert.equal(where.conversationId, decision.conversationId);
       const row = { id: 'outbound-message-a', sourceId: 'outbound-a', occurredAt: at(9), providerId: 'provider-a' };
@@ -90,7 +92,9 @@ function fixture() {
   };
   return { db, decision, resolutions, actions, execution, reads, writes,
     setMissing: () => { missing = true; decision.trace = null; execution.providerMessageId = null; },
-    setAmbiguousOutbound: () => { ambiguousOutbound = true; } };
+    setAmbiguousOutbound: () => { ambiguousOutbound = true; },
+    addOutcome: () => outcomes.push({ id: 'outcome-a', revision: 1, outcomeType: 'MEETING_BOOKED',
+      source: 'HUMAN_RECORDED', note: 'Confirmed by prospect.', occurredAt: at(10), createdAt: at(11) }) };
 }
 
 test('tenant-owned Replay reconstructs trigger, trace, governance, automation, risk, SLA and execution', async () => {
@@ -139,6 +143,15 @@ test('ambiguous provider correlation does not attribute an unrelated OutboundLog
   assert.equal(replay.execution?.outbound, null);
   assert.ok(!replay.timeline.some(row => row.type === 'MESSAGE_SENT'));
   assert.ok(!f.reads.includes('outbound'));
+});
+
+test('human business outcome is shown after immutable Decision evidence', async () => {
+  const f = fixture(); f.addOutcome();
+  const replay = await getDecisionReplay({ userId: tenant, decisionId: 'decision-a' }, f.db);
+  assert.equal(replay.outcomes.current?.outcomeType, 'MEETING_BOOKED');
+  assert.equal(replay.finalState.state, 'SENT');
+  assert.ok(replay.timeline.some(row => row.type === 'BUSINESS_OUTCOME_RECORDED' && row.at === at(11).toISOString()));
+  assert.deepEqual(f.writes, []);
 });
 
 test('repeated Replay reads make no writes, provider calls, sends, or AI usage rows', async () => {

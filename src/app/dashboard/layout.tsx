@@ -68,6 +68,11 @@ const navItems = [
     icon: FlaskConical,
   },
   {
+    label: "Outcome Learning",
+    href: "/dashboard/outcome-learning",
+    icon: Zap,
+  },
+  {
     label: "Governance",
     href: "/dashboard/governance",
     icon: Shield,

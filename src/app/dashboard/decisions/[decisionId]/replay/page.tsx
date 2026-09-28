@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { getDecisionReplay } from '@/lib/decision/replay';
+import OutcomeRecorder from './OutcomeRecorder';
 
 export const dynamic = 'force-dynamic';
 const shown = (value: string | number | null | undefined) => value == null || value === '' ? 'Not recorded' : String(value);
@@ -88,6 +89,13 @@ export default async function DecisionReplayPage({ params }: { params: Promise<{
     </section>
     <section className={card}><h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-[#FF5A1F]">Final recorded state</h2>
       <p>{pretty(replay.finalState.state)} · SLA: {pretty(replay.finalState.slaStatus)}</p></section>
+    <section className={card}><h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-[#FF5A1F]">Business outcome recorded after the Decision</h2>
+      {replay.outcomes.current ? <p>{pretty(replay.outcomes.current.outcomeType)} · Occurred: {when(replay.outcomes.current.occurredAt)} · Human recorded: {when(replay.outcomes.current.recordedAt)} · Revision {replay.outcomes.current.revision}</p> :
+        <p>No business outcome recorded. A send or approval is not a win.</p>}
+      {replay.outcomes.history.length > 1 && <details className="mt-3"><summary className="cursor-pointer text-white">Earlier outcome revisions</summary>
+        {replay.outcomes.history.slice(1).map(row => <p key={row.id} className="mt-2 text-xs text-gray-400">Revision {row.revision}: {pretty(row.outcomeType)} · Occurred {when(row.occurredAt)} · Recorded {when(row.recordedAt)}</p>)}</details>}
+      <OutcomeRecorder decisionId={trigger.decisionId} hasCurrent={Boolean(replay.outcomes.current)} />
+    </section>
     {human.assignment && <section className={card}><h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-[#FF5A1F]">Current recorded assignment</h2>
       <p>{pretty(human.assignment.status)} · {pretty(human.assignment.queue)} · {shown(human.assignment.reason)}</p>
       <p className="mt-2 text-xs text-gray-500">Queue, reason, and status can change. These values are not asserted as the decision-time assignment state.</p></section>}
