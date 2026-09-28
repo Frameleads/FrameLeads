@@ -63,6 +63,11 @@ const navItems = [
     icon: MessageSquareReply,
   },
   {
+    label: "Decision Sandbox",
+    href: "/dashboard/decision-sandbox",
+    icon: FlaskConical,
+  },
+  {
     label: "Governance",
     href: "/dashboard/governance",
     icon: Shield,
@@ -184,7 +189,7 @@ function DashboardLayoutContent({
                 <item.icon className="w-5 h-5" />
                 {item.label}
               </Link>
-              {isSandbox && pathname.includes("/sandbox") && (
+              {isSandbox && pathname.startsWith("/dashboard/sandbox") && (
                 <div className="ml-7 mt-1 space-y-1 border-l border-border/50 pl-3">
                   {lists.map((list) => (
                     <div key={list.id} className="group flex items-center gap-1">

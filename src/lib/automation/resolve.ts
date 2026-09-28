@@ -12,11 +12,19 @@ const fallback = (mode: Mode) => mode === Mode.MANDATORY_ESCALATION ? Mode.MANDA
 
 /** All factual controls are re-read at call time. This function makes no AI or send call. */
 export async function evaluateAutomationMode(input: { userId: string; decisionId: string;
-  proposedReply?: string | null }, db: PrismaClient = prisma) {
+  proposedReply?: string | null; simulation?: { primaryIntent?: TriageIntent | null;
+    confidenceScore?: number; requiresReview?: boolean; reviewReasons?: string[];
+    status?: DecisionStatus; requestedMode?: Mode; holdActive?: boolean } }, db: PrismaClient = prisma) {
   if (!input.userId || !input.decisionId) throw new TypeError('Tenant and Decision required');
-  const decision = await db.decision.findFirst({ where: { id: input.decisionId, userId: input.userId },
+  const storedDecision = await db.decision.findFirst({ where: { id: input.decisionId, userId: input.userId },
     include: { trace: true, inputMessage: { select: { sourceId: true, sourceType: true } } } });
-  if (!decision) throw new Error('Decision not found for tenant');
+  if (!storedDecision) throw new Error('Decision not found for tenant');
+  const decision = { ...storedDecision, ...input.simulation && {
+    primaryIntent: input.simulation.primaryIntent === undefined ? storedDecision.primaryIntent : input.simulation.primaryIntent,
+    confidenceScore: input.simulation.confidenceScore ?? storedDecision.confidenceScore,
+    requiresReview: input.simulation.requiresReview ?? storedDecision.requiresReview,
+    reviewReasons: input.simulation.reviewReasons ?? storedDecision.reviewReasons,
+    status: input.simulation.status ?? storedDecision.status } };
   const policy = await getAutomationPolicy(input.userId, db);
   const reply = input.proposedReply === undefined ? decision.suggestedReply : input.proposedReply;
   const [source, hold, suppression, execution, lastAction, brain, playbook, user] = await Promise.all([
@@ -38,6 +46,7 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   let requestedMode = policy.defaultMode;
   if (override && override.mode !== CampaignMode.INHERIT && override.mode !== CampaignMode.DISABLE_AUTOMATION)
     requestedMode = override.mode as Mode;
+  if (input.simulation?.requestedMode) requestedMode = input.simulation.requestedMode;
   const reasons: string[] = [];
   if (override?.mode === CampaignMode.DISABLE_AUTOMATION) reasons.push('LEAD_LIST_AUTOMATION_DISABLED');
   const topic = decision.primaryIntent ? topicFor(decision.primaryIntent as TriageIntent) : null;
@@ -77,7 +86,7 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   } else if (blocked) {
     state = State.BLOCKED; resolvedMode = Mode.MANDATORY_ESCALATION;
     reasons.push(suppression ? 'CONFIRMED_UNSUBSCRIBE' : 'CONSTITUTION_BLOCK');
-  } else if (hold?.active) {
+  } else if (input.simulation?.holdActive ?? hold?.active) {
     state = State.HELD; resolvedMode = Mode.MANDATORY_ESCALATION; reasons.push('PROSPECT_HOLD');
   } else if (has('humanReviewRequirements') || has('safeResponseRequirements') || has('unresolvedRules') || unconfigured ||
     decision.primaryIntent === TriageIntent.UNSUBSCRIBE) {
