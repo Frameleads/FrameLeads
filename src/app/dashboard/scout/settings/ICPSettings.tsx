@@ -38,7 +38,7 @@ export default function ICPSettings({ initial }: { initial: Settings | null }) {
     finally { setPending(false); }
   }
   return <div className="mx-auto max-w-3xl space-y-6">
-    <Link href="/dashboard/scout" className="text-sm text-primary hover:underline">Back to Scout</Link>
+    <div className="flex gap-4"><Link href="/dashboard/scout" className="text-sm text-primary hover:underline">Back to Scout</Link><Link href="/dashboard/brain" className="text-sm text-primary hover:underline">FrameLeads Brain</Link></div>
     <header><h1 className="text-2xl font-semibold">ICP settings</h1><p className="mt-2 text-sm text-muted-foreground">Deterministic rules use known stored facts only. Unknown facts lead to review, not automatic rejection. Enter one item per line.</p></header>
     <div className="space-y-5 rounded-2xl border border-border/60 bg-card/50 p-5 sm:p-6">
       <label className="block space-y-2 text-sm"><span>Profile name</span><Input value={data.name} onChange={event => setData({ ...data, name: event.target.value })} /></label>

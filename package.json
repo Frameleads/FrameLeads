@@ -18,6 +18,7 @@
     "test:company-cache": "node scripts/run-prospect-tool.cjs company-test",
     "test:scout-handoff": "node scripts/run-prospect-tool.cjs handoff-test",
     "test:prospect-memory": "node scripts/run-prospect-tool.cjs memory-test",
+    "test:brain": "node scripts/run-prospect-tool.cjs brain-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

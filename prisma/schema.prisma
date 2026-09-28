@@ -117,6 +117,8 @@ model User {
   companies      Company[]
   memoryStates   ProspectMemoryState[]
   memoryEvents   ProspectMemoryEvent[]
+  brain          FrameLeadsBrain?
+  brainEntries   BrainKnowledgeEntry[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -253,6 +255,81 @@ model ProspectMemoryEvent {
   @@unique([userId, prospectId, sourceType, sourceId, eventType], map: "ProspectMemoryEvent_source_key")
   @@index([userId, prospectId, occurredAt])
   @@index([userId, prospectId, eventType, occurredAt])
+}
+
+enum BrainKnowledgeCategory {
+  COMPANY
+  PRODUCT
+  OFFER
+  ICP
+  POSITIONING
+  DIFFERENTIATOR
+  PAIN_POINT
+  VALUE_PROPOSITION
+  PROOF
+  CASE_STUDY
+  PRICING
+  COMMERCIAL_TERM
+  INTEGRATION
+  OBJECTION_CONTEXT
+  TONE
+  CTA
+  SALES_PROCESS
+  FAQ
+  LIMITATION
+  MARKET
+  OTHER
+}
+
+enum BrainKnowledgeSource {
+  USER_ENTERED
+  USER_PROFILE
+  ICP_PROFILE
+}
+
+enum BrainVerification {
+  VERIFIED
+  UNVERIFIED
+  INFERRED
+  CONFLICTED
+}
+
+model FrameLeadsBrain {
+  id                    String                @id @default(cuid())
+  userId                String                @unique
+  user                  User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revision              Int                   @default(0)
+  compactSummary        String                @default("") @db.Text
+  lastKnowledgeUpdateAt DateTime?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  entries               BrainKnowledgeEntry[]
+
+  @@unique([userId, id])
+}
+
+model BrainKnowledgeEntry {
+  id           String                 @id @default(cuid())
+  userId       String
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brainId      String
+  brain        FrameLeadsBrain        @relation(fields: [userId, brainId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  category     BrainKnowledgeCategory
+  key          String
+  value        String                 @db.Text
+  sourceType   BrainKnowledgeSource
+  sourceKey    String
+  sourceId     String?
+  verification BrainVerification      @default(UNVERIFIED)
+  importance   Int                    @default(1)
+  revision     Int                    @default(1)
+  archivedAt   DateTime?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@unique([userId, sourceType, sourceKey])
+  @@index([userId, category, verification, archivedAt])
+  @@index([userId, brainId, archivedAt])
 }
 
 model Company {

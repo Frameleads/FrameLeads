@@ -1,0 +1,13 @@
+# FrameLeads Brain
+
+The Brain stores reusable facts about a tenant's own business. It is separate from Prospect Memory, which records one prospect's history. It does not contain sales-handling instructions (future Revenue Playbook) or hard governance rules (future Sales Constitution).
+
+`FrameLeadsBrain` is unique per user and holds a revision and deterministic summary. `BrainKnowledgeEntry` holds one bounded fact, its category and key, source type/key/ID, verification state, importance, entry revision and archive timestamp. Current sources are `USER_ENTERED`, `USER_PROFILE`, and `ICP_PROFILE`. User-entered facts are marked `VERIFIED` as explicit owner statements; canonical fields retain their source. There is no AI-derived source workflow. `CONFLICTED` entries are excluded from context. Editors cannot modify canonical entries.
+
+`rebuildBrainFromCanonicalSources` synchronizes only `User.rootBrandDomain` and the tenant's `ICPProfile` target/exclusion lists and company-size bounds. It uses stable source keys, archives removed canonical facts and increments the root revision once only when effective knowledge changes. Prospect `Company` records describe prospects, not the tenant, and are excluded. Campaign context currently lives in browser `localStorage`; it is not treated as a server-side canonical source. Users may enter those facts explicitly in Brain settings.
+
+`upsertBrainKnowledge` and `removeBrainKnowledge` write only user-owned entries. An edit increments both entry and Brain revisions; an identical write or read does not. Conflicting active keys are rejected rather than silently merged. The summary is generated from persisted, active, non-conflicted facts, capped at 1,800 characters, with no model call.
+
+`getBrainContext({userId,purpose,categories,maxEntries,maxCharacters})` is the future consumption API. It orders by purpose categories, verification, importance and recency; it caps candidates at 100, selected entries at 20, each value at 600 characters, and total context at 4,000 characters. It returns the Brain revision so a future decision can record which business knowledge it used. Call it once per decision alongside `getProspectMemoryContext` when prospect history is needed; do not join their databases or send all Brain entries to a model.
+
+The authenticated `/dashboard/brain` page and `/api/brain` routes provide minimal viewing and user-owned CRUD. No provider call, AI usage row, vector search, document ingestion or website crawl is part of this feature. Apply migration `20260928130000_frameleads_brain` only through the explicitly selected deployment database workflow; it was not applied during implementation.
