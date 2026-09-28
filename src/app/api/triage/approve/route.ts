@@ -49,6 +49,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Signal not found." }, { status: 404 });
     }
 
+    // Decision-bearing replies must pass through the governed action claim.
+    const governed = await prisma.decision.findFirst({ where: { userId: user.id,
+      inputMessage: { sourceType: "INBOUND_SIGNAL", sourceId: signalId } }, select: { id: true } });
+    if (governed) return NextResponse.json({ success: false,
+      error: "Use the governed Decision action for this reply." }, { status: 409 });
+
     let dispatched = false;
     if (apiKey && campaignId && leadId) {
       const smartleadRes = await fetch(

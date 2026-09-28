@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { triageInboundSignal } from '@/lib/decision/triage';
 import { canManuallyAnalyze } from '@/lib/decision/rollout';
+import { runAutopilot } from '@/lib/automation/actions';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,7 +20,13 @@ export async function POST(request: Request) {
   try {
     const result = await triageInboundSignal({ userId, signalId: body.signalId.trim(),
       retryOfDecisionId: body.retryOfDecisionId || undefined });
-    return NextResponse.json(result);
+    let automation = null;
+    if (result.decision) {
+      try { const resolved = await runAutopilot({ userId, decisionId: result.decision.id });
+        automation = { state: resolved.state, reasons: 'reasons' in resolved ? resolved.reasons : [] }; }
+      catch { console.error('[AUTOMATION] Resolution failed after Decision persistence'); }
+    }
+    return NextResponse.json({ ...result, automation });
   } catch (error) {
     if (error instanceof Error && /not found|Retry source/.test(error.message)) return NextResponse.json({ error: 'Signal or retry source not found.' }, { status: 404 });
     console.error('[DECISION_TRIAGE] Failed', error);

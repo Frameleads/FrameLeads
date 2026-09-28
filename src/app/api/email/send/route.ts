@@ -1,59 +1,16 @@
-import nodemailer from "nodemailer";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { decrypt } from "@/lib/encryption";
-import { resolvePublicImapHost } from "@/lib/imap-security";
 import { prisma } from "@/lib/prisma";
+import { htmlToPlainText, sendNativeEmail, NativeMailUnavailable } from '@/lib/outbound/native-mail';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-type SmtpSettings = {
-  host: string;
-  port: number;
-  secure: boolean;
-};
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-function resolveSmtpSettings(imapHost: string): SmtpSettings | null {
-  const host = imapHost.trim().toLowerCase();
-
-  if (host.includes("gmail")) {
-    return { host: "smtp.gmail.com", port: 465, secure: true };
-  }
-  if (host.includes("outlook") || host.includes("office365") || host.includes("hotmail")) {
-    return { host: "smtp.office365.com", port: 587, secure: false };
-  }
-  if (host.includes("yahoo")) {
-    return { host: "smtp.mail.yahoo.com", port: 465, secure: true };
-  }
-  if (host.startsWith("imap.")) {
-    return { host: `smtp.${host.slice("imap.".length)}`, port: 465, secure: true };
-  }
-
-  return null;
-}
-
-function htmlToPlainText(html: string) {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .trim();
-}
-
 export async function POST(request: Request) {
-  let transporter: ReturnType<typeof nodemailer.createTransport> | null = null;
-
   try {
     const requestOrigin = request.headers.get("origin");
     if (requestOrigin && requestOrigin !== new URL(request.url).origin) {
@@ -121,38 +78,13 @@ export async function POST(request: Request) {
       });
     }
 
-    const smtpSettings = resolveSmtpSettings(user.imapHost);
-    if (!smtpSettings) {
-      return NextResponse.json(
-        { success: false, error: "This mailbox host does not have a supported SMTP mapping." },
-        { status: 400 },
-      );
-    }
-
-    const resolvedHost = await resolvePublicImapHost(smtpSettings.host);
-    const password = decrypt(user.imapPassword);
-    transporter = nodemailer.createTransport({
-      host: resolvedHost.address,
-      port: smtpSettings.port,
-      secure: smtpSettings.secure,
-      auth: { user: user.imapEmail, pass: password },
-      tls: { servername: resolvedHost.hostname },
-      connectionTimeout: 15_000,
-      greetingTimeout: 10_000,
-      socketTimeout: 30_000,
-    });
-
-    await transporter.sendMail({
-      from: user.imapEmail,
-      to: ownedLead.email,
-      subject,
-      html: htmlBody,
-      text: htmlToPlainText(htmlBody),
-    });
+    await sendNativeEmail({ userId: user.id, leadId: ownedLead.id, to: ownedLead.email,
+      subject, html: htmlBody, text: htmlToPlainText(htmlBody) });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown SMTP error";
+    if (error instanceof NativeMailUnavailable) return NextResponse.json({ success: false, error: message }, { status: 409 });
     console.error("[NATIVE EMAIL SEND ERROR]:", message);
 
     if (message.includes("ENCRYPTION_KEY") || message.includes("Stored IMAP password")) {
@@ -166,7 +98,5 @@ export async function POST(request: Request) {
       { success: false, error: "Unable to send email through the connected inbox." },
       { status: 502 },
     );
-  } finally {
-    transporter?.close();
   }
 }

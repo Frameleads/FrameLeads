@@ -23,7 +23,7 @@ export function deterministicTriageSignal(signal: { sourceType: string; signalTy
     return { intent: Intent.UNSUBSCRIBE, action: 'NO_SALES_OUTREACH' as const, explanation: 'Authenticated provider event confirms an unsubscribe.' };
   return null;
 }
-function topicFor(intent: Intent): { category: Category; scope: Scope } | null {
+export function topicFor(intent: Intent): { category: Category; scope: Scope } | null {
   if (([Intent.PRICING_INQUIRY, Intent.PRICING_OBJECTION, Intent.BUDGET_OBJECTION, Intent.NEGOTIATION] as Intent[]).includes(intent))
     return { category: Category.PRICING, scope: Scope.PRICING };
   if (intent === Intent.LEGAL) return { category: Category.LEGAL, scope: Scope.LEGAL };

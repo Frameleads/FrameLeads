@@ -80,6 +80,8 @@ type DecisionPacket = { id: string; status: string; primaryIntent: string | null
   recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
   reviewReasons: string[]; shadowMode: boolean; trace?: { icpState: unknown; policyResult: unknown;
     contextReferences: unknown; memoryState: unknown } | null };
+type AutomationPacket = { decisionId: string; resolvedMode: string; state: string; reasons: string[];
+  ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
 
 function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
   onDecision: (signalId: string, status: string) => void }) {
@@ -87,6 +89,11 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
+  const [automation, setAutomation] = useState<AutomationPacket | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [editedReply, setEditedReply] = useState('');
+  const [actionReason, setActionReason] = useState('');
+  const [actionError, setActionError] = useState('');
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -113,6 +120,47 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
     }, 3000);
     return () => window.clearInterval(timer);
   }, [packet?.status, signalId, onDecision]);
+  useEffect(() => {
+    if (!packet?.id) { setAutomation(null); return; }
+    let active = true;
+    fetch(`/api/automation/decision?signalId=${encodeURIComponent(signalId)}`)
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (active) setAutomation(data?.automation ?? null); })
+      .catch(() => { if (active) setActionError('Automation state could not load.'); });
+    return () => { active = false; };
+  }, [packet?.id, signalId]);
+  async function refreshAutomation() {
+    const response = await fetch(`/api/automation/decision?signalId=${encodeURIComponent(signalId)}`);
+    if (response.ok) setAutomation((await response.json()).automation ?? null);
+  }
+  async function governedAction(action: 'APPROVE' | 'EDIT_AND_SEND' | 'REJECT' | 'ESCALATE') {
+    if (!packet || actionBusy) return;
+    setActionBusy(true); setActionError('');
+    try {
+      const response = await fetch('/api/automation/actions', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          decisionId: packet.id, action, requestKey: crypto.randomUUID(),
+          editedReply: action === 'EDIT_AND_SEND' ? editedReply : undefined, reason: actionReason || undefined }) });
+      if (!response.ok) throw new Error('Action could not be completed. Review the current policy and try again.');
+      const result = await response.json();
+      if (result.state === 'FAILED_UNCERTAIN') setActionError('Send outcome is uncertain. Check the provider before taking another action.');
+      await refreshAutomation();
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Action could not be completed.'); }
+    finally { setActionBusy(false); }
+  }
+  async function toggleHold() {
+    if (!automation || actionBusy) return;
+    setActionBusy(true); setActionError('');
+    try {
+      const response = await fetch('/api/automation/holds', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+          prospectId: automation.prospectId, active: !automation.hold,
+          reason: automation.hold ? undefined : (actionReason.trim() || 'Human hold pending review') }) });
+      if (!response.ok) throw new Error('Prospect hold could not be updated.');
+      await refreshAutomation();
+    } catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Hold could not be updated.'); }
+    finally { setActionBusy(false); }
+  }
   async function run(retry: boolean) {
     if (running) return;
     setRunning(true);
@@ -135,7 +183,7 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
   return <section aria-label="Decision packet" className="rounded-lg border border-[#333] bg-[#121212] p-5 sm:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h2 className="text-sm font-semibold uppercase tracking-wider text-white">Decision packet</h2>
-        <p className="mt-1 text-xs text-gray-400">{label} · {packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'} · Human review remains in control</p></div>
+        <p className="mt-1 text-xs text-gray-400">{label} · {packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'} · Governed execution</p></div>
       <button type="button" disabled={running || loading || packet?.status === 'PENDING'}
         onClick={() => void run(Boolean(packet))}
         className="rounded border border-[#FF5A1F] px-3 py-2 text-xs font-semibold text-[#FF5A1F] hover:bg-[#FF5A1F]/10 disabled:opacity-40">
@@ -159,7 +207,32 @@ function DecisionPacketPanel({ signalId, onDecision }: { signalId: string;
       {packet.suggestedReply && <div><p className="text-gray-500">Suggested draft · review before use</p>
         <p className="mt-1 whitespace-pre-wrap rounded border border-[#333] p-3">{packet.suggestedReply}</p></div>}
       {packet.explanation && <p className="text-gray-400">{packet.explanation}</p>}
-      {packet.shadowMode && <p className="text-xs text-gray-500">Shadow mode · this packet does not send or route a reply.</p>}
+      {automation && <div className="space-y-2 rounded border border-[#333] p-3" aria-label="Governed execution">
+        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Governed execution</strong>
+          <a href="/dashboard/automation" className="text-xs text-[#FF5A1F] underline focus-visible:outline">Automation settings</a></div>
+        <p>Mode: {automation.resolvedMode.replaceAll('_', ' ')} · State: {automation.state.replaceAll('_', ' ')}</p>
+        {automation.reasons.length > 0 && <p className="text-xs text-amber-300">{automation.reasons.join(', ').replaceAll('_', ' ')}</p>}
+        {automation.ruleIds.length > 0 && <p className="text-xs text-gray-400">Constitution rules: {automation.ruleIds.join(', ')}</p>}
+        {automation.assignment && <p className="text-xs text-gray-400">Routed to {automation.assignment.queue.replaceAll('_', ' ')}</p>}
+        {automation.hold && <p className="text-xs text-amber-300">Prospect hold: {automation.hold.reason}</p>}
+        {['PENDING_APPROVAL', 'READY'].includes(automation.state) && <div className="space-y-2">
+          <textarea aria-label="Edited reply" value={editedReply} onChange={event => setEditedReply(event.target.value)}
+            placeholder="Edit reply before sending" maxLength={4000} rows={3}
+            className="w-full rounded border border-[#444] bg-[#181818] p-2 text-sm text-white focus-visible:outline-[#FF5A1F]" />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={actionBusy || !packet.suggestedReply} onClick={() => void governedAction('APPROVE')} className="rounded border border-[#FF5A1F] px-3 py-2 text-xs disabled:opacity-40">Approve and send</button>
+            <button type="button" disabled={actionBusy || !editedReply.trim()} onClick={() => void governedAction('EDIT_AND_SEND')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Send edited reply</button>
+          </div></div>}
+        {!['EXECUTING', 'EXECUTED', 'REJECTED', 'FAILED_UNCERTAIN'].includes(automation.state) && <div className="flex flex-wrap gap-2">
+          <input aria-label="Action reason" value={actionReason} onChange={event => setActionReason(event.target.value)} maxLength={500} placeholder="Reason or hold note" className="min-w-0 flex-1 rounded border border-[#444] bg-[#181818] p-2 text-xs text-white" />
+          <button type="button" disabled={actionBusy} onClick={() => void governedAction('REJECT')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Reject</button>
+          <button type="button" disabled={actionBusy} onClick={() => void governedAction('ESCALATE')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Escalate</button>
+          <button type="button" disabled={actionBusy} onClick={() => void toggleHold()} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">{automation.hold ? 'Release hold' : 'Hold prospect'}</button>
+        </div>}
+        {actionBusy && <p role="status" className="text-xs text-gray-400">Updating governed action...</p>}
+        {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
+      </div>}
+      {packet.shadowMode && <p className="text-xs text-gray-500">Shadow analysis · sending follows the separate automation controls.</p>}
     </div>}
   </section>;
 }

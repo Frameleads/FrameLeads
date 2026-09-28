@@ -128,6 +128,13 @@ model User {
   conversationMessages   ConversationMessage[]
   decisions              Decision[]
   decisionTraces         DecisionTrace[]
+  automationPolicy       AutomationPolicy?
+  automationOverrides    AutomationCampaignOverride[]
+  prospectHolds          ProspectHold[]
+  automationResolutions  DecisionAutomationResolution[]
+  decisionActions        DecisionActionEvent[]
+  decisionAssignments    DecisionAssignment[]
+  decisionExecutions     DecisionExecutionAttempt[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -226,6 +233,7 @@ model Prospect {
   conversation          Conversation?
   conversationMessages  ConversationMessage[]
   decisions             Decision[]
+  automationHold        ProspectHold?
 
   @@unique([userId, id])
   @@unique([userId, normalizedEmail])
@@ -371,40 +379,44 @@ enum TriageIntent {
 }
 
 model Decision {
-  id                    String              @id @default(cuid())
+  id                    String                         @id @default(cuid())
   userId                String
-  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                  User                           @relation(fields: [userId], references: [id], onDelete: Cascade)
   prospectId            String
-  prospect              Prospect            @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  prospect              Prospect                       @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
   conversationId        String
-  conversation          Conversation        @relation(fields: [userId, conversationId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  conversation          Conversation                   @relation(fields: [userId, conversationId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
   inputMessageId        String
-  inputMessage          ConversationMessage @relation(fields: [userId, inputMessageId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
-  decisionType          DecisionType        @default(INBOUND_TRIAGE)
-  status                DecisionStatus      @default(PENDING)
-  source                DecisionSource      @default(UNAVAILABLE)
+  inputMessage          ConversationMessage            @relation(fields: [userId, inputMessageId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  decisionType          DecisionType                   @default(INBOUND_TRIAGE)
+  status                DecisionStatus                 @default(PENDING)
+  source                DecisionSource                 @default(UNAVAILABLE)
   contextFingerprint    String
   primaryIntent         TriageIntent?
-  secondaryIntents      TriageIntent[]      @default([])
+  secondaryIntents      TriageIntent[]                 @default([])
   intentSignals         Json?
   confidenceScore       Int?
-  interpretation        String?             @db.Text
-  recommendedNextAction String?             @db.Text
-  suggestedReply        String?             @db.Text
-  requiresReview        Boolean             @default(true)
-  reviewReasons         String[]            @default([])
-  explanation           String?             @db.Text
+  interpretation        String?                        @db.Text
+  recommendedNextAction String?                        @db.Text
+  suggestedReply        String?                        @db.Text
+  requiresReview        Boolean                        @default(true)
+  reviewReasons         String[]                       @default([])
+  explanation           String?                        @db.Text
   provider              AIProvider?
   model                 String?
-  shadowMode            Boolean             @default(true)
+  shadowMode            Boolean                        @default(true)
   supersedesDecisionId  String?
   automationMode        String?
   assignedOwnerId       String?
   revenueAtRiskScore    Int?
   slaDueAt              DateTime?
-  createdAt             DateTime            @default(now())
-  updatedAt             DateTime            @updatedAt
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
   trace                 DecisionTrace?
+  automationResolutions DecisionAutomationResolution[]
+  actionEvents          DecisionActionEvent[]
+  assignment            DecisionAssignment?
+  executionAttempt      DecisionExecutionAttempt?
 
   @@unique([userId, id])
   @@unique([userId, inputMessageId, decisionType, contextFingerprint], map: "Decision_context_key")
@@ -1029,13 +1041,195 @@ model ProspectQualification {
 }
 
 model LeadList {
-  id         String          @id @default(cuid())
-  name       String
-  userId     String
-  sourceType LeadSourceType  @default(UNKNOWN)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  leads      GeneratedLead[]
+  id                 String                      @id @default(cuid())
+  name               String
+  userId             String
+  sourceType         LeadSourceType              @default(UNKNOWN)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  leads              GeneratedLead[]
+  automationOverride AutomationCampaignOverride?
 
+  @@unique([userId, id])
   @@index([userId])
+}
+
+enum AutomationMode {
+  AUTOPILOT
+  HUMAN_APPROVAL
+  MANDATORY_ESCALATION
+}
+
+enum CampaignAutomationMode {
+  INHERIT
+  AUTOPILOT
+  HUMAN_APPROVAL
+  MANDATORY_ESCALATION
+  DISABLE_AUTOMATION
+}
+
+enum AutomationExecutionState {
+  READY
+  PENDING_APPROVAL
+  ESCALATED
+  HELD
+  BLOCKED
+  REANALYSIS_REQUIRED
+  EXECUTING
+  EXECUTED
+  REJECTED
+  FAILED_UNCERTAIN
+}
+
+enum DecisionHumanAction {
+  APPROVE
+  EDIT_AND_SEND
+  REJECT
+  ESCALATE
+  AUTOPILOT_SEND
+}
+
+enum DecisionAssignmentStatus {
+  OPEN
+  RESOLVED
+}
+
+enum DecisionRouteQueue {
+  ACCOUNT_OWNER
+  SALES
+  MANAGER
+  SALES_ENGINEERING
+  LEGAL
+  HUMAN_REVIEW
+}
+
+enum DecisionExecutionStatus {
+  CLAIMED
+  SENT
+  FAILED_UNCERTAIN
+}
+
+model AutomationPolicy {
+  id                     String         @id @default(cuid())
+  userId                 String         @unique
+  user                   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultMode            AutomationMode @default(HUMAN_APPROVAL)
+  fallbackMode           AutomationMode @default(HUMAN_APPROVAL)
+  autopilotEnabled       Boolean        @default(false)
+  autoExecutionDisabled  Boolean        @default(true)
+  autopilotMinConfidence Int            @default(90)
+  maxAutoSendsPerDay     Int            @default(20)
+  revision               Int            @default(1)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+}
+
+model AutomationCampaignOverride {
+  id         String                 @id @default(cuid())
+  userId     String
+  user       User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leadListId String
+  leadList   LeadList               @relation(fields: [userId, leadListId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  mode       CampaignAutomationMode @default(INHERIT)
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@unique([userId, leadListId])
+}
+
+model ProspectHold {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospectId       String
+  prospect         Prospect  @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  active           Boolean   @default(true)
+  reason           String    @db.Text
+  releasedAt       DateTime?
+  releasedByUserId String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([userId, prospectId])
+}
+
+model DecisionAutomationResolution {
+  id                           String                   @id @default(cuid())
+  userId                       String
+  user                         User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId                   String
+  decision                     Decision                 @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  requestedMode                AutomationMode
+  resolvedMode                 AutomationMode
+  state                        AutomationExecutionState
+  reasons                      String[]                 @default([])
+  confidence                   Int?
+  policyRevision               Int
+  decisionConstitutionRevision Int?
+  currentConstitutionRevision  Int?
+  campaignOverrideId           String?
+  prospectHoldId               String?
+  constitutionRuleIds          String[]                 @default([])
+  createdAt                    DateTime                 @default(now())
+
+  @@index([userId, decisionId, createdAt])
+}
+
+model DecisionAssignment {
+  id         String                   @id @default(cuid())
+  userId     String
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId String
+  decision   Decision                 @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  status     DecisionAssignmentStatus @default(OPEN)
+  queue      DecisionRouteQueue       @default(HUMAN_REVIEW)
+  reason     String                   @db.Text
+  assignedAt DateTime                 @default(now())
+  resolvedAt DateTime?
+
+  @@unique([userId, decisionId])
+  @@index([userId, status, assignedAt])
+}
+
+model DecisionExecutionAttempt {
+  id                            String                  @id @default(cuid())
+  userId                        String
+  user                          User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId                    String
+  decision                      Decision                @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  idempotencyKey                String                  @unique
+  status                        DecisionExecutionStatus @default(CLAIMED)
+  mode                          AutomationMode
+  actorUserId                   String?
+  contentFingerprint            String
+  sentContent                   String                  @db.Text
+  provider                      String
+  providerMessageId             String?
+  decisionConstitutionRevision  Int?
+  executionConstitutionRevision Int?
+  startedAt                     DateTime                @default(now())
+  completedAt                   DateTime?
+  failureClass                  String?
+
+  @@unique([userId, decisionId])
+  @@index([userId, mode, status, startedAt])
+}
+
+model DecisionActionEvent {
+  id                 String                   @id @default(cuid())
+  userId             String
+  user               User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  decisionId         String
+  decision           Decision                 @relation(fields: [userId, decisionId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  actorUserId        String?
+  action             DecisionHumanAction
+  idempotencyKey     String                   @unique
+  reason             String?                  @db.Text
+  originalDraft      String?                  @db.Text
+  editedDraft        String?                  @db.Text
+  resultingState     AutomationExecutionState
+  executionAttemptId String?
+  createdAt          DateTime                 @default(now())
+
+  @@index([userId, decisionId, createdAt])
 }

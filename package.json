@@ -22,6 +22,7 @@
     "test:playbook": "node scripts/run-prospect-tool.cjs playbook-test",
     "test:constitution": "node scripts/run-prospect-tool.cjs constitution-test",
     "test:decision": "node scripts/run-prospect-tool.cjs decision-test",
+    "test:automation": "node scripts/run-prospect-tool.cjs automation-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

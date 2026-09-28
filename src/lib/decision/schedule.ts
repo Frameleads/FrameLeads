@@ -1,6 +1,7 @@
 import { after } from 'next/server';
 import { triageInboundSignal } from './triage';
 import { canAutomaticallyTriage } from './rollout';
+import { runAutopilot } from '../automation/actions';
 
 /** Best-effort post-response trigger. Inbound persistence is already committed. */
 export function scheduleInboundDecisions(userId: string, signalIds: string[],
@@ -14,7 +15,10 @@ export function scheduleInboundDecisions(userId: string, signalIds: string[],
       async function worker() {
         while (next < unique.length) {
           const signalId = unique[next++];
-          try { await (deps.triage ?? triageInboundSignal)({ userId, signalId }); }
+          try {
+            const result = await (deps.triage ?? triageInboundSignal)({ userId, signalId });
+            if (result.decision && !deps.triage) await runAutopilot({ userId, decisionId: result.decision.id });
+          }
           catch { console.error('Post-ingestion decision triage failed; inbound remains saved'); }
         }
       }
