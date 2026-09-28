@@ -27,6 +27,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { prisma } from "@/lib/prisma";
+import { createInboundSignal, identityFromFullName } from '@/lib/prospects/persistence';
 import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
 import { normalizeSignalPayload, type NormalizedSignal } from "@/lib/signal-normalizer";
@@ -246,7 +247,7 @@ export async function POST(req: Request) {
     //     (FUNDING_ROUND, JOB_CHANGE, etc.)
     // ──────────────────────────────────────────────────────────────────
 
-    const inboundSignal = await prisma.inboundSignal.create({
+    const inboundSignal = await createInboundSignal(prisma, {
       data: {
         userId: auth.userId!,
         prospectName: signal.prospectName,
@@ -265,7 +266,7 @@ export async function POST(req: Request) {
         sourceType: "SIGNAL_TRIGGERED",
         signalType: signal.signalType,
       },
-    });
+    }, identityFromFullName(signal.prospectName, signal.companyName));
 
     console.log(
       `[SIGNAL WEBHOOK] Enqueued signal ${inboundSignal.id} to Velvet Rope. ` +

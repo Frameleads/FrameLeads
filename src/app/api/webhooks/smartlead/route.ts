@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createInboundSignal, identityFromFullName } from '@/lib/prospects/persistence';
 import { resolvePipelineValue } from '@/lib/pipeline-value';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
     const aiDraft = result.response.text();
 
     // Write event to the InboundSignal table
-    await prisma.inboundSignal.create({
+    await createInboundSignal(prisma, {
       data: {
         userId: auth.userId,
         prospectName: lead_name,
@@ -48,14 +49,14 @@ export async function POST(req: Request) {
         aiDraft: aiDraft,
         status: 'PENDING',
       }
-    });
+    }, identityFromFullName(lead_name, company_name));
 
     // Immediately return 200 OK so Smartlead does not endlessly retry
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error) {
     console.error("Webhook Execution Error:", error);
     
-    // Return 200 OK gracefully to prevent webhook retries even on parse failure
-    return NextResponse.json({ success: false, error: 'Malformed payload handled securely' }, { status: 200 });
+    // Database failures must remain visible and retryable.
+    return NextResponse.json({ success: false, error: 'Inbound persistence failed' }, { status: 500 });
   }
 }

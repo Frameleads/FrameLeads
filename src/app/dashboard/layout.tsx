@@ -7,6 +7,7 @@ import {
   Settings2,
   Upload,
   FlaskConical,
+  Radar,
   Rocket,
   MessageSquareReply,
   Zap,
@@ -40,6 +41,11 @@ const navItems = [
     label: "Ingestion",
     href: "/dashboard/ingestion",
     icon: Upload,
+  },
+  {
+    label: "Scout",
+    href: "/dashboard/scout",
+    icon: Radar,
   },
   {
     label: "Sandbox",
@@ -163,7 +169,7 @@ function DashboardLayoutContent({
       <nav className="flex-1 px-3 py-5 space-y-1.5 overflow-y-auto">
         {navItems.map((item) => {
           const isSandbox = item.href === "/dashboard/sandbox";
-          const isActive = pathname === item.href && (!isSandbox || !selectedListId);
+          const isActive = (pathname === item.href || pathname.startsWith(`${item.href}/`)) && (!isSandbox || !selectedListId);
           return (
             <div key={item.href}>
               <Link

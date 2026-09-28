@@ -3,6 +3,7 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { createInboundSignals } from '@/lib/prospects/persistence';
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
@@ -166,7 +167,7 @@ export async function POST() {
       return NextResponse.json({ success: true, newSignalsAdded: 0 });
     }
 
-    const signalsToCreate: Prisma.InboundSignalCreateManyInput[] = [];
+    const signalsToCreate: (Prisma.InboundSignalCreateManyInput & { userId: string })[] = [];
     for await (const message of imapClient.fetch(
       newMatchedUids,
       { uid: true, source: true },
@@ -219,11 +220,7 @@ export async function POST() {
       return NextResponse.json({ success: true, newSignalsAdded: 0 });
     }
 
-    const insertedSignals = await prisma.inboundSignal.createManyAndReturn({
-      data: signalsToCreate,
-      skipDuplicates: true,
-      select: { id: true },
-    });
+    const insertedSignals = await createInboundSignals(prisma, signalsToCreate);
 
     releaseMailboxLock?.();
     releaseMailboxLock = null;

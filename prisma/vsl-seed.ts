@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { identityTransaction, attachableProspectId } from '../src/lib/prospects/identity';
+import { inboundProspectInTransaction, identityFromFullName } from '../src/lib/prospects/persistence';
 
 const prisma = new PrismaClient();
 
@@ -102,9 +104,11 @@ async function main() {
     { key: 'david', name: 'David Chen', company: 'Horizon Partners', value: 30_000, score: 12 },
   ] as const;
 
-  await prisma.$transaction(async (tx) => {
+  await identityTransaction(prisma, async (tx) => {
     for (const signal of queueSignals) {
       const { sourceMessageId, ...data } = signal;
+      const identity = await inboundProspectInTransaction(tx, { ...data, userId: user.id }, identityFromFullName(data.prospectName));
+      const prospectId = attachableProspectId(identity, user.id);
       await tx.inboundSignal.upsert({
         where: {
           userId_sourceMessageId: {
@@ -115,9 +119,10 @@ async function main() {
         create: {
           userId: user.id,
           sourceMessageId,
+          prospectId,
           ...data,
         },
-        update: data,
+        update: { ...data, prospectId },
       });
     }
 
@@ -155,6 +160,7 @@ async function main() {
             sourceMessageId,
           },
         },
+        // Synthetic analytics companions have no real email/profile identity; leave unlinked.
         create: { userId: user.id, sourceMessageId, ...data },
         update: data,
       });
@@ -180,7 +186,7 @@ async function main() {
         })),
       });
     }
-  }, { maxWait: 15_000, timeout: 60_000 });
+  });
 
   const [queueCount, approvedAggregate, latencyRows, rulesCount] = await Promise.all([
     prisma.inboundSignal.count({

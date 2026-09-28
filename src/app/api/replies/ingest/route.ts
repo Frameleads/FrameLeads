@@ -23,6 +23,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { createInboundSignal } from '@/lib/prospects/persistence';
 import { resolvePipelineValue } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
 import {
@@ -67,6 +68,9 @@ export async function POST(req: Request) {
     }
 
     const pipelineValue = resolvePipelineValue(reply.pipelineValue);
+    const ownedLead = await prisma.generatedLead.findFirst({
+      where: { id: reply.leadId, userId: auth.userId }, select: { id: true },
+    });
 
     // ── Step 1: Thermal Classification ─────────────────────────────
     // ALL replies — including Micro-Commitment campaign replies — are
@@ -92,9 +96,11 @@ export async function POST(req: Request) {
       case "fast_track_triage": {
         // HOT — Immediately create an InboundSignal for human review.
         // This appears in the Inbox Triage queue as a high-priority event.
-        const signal = await prisma.inboundSignal.create({
+        const signal = await createInboundSignal(prisma, {
           data: {
             userId: auth.userId,
+            generatedLeadId: ownedLead?.id || null,
+            prospectEmail: typeof payload.prospectEmail === 'string' ? payload.prospectEmail : null,
             prospectName: reply.leadId,
             prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${pipelineValue.toLocaleString()}`,
             pipelineValue,
@@ -127,9 +133,11 @@ export async function POST(req: Request) {
         // WARM — Create an InboundSignal with a placeholder for AI draft.
         // The Triage UI will trigger /api/triage to generate the response
         // draft, which the human then reviews before sending.
-        const signal = await prisma.inboundSignal.create({
+        const signal = await createInboundSignal(prisma, {
           data: {
             userId: auth.userId,
+            generatedLeadId: ownedLead?.id || null,
+            prospectEmail: typeof payload.prospectEmail === 'string' ? payload.prospectEmail : null,
             prospectName: reply.leadId,
             prospectContext: `${reply.campaignType} campaign | ${reply.channel} reply | Pipeline: $${pipelineValue.toLocaleString()}`,
             pipelineValue,

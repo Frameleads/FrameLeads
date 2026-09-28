@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { LeadSourceType } from '@prisma/client';
 
 async function getCurrentUserId() {
   const cookieStore = await cookies();
@@ -46,9 +47,11 @@ export async function POST(request: Request) {
     if (!name) {
       return NextResponse.json({ success: false, error: "List name is required." }, { status: 400 });
     }
+    const sourceType = body?.sourceType ?? LeadSourceType.UNKNOWN;
+    if (!Object.values(LeadSourceType).includes(sourceType)) return NextResponse.json({ success: false, error: 'Invalid list source.' }, { status: 400 });
 
     const list = await prisma.leadList.create({
-      data: { name, userId },
+      data: { name, userId, sourceType },
       include: { _count: { select: { leads: true } } },
     });
 

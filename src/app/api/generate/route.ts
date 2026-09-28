@@ -5,6 +5,8 @@ export const revalidate = 0;
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { enrichExistingLeadProspect, saveGeneratedLead } from '@/lib/prospects/persistence';
+import { extractProspectMetadata } from '@/lib/prospects/metadata';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   validateGeneratedChannels,
@@ -131,8 +133,9 @@ export async function POST(req: Request) {
           select: { id: true },
         })
       : null;
-    const currentUserId = currentUser?.id || userEmail?.trim().toLowerCase();
-    const shouldOverwriteExisting = overwriteExisting === true;
+    if (!currentUser) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const currentUserId = currentUser.id;
+    const shouldOverwriteExisting = overwriteExisting === true || regenerate === true || force_regenerate === true;
 
     listId = typeof listId === 'string' ? listId.trim() : null;
     if (listId) {
@@ -174,7 +177,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const skippedCandidates: Array<{ existing: (typeof existingRecords)[number] }> = [];
+    const skippedCandidates: Array<{ existing: (typeof existingRecords)[number]; source: any }> = [];
     const generationCandidates: any[] = [];
     const handledLinkedInUrls = new Set<string>();
     for (const lead of leads) {
@@ -184,13 +187,15 @@ export async function POST(req: Request) {
 
       const existing = linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined;
       if (existing && !shouldOverwriteExisting) {
-        skippedCandidates.push({ existing });
+        skippedCandidates.push({ existing, source: lead });
       } else {
         generationCandidates.push(lead);
       }
     }
 
-    const skippedLeads = await Promise.all(skippedCandidates.map(async ({ existing }) => {
+    const skippedLeads = await Promise.all(skippedCandidates.map(async ({ existing, source }) => {
+      const metadata = extractProspectMetadata(source);
+      if (Object.values(metadata).some(value => value !== null)) await enrichExistingLeadProspect(prisma, currentUserId, existing.id, metadata);
       const movedLead = await prisma.generatedLead.update({
         where: { id: existing.id },
         data: { listId: listId || null },
@@ -336,60 +341,41 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
             let persistedLeadId: string | null = null;
 
             if (currentUserId) {
-              const firstName = lead.first_name || lead.firstName || 'Unknown';
-              const lastName = lead.last_name || lead.lastName || '';
-              const companyName = lead.company_name || lead.companyName || 'Unknown Company';
-              const websiteUrl = lead.website_url || lead.websiteUrl || null;
-              const email = lead.email || lead.email_address || lead.emailAddress || null;
-              const linkedInUrl = getLeadLinkedInUrl(lead);
+              const requestedLeadId = regenerate === true && typeof (lead.lead_id || lead.id) === 'string'
+                ? (lead.lead_id || lead.id) as string : null;
+              const ownedRegenerationLead = requestedLeadId
+                ? await prisma.generatedLead.findFirst({ where: { id: requestedLeadId, userId: currentUserId } }) : null;
+              if (requestedLeadId && !ownedRegenerationLead) throw new Error('Regeneration lead is not owned by authenticated user');
+              const firstName = ownedRegenerationLead?.firstName || lead.raw_first_name || lead.first_name || lead.firstName || 'Unknown';
+              const lastName = ownedRegenerationLead?.lastName ?? lead.last_name ?? lead.lastName ?? '';
+              const companyName = ownedRegenerationLead?.companyName || lead.company_name || lead.companyName || 'Unknown Company';
+              const websiteUrl = ownedRegenerationLead?.websiteUrl || lead.website_url || lead.websiteUrl || null;
+              const email = ownedRegenerationLead?.email || lead.email || lead.email_address || lead.emailAddress || null;
+              const linkedInUrl = ownedRegenerationLead?.linkedInUrl || getLeadLinkedInUrl(lead);
               const rawScore = lead.score == null ? null : Number(lead.score);
-              const score = rawScore !== null && Number.isInteger(rawScore) ? rawScore : null;
+              const score = ownedRegenerationLead?.score ?? (rawScore !== null && Number.isInteger(rawScore) ? rawScore : null);
               const safeLinkedInUrl = linkedInUrl !== ''
                 ? linkedInUrl
                 : `missing-url-${Date.now()}-${Math.random()}`;
-              const existingLead = linkedInUrl
-                ? existingByLinkedInUrl.get(linkedInUrl)
-                : undefined;
+              const existingLead = ownedRegenerationLead || (linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined);
 
-              const persistedLead = existingLead
-                ? await prisma.generatedLead.update({
-                    where: { id: existingLead.id },
-                    data: {
-                      firstName,
-                      lastName,
-                      companyName,
-                      websiteUrl,
-                      email,
-                      score,
-                      targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
-                      incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
-                      emailDraft: finalEmailBody,
-                      linkedInDraft: finalLinkedInBody,
-                      coldCallDraft: finalColdCallBody || null,
-                      whatsAppDraft: finalWhatsAppBody || null,
-                      listId: listId || null,
-                      createdAt: new Date(),
-                    },
-                  })
-                : await prisma.generatedLead.create({
-                    data: {
-                      userId: currentUserId,
-                      firstName,
-                      lastName,
-                      linkedInUrl: safeLinkedInUrl,
-                      companyName,
-                      websiteUrl,
-                      email,
-                      score,
-                      targetGroup: lead.target_group || lead.targetGroup || context.target_audience || null,
-                      incidentDetails: lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
-                      emailDraft: finalEmailBody,
-                      linkedInDraft: finalLinkedInBody,
-                      coldCallDraft: finalColdCallBody || null,
-                      whatsAppDraft: finalWhatsAppBody || null,
-                      listId: listId || null,
-                    },
-                  });
+              const persistedLead = await saveGeneratedLead(prisma, {
+                userId: currentUserId,
+                firstName,
+                lastName,
+                linkedInUrl: safeLinkedInUrl,
+                companyName,
+                websiteUrl,
+                email,
+                score,
+                targetGroup: ownedRegenerationLead?.targetGroup || lead.target_group || lead.targetGroup || context.target_audience || null,
+                incidentDetails: ownedRegenerationLead?.incidentDetails || lead.incident_details || lead.incidentDetails || lead.provided_incident_details || null,
+                emailDraft: finalEmailBody,
+                linkedInDraft: finalLinkedInBody,
+                coldCallDraft: finalColdCallBody || null,
+                whatsAppDraft: finalWhatsAppBody || null,
+                listId: listId || ownedRegenerationLead?.listId || null,
+              }, existingLead?.id, extractProspectMetadata(lead));
               persistedLeadId = persistedLead.id;
             }
 

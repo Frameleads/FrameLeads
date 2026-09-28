@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   Globe,
   Sparkles,
@@ -59,6 +60,11 @@ interface Lead {
   whatsAppDraft?: string | null;
   listId?: string | null;
   deployment_status: string;
+  scout?: {
+    prospectId: string; companyId: string | null; jobTitle: string | null; industry: string | null; country: string | null;
+    fitScore: number | null; fitTier: string | null; whyFit: string | null; whyNow: string | null;
+    trigger: string | null; risk: string | null;
+  } | null;
 }
 
 function parseChannel(channel: GeneratedChannel): { subject: string; body: string } {
@@ -161,6 +167,11 @@ const statusConfig: Record<
   string,
   { label: string; color: string; icon: React.ElementType }
 > = {
+  not_generated: {
+    label: "Ready for copy",
+    color: "text-primary bg-primary/10 border-primary/20",
+    icon: Sparkles,
+  },
   completed: {
     label: "Completed",
     color: "text-green-400 bg-green-400/10 border-green-400/20",
@@ -220,13 +231,14 @@ export default function SandboxClient({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const focusedLeadId = searchParams.get("lead");
   const [isNavigating, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
   const [batchId, setBatchId] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<string>("processing");
   const [selectedId, setSelectedId] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<SandboxTab>("email");
+  const [activeTab, setActiveTab] = useState<SandboxTab>(initialLeads[0]?.scout && !initialLeads[0].generated_email ? "intelligence" : "email");
   const [copySuccess, setCopySuccess] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [draftText, setDraftText] = useState("");
@@ -309,6 +321,7 @@ useEffect(() => {
   // ── Load initial batch from sessionStorage ────────────────────────
 
   useEffect(() => {
+    if (focusedLeadId) return;
     try {
       const stored = sessionStorage.getItem("frameleads_batch");
       if (stored) {
@@ -325,7 +338,7 @@ useEffect(() => {
     } catch {
       // ignore parse errors
     }
-  }, []);
+  }, [focusedLeadId]);
 
   // ── Polling logic ─────────────────────────────────────────────────
 
@@ -684,6 +697,7 @@ useEffect(() => {
   };
 
   const getStatus = (lead: Lead) => {
+    if (lead.generation_status === "not_generated") return statusConfig.not_generated;
     if (lead.generation_status === "quota_locked") return statusConfig.quota_locked;
     if (lead.generation_status === "completed") return statusConfig.completed;
     if (lead.generation_status === "queued") return statusConfig.queued;
@@ -998,10 +1012,10 @@ useEffect(() => {
             {activeTab !== "intelligence" && (
               <button
                 className="p-2 rounded-lg hover:bg-muted/50 text-muted-foreground hover:text-foreground transition-colors"
-                title="Regenerate"
+                title={selectedLead?.generation_status === "not_generated" ? "Generate Copy" : "Regenerate"}
                 onClick={handleRegenerate}
               >
-                <RotateCcw className="w-4 h-4" />
+                {selectedLead?.generation_status === "not_generated" ? <Sparkles className="w-4 h-4" /> : <RotateCcw className="w-4 h-4" />}
               </button>
             )}
           </div>
@@ -1181,6 +1195,16 @@ useEffect(() => {
                         ))}
                       </dl>
 
+                      {selectedLead.scout && <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">Scouted prospect</p><Link href={`/dashboard/scout/${encodeURIComponent(selectedLead.scout.prospectId)}`} className="text-xs text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">View evidence in Scout</Link></div>
+                        <p className="mt-2 text-sm font-medium">{selectedLead.scout.fitScore === null ? 'Fit not scored' : `${selectedLead.scout.fitScore} / 100`}{selectedLead.scout.fitTier ? ` · ${selectedLead.scout.fitTier} fit` : ''}</p>
+                        {(selectedLead.scout.jobTitle || selectedLead.scout.industry || selectedLead.scout.country) && <p className="mt-1 text-xs text-muted-foreground">{[selectedLead.scout.jobTitle, selectedLead.scout.industry, selectedLead.scout.country].filter(Boolean).join(' · ')}</p>}
+                        {selectedLead.scout.whyFit && <p className="mt-3 text-sm leading-6">{selectedLead.scout.whyFit}</p>}
+                        <p className="mt-2 text-xs text-muted-foreground">Why now: {selectedLead.scout.whyNow || 'No verified timing signal found.'}</p>
+                        {selectedLead.scout.trigger && <p className="mt-2 text-xs">Trigger: {selectedLead.scout.trigger}</p>}
+                        {selectedLead.scout.risk && <p className="mt-1 text-xs">Risk: {selectedLead.scout.risk}</p>}
+                      </div>}
+
                       <div className="rounded-xl border border-border/50 bg-muted/10 p-4">
                         <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
                           Raw Incident Details
@@ -1269,6 +1293,11 @@ useEffect(() => {
               </div>
             )}
             </>
+          ) : selectedLead?.generation_status === 'not_generated' ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+              <p className="text-sm text-muted-foreground">No outreach copy has been generated for this prospect yet.</p>
+              <button type="button" onClick={handleRegenerate} className="rounded-lg border border-primary/30 bg-primary/10 px-4 py-2 text-sm font-medium text-primary hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Generate Copy</button>
+            </div>
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-center">
               <Loader2 className="w-8 h-8 text-muted-foreground/50 animate-spin mb-4" />

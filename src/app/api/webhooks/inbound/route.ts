@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { createInboundSignal, identityFromFullName } from '@/lib/prospects/persistence';
 import { resolvePipelineValue } from '@/lib/pipeline-value';
 import Anthropic from '@anthropic-ai/sdk';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
@@ -84,7 +85,7 @@ export async function POST(req: Request) {
     }
 
     // Insert into PostgreSQL via Prisma
-    const newSignal = await prisma.inboundSignal.create({
+    const newSignal = await createInboundSignal(prisma, {
       data: {
         userId: auth.userId,
         prospectName: leadFirstName,
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
         signalType: "EMAIL_REPLY",
         status: finalLifecycleStatus
       }
-    });
+    }, identityFromFullName(leadFirstName, companyName));
 
     return NextResponse.json({ success: true, id: newSignal.id }, { status: 200 });
   } catch (error) {

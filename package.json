@@ -6,7 +6,18 @@
     "dev": "next dev",
     "build": "prisma generate && prisma migrate deploy && next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:prospects": "node scripts/run-prospect-tool.cjs test",
+    "test:prospect-intelligence": "node scripts/run-prospect-tool.cjs intelligence-test",
+    "test:prospect-research": "node scripts/run-prospect-tool.cjs research-test",
+    "test:scout": "node scripts/run-prospect-tool.cjs scout-test",
+    "test:prospect-qualification": "node scripts/run-prospect-tool.cjs qualification-test",
+    "test:prospect-metadata": "node scripts/run-prospect-tool.cjs metadata-test",
+    "test:prospect-trust": "node scripts/run-prospect-tool.cjs trust-test",
+    "test:ai-usage": "node scripts/run-prospect-tool.cjs usage-test",
+    "test:company-cache": "node scripts/run-prospect-tool.cjs company-test",
+    "test:scout-handoff": "node scripts/run-prospect-tool.cjs handoff-test",
+    "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

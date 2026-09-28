@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Papa from "papaparse";
+import { extractProspectMetadata } from '@/lib/prospects/metadata';
 import {
   Upload,
   FileSpreadsheet,
@@ -27,11 +28,18 @@ interface ColumnMapping {
 interface LeadPayload {
   lead_id: string;
   first_name: string;
+  last_name?: string | null;
   company_name: string;
   website_url: string | null;
   linkedin_url: string | null;
   email: string | null;
   provided_incident_details: string | null;
+  job_title?: string | null;
+  industry?: string | null;
+  country?: string | null;
+  location?: string | null;
+  company_size_min?: number | null;
+  company_size_max?: number | null;
   enrichment_status: "skipped_not_needed" | "pending_scrape";
   generation_status: "queued" | "waiting_on_enrichment";
 }
@@ -65,6 +73,7 @@ interface ManualContactForm {
 
 const SCHEMA_FIELDS = [
   "first_name",
+  "last_name",
   "company_name",
   "website_url",
   "linkedin_url",
@@ -76,6 +85,7 @@ type SchemaField = (typeof SCHEMA_FIELDS)[number];
 
 const SCHEMA_LABELS: Record<SchemaField, string> = {
   first_name: "First Name",
+  last_name: "Last Name",
   company_name: "Company Name",
   website_url: "Website URL",
   linkedin_url: "LinkedIn URL",
@@ -106,6 +116,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [fieldMappings, setFieldMappings] = useState<Record<string, string>>({
     first_name: "",
+    last_name: "",
     company_name: "",
     website_url: "",
     linkedin_url: "",
@@ -118,6 +129,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   const [availableLists, setAvailableLists] = useState<LeadListOption[]>([]);
   const [selectedListId, setSelectedListId] = useState("");
   const [newListName, setNewListName] = useState("");
+  const [newListSource, setNewListSource] = useState<'UNKNOWN' | 'USER_CURATED' | 'BROAD_POOL'>('UNKNOWN');
   const [isCreatingList, setIsCreatingList] = useState(false);
   const [overwriteExisting, setOverwriteExisting] = useState(false);
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
@@ -172,7 +184,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       const response = await fetch("/api/lists", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, sourceType: newListSource }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || "Failed to create list.");
@@ -180,6 +192,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       setAvailableLists((current) => [result.list, ...current]);
       setSelectedListId(result.list.id);
       setNewListName("");
+      setNewListSource('UNKNOWN');
       window.dispatchEvent(new Event("frameleads:lists-changed"));
     } catch (error) {
       setError(error instanceof Error ? error.message : "Failed to create list.");
@@ -244,6 +257,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         // Auto-map: try exact match, then case-insensitive substring
         const autoMappings: Record<string, string> = {
           first_name: "",
+          last_name: "",
           company_name: "",
           website_url: "",
           linkedin_url: "",
@@ -251,7 +265,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
           provided_incident_details: ""
         };
 
-        const targetFields = ["first_name", "company_name", "website_url", "linkedin_url", "email", "provided_incident_details"];
+        const targetFields = ["first_name", "last_name", "company_name", "website_url", "linkedin_url", "email", "provided_incident_details"];
         
         targetFields.forEach((schemaField) => {
           const match = headers.find((col) => {
@@ -300,6 +314,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       const firstName = (
         row[fieldMappings.first_name] ?? ""
       ).trim();
+      const lastName = fieldMappings.last_name ? (row[fieldMappings.last_name] ?? "").trim() || null : null;
       const companyName = (
         row[fieldMappings.company_name] ?? ""
       ).trim();
@@ -321,15 +336,23 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
           : null;
 
       const hasWebsite = websiteUrl !== null && websiteUrl !== "";
+      const facts = extractProspectMetadata(row);
 
       return {
         lead_id: `ld_${Date.now()}_${idx.toString().padStart(4, "0")}`,
         first_name: firstName,
+        last_name: lastName,
         company_name: companyName,
         website_url: websiteUrl,
         linkedin_url: linkedInUrl,
         email,
         provided_incident_details: incidentDetails,
+        job_title: facts.jobTitle,
+        industry: facts.industry,
+        country: facts.country,
+        location: facts.location,
+        company_size_min: facts.companySizeMin,
+        company_size_max: facts.companySizeMax,
         enrichment_status: hasWebsite ? "pending_scrape" : "skipped_not_needed",
         generation_status: hasWebsite ? "waiting_on_enrichment" : "queued",
       };
@@ -690,6 +713,11 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                 Create
               </button>
             </div>
+            <label className="mt-3 flex items-center gap-3 text-sm text-gray-300">How was this list selected?
+              <select value={newListSource} onChange={event => setNewListSource(event.target.value as typeof newListSource)} className="h-9 rounded-lg border border-[#242424] bg-[#000000] px-2 text-sm text-gray-200">
+                <option value="UNKNOWN">Not specified</option><option value="USER_CURATED">Already ICP-filtered</option><option value="BROAD_POOL">Broad prospect pool</option>
+              </select>
+            </label>
             <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-gray-300">
               <input
                 type="checkbox"

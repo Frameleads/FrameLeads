@@ -9,6 +9,8 @@ datasource db {
 
 model InboundSignal {
   id              String         @id @default(uuid())
+  prospectId      String?
+  prospect        Prospect?      @relation(fields: [userId, prospectId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
   userId          String?
   user            User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
   generatedLeadId String?
@@ -46,6 +48,7 @@ model InboundSignal {
   @@index([userId, status, isHighPriority])
   @@index([createdAt])
   @@index([generatedLeadId])
+  @@index([userId, prospectId])
 }
 
 // ── Phase 5: Institutional Memory ────────────────────────────────────
@@ -107,6 +110,11 @@ model User {
 
   inboxes        SendingInbox[]
   inboundSignals InboundSignal[]
+  prospects      Prospect[]
+  icpProfile     ICPProfile?
+  qualifications ProspectQualification[]
+  aiUsageEvents  AIUsageEvent[]
+  companies      Company[]
 }
 
 // ── Phase 3: Sending Infrastructure ──────────────────────────────────
@@ -145,6 +153,8 @@ model OutboundLog {
 
 model GeneratedLead {
   id              String          @id @default(cuid())
+  prospectId      String?
+  prospect        Prospect?       @relation(fields: [userId, prospectId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
   userId          String // This links the lead to the specific logged-in Whop user
   firstName       String
   lastName        String
@@ -167,15 +177,355 @@ model GeneratedLead {
 
   @@index([userId, linkedInUrl])
   @@index([listId])
+  @@index([userId, prospectId])
+}
+
+model Prospect {
+  id                    String                 @id @default(cuid())
+  userId                String
+  user                  User                   @relation(fields: [userId], references: [id], onDelete: Restrict)
+  firstName             String?
+  lastName              String?
+  email                 String?
+  normalizedEmail       String?
+  linkedInUrl           String?
+  normalizedLinkedInUrl String?
+  companyName           String?
+  websiteUrl            String?
+  jobTitle              String?
+  industry              String?
+  country               String?
+  location              String?
+  companySizeMin        Int?
+  companySizeMax        Int?
+  fallbackIdentityKey   String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  generatedLeads        GeneratedLead[]
+  inboundSignals        InboundSignal[]
+  intelligence          ProspectIntelligence?
+  qualification         ProspectQualification?
+  aiUsageEvents         AIUsageEvent[]
+  companyId             String?
+  company               Company?               @relation(fields: [userId, companyId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([userId, id])
+  @@unique([userId, normalizedEmail])
+  @@unique([userId, normalizedLinkedInUrl])
+  @@index([userId, fallbackIdentityKey])
+  @@index([userId, companyId])
+}
+
+model Company {
+  id               String               @id @default(cuid())
+  userId           String
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name             String?
+  normalizedName   String?
+  websiteUrl       String?
+  normalizedDomain String?
+  industry         String?
+  companySizeMin   Int?
+  companySizeMax   Int?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  prospects        Prospect[]
+  intelligence     CompanyIntelligence?
+  evidence         CompanyEvidence[]
+
+  @@unique([userId, id])
+  @@unique([userId, normalizedDomain])
+  @@index([userId, normalizedName])
+}
+
+enum CompanyResearchStatus {
+  NOT_RESEARCHED
+  RESEARCHING
+  READY
+  NEEDS_REVIEW
+  FAILED
+}
+
+model CompanyIntelligence {
+  id               String                @id @default(cuid())
+  userId           String
+  companyId        String                @unique
+  company          Company               @relation(fields: [userId, companyId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  icpProfileId     String?
+  icpProfile       ICPProfile?           @relation(fields: [userId, icpProfileId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  icpFingerprint   String?
+  inputFingerprint String?
+  status           CompanyResearchStatus @default(NOT_RESEARCHED)
+  fitScore         Int?
+  fitTier          ProspectFitTier?
+  valueBand        ProspectValueBand?
+  whyCompanyFits   String?               @db.Text
+  whyCompanyNow    String?               @db.Text
+  triggers         String[]              @default([])
+  risks            String[]              @default([])
+  confidenceScore  Int?
+  researchedAt     DateTime?
+  provider         AIProvider?
+  model            String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([userId, companyId])
+  @@index([userId, status])
+  @@index([userId, icpProfileId])
+}
+
+model CompanyEvidence {
+  id           String               @id @default(cuid())
+  userId       String
+  companyId    String
+  company      Company              @relation(fields: [userId, companyId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  evidenceType ProspectEvidenceType
+  sourceTitle  String
+  sourceUrl    String?              @db.Text
+  claim        String               @db.Text
+  capturedAt   DateTime             @default(now())
+  createdAt    DateTime             @default(now())
+
+  @@index([userId, companyId])
+}
+
+enum AIFeature {
+  SCOUT_RESEARCH
+  OUTBOUND_GENERATION
+  INBOX_TRIAGE
+  REPLY_DRAFT
+  DECISION_INTELLIGENCE
+}
+
+enum AIOperation {
+  ICP_ANALYSIS
+  SCOUT_COMPANY_ANALYSIS
+  SCOUT_PROSPECT_DELTA
+  DRAFT_GENERATION
+  TRIAGE_ANALYSIS
+}
+
+enum AIProvider {
+  GEMINI
+  ANTHROPIC
+}
+
+enum AIUsageStatus {
+  SUCCESS
+  FAILED
+}
+
+model AIUsageEvent {
+  id                     String        @id @default(cuid())
+  userId                 String
+  user                   User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  prospectId             String?
+  prospect               Prospect?     @relation(fields: [userId, prospectId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  feature                AIFeature
+  operation              AIOperation
+  provider               AIProvider
+  model                  String
+  inputTokens            Int?
+  outputTokens           Int?
+  totalTokens            Int?
+  cachedInputTokens      Int?
+  reasoningTokens        Int?
+  requestId              String?
+  attempt                Int           @default(1)
+  companyKey             String?
+  status                 AIUsageStatus
+  latencyMs              Int
+  estimatedCostUsdMicros BigInt?
+  createdAt              DateTime      @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, feature, createdAt])
+  @@index([userId, model, createdAt])
+  @@index([userId, requestId])
+  @@index([userId, prospectId])
+}
+
+enum ProspectFitTier {
+  STRONG
+  MODERATE
+  WEAK
+  DISQUALIFIED
+}
+
+enum ProspectValueBand {
+  LOW
+  MEDIUM
+  HIGH
+  STRATEGIC
+}
+
+enum ProspectResearchStatus {
+  NOT_RESEARCHED
+  RESEARCHING
+  READY
+  NEEDS_REVIEW
+  FAILED
+}
+
+enum ProspectEvidenceType {
+  WEBSITE
+  CAREERS
+  SOCIAL
+  NEWS
+  USER_PROVIDED
+  INTERNAL
+  OTHER
+}
+
+enum ProspectIntelligenceEditor {
+  SYSTEM
+  USER
+}
+
+model ProspectIntelligence {
+  id                     String                     @id @default(cuid())
+  userId                 String
+  prospectId             String                     @unique
+  prospect               Prospect                   @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  fitScore               Int?
+  fitTier                ProspectFitTier?
+  potentialValueBand     ProspectValueBand?
+  estimatedValueAmount   Decimal?                   @db.Decimal(18, 2)
+  estimatedValueCurrency String?                    @db.VarChar(3)
+  whyFit                 String?                    @db.Text
+  whyNow                 String?                    @db.Text
+  triggers               String[]                   @default([])
+  risks                  String[]                   @default([])
+  confidenceScore        Int?
+  researchStatus         ProspectResearchStatus     @default(NOT_RESEARCHED)
+  lastEditedBy           ProspectIntelligenceEditor @default(SYSTEM)
+  researchedAt           DateTime?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  evidence               ProspectEvidence[]
+
+  @@unique([userId, id])
+  @@unique([userId, prospectId])
+  @@index([userId, researchStatus, fitTier])
+  @@index([userId, potentialValueBand])
+}
+
+model ProspectEvidence {
+  id                     String               @id @default(cuid())
+  userId                 String
+  prospectIntelligenceId String
+  prospectIntelligence   ProspectIntelligence @relation(fields: [userId, prospectIntelligenceId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  evidenceType           ProspectEvidenceType
+  sourceTitle            String
+  sourceUrl              String?              @db.Text
+  claim                  String               @db.Text
+  confidenceScore        Int?
+  isUserProvided         Boolean              @default(false)
+  capturedAt             DateTime             @default(now())
+  createdAt              DateTime             @default(now())
+
+  @@index([userId, prospectIntelligenceId])
+}
+
+enum ProspectQualificationStatus {
+  UNASSESSED
+  QUALIFIED
+  REJECTED
+  NEEDS_REVIEW
+}
+
+enum ICPQualificationPolicy {
+  CONSERVATIVE
+  BALANCED
+  STRICT
+}
+
+enum LeadSourceType {
+  UNKNOWN
+  USER_CURATED
+  BROAD_POOL
+  FRAMELEADS_QUALIFIED
+}
+
+enum QualificationReasonCode {
+  NONE
+  EXCLUDED
+  TARGET_MISMATCH
+  MISSING_DATA
+  AMBIGUOUS
+  NO_RULES
+  INACTIVE
+  USER_OVERRIDE
+}
+
+enum QualificationOverride {
+  AUTO
+  USER_QUALIFIED
+  USER_EXCLUDED
+}
+
+model ICPProfile {
+  id                   String                  @id @default(cuid())
+  userId               String                  @unique
+  user                 User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String                  @default("Default ICP")
+  isActive             Boolean                 @default(true)
+  qualificationPolicy  ICPQualificationPolicy  @default(CONSERVATIVE)
+  targetTitles         String[]                @default([])
+  targetSeniorities    String[]                @default([])
+  targetIndustries     String[]                @default([])
+  targetGeographies    String[]                @default([])
+  excludedTitles       String[]                @default([])
+  excludedIndustries   String[]                @default([])
+  excludedDomains      String[]                @default([])
+  companySizeMin       Int?
+  companySizeMax       Int?
+  requiredKeywords     String[]                @default([])
+  excludedKeywords     String[]                @default([])
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  qualifications       ProspectQualification[]
+  companyIntelligences CompanyIntelligence[]
+
+  @@unique([userId, id])
+}
+
+model ProspectQualification {
+  id                  String                      @id @default(cuid())
+  userId              String
+  prospectId          String                      @unique
+  prospect            Prospect                    @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  icpProfileId        String
+  icpProfile          ICPProfile                  @relation(fields: [userId, icpProfileId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+  status              ProspectQualificationStatus @default(UNASSESSED)
+  reasonCode          QualificationReasonCode     @default(NONE)
+  policyVersion       Int                         @default(0)
+  override            QualificationOverride       @default(AUTO)
+  overriddenAt        DateTime?
+  matchedCriteria     String[]                    @default([])
+  failedCriteria      String[]                    @default([])
+  missingCriteria     String[]                    @default([])
+  qualificationReason String                      @db.Text
+  profileUpdatedAt    DateTime
+  evaluatedAt         DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  User                User                        @relation(fields: [userId], references: [id])
+
+  @@unique([userId, prospectId])
+  @@index([userId, status])
+  @@index([userId, icpProfileId])
 }
 
 model LeadList {
-  id        String          @id @default(cuid())
-  name      String
-  userId    String
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  leads     GeneratedLead[]
+  id         String          @id @default(cuid())
+  name       String
+  userId     String
+  sourceType LeadSourceType  @default(UNKNOWN)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  leads      GeneratedLead[]
 
   @@index([userId])
 }

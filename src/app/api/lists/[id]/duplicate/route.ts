@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { identityTransaction, attachableProspectId } from '@/lib/prospects/identity';
+import { leadProspectInTransaction } from '@/lib/prospects/persistence';
 
 interface DuplicateListRouteContext {
   params: Promise<{ id: string }>;
@@ -24,13 +26,13 @@ export async function POST(_request: Request, { params }: DuplicateListRouteCont
     const { id } = await params;
     const sourceList = await prisma.leadList.findFirst({
       where: { id, userId: user.id },
-      include: { leads: true },
+      include: { leads: { where: { userId: user.id } } },
     });
     if (!sourceList) {
       return NextResponse.json({ success: false, error: "List not found." }, { status: 404 });
     }
 
-    const duplicatedList = await prisma.$transaction(async (transaction) => {
+    const duplicatedList = await identityTransaction(prisma, async (transaction) => {
       const newList = await transaction.leadList.create({
         data: {
           name: `${sourceList.name} (Copy)`,
@@ -39,9 +41,15 @@ export async function POST(_request: Request, { params }: DuplicateListRouteCont
       });
 
       if (sourceList.leads.length > 0) {
+        const linkedLeads = [];
+        for (const lead of sourceList.leads) {
+          const result = await leadProspectInTransaction(transaction, lead);
+          linkedLeads.push({ ...lead, prospectId: attachableProspectId(result, user.id) });
+        }
         await transaction.generatedLead.createMany({
-          data: sourceList.leads.map((lead) => ({
+          data: linkedLeads.map((lead) => ({
             userId: user.id,
+            prospectId: lead.prospectId,
             firstName: lead.firstName,
             lastName: lead.lastName,
             linkedInUrl: lead.linkedInUrl,
