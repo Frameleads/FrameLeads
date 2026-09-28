@@ -26,6 +26,7 @@
     "test:revenue-risk": "node scripts/run-prospect-tool.cjs revenue-risk-test",
     "test:response-sla": "node scripts/run-prospect-tool.cjs response-sla-test",
     "test:decision-sandbox": "node scripts/run-prospect-tool.cjs decision-sandbox-test",
+    "test:decision-replay": "node scripts/run-prospect-tool.cjs decision-replay-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
   "dependencies": {

@@ -223,6 +223,8 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h2 className="text-sm font-semibold uppercase tracking-wider text-white">Decision packet</h2>
         <p className="mt-1 text-xs text-gray-400">{label} · {packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'} · Governed execution</p></div>
+      {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`}
+        className="rounded border border-[#333] px-3 py-2 text-xs text-gray-300 hover:border-[#FF5A1F] focus-visible:outline">Replay</Link>}
       <button type="button" disabled={running || loading || packet?.status === 'PENDING'}
         onClick={() => void run(Boolean(packet))}
         className="rounded border border-[#FF5A1F] px-3 py-2 text-xs font-semibold text-[#FF5A1F] hover:bg-[#FF5A1F]/10 disabled:opacity-40">
