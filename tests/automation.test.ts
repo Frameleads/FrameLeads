@@ -30,6 +30,9 @@ function fixture() {
     prospectHold: { findUnique: async () => hold, upsert: async ({ create, update }: any) => {
       hold = { id: 'hold-a', ...(hold ?? create), ...update }; return hold; } },
     prospect: { findUnique: async ({ where }: any) => where.userId_id.userId === tenant ? { id: 'prospect-a' } : null },
+    prospectQualification: { findUnique: async () => ({ status: 'QUALIFIED' }) },
+    prospectIntelligence: { findUnique: async () => ({ fitTier: 'STRONG' }) },
+    decisionRevenueRisk: { findFirst: async () => null },
     leadList: { findFirst: async ({ where }: any) => where.userId === tenant ? { id: 'list-a' } : null },
     automationCampaignOverride: { findUnique: async () => override, upsert: async ({ create, update }: any) => {
       override = { id: 'override-a', ...(override ?? create), ...update }; return override; } },
@@ -106,6 +109,25 @@ test('Constitution block, human, approval and unresolved rules constrain autonom
   f.setRules([rule(ConstitutionEffect.REQUIRE_APPROVAL, 'CUSTOM_MANUAL')]);
   assert.equal((await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db)).state, 'ESCALATED');
   assert.equal(f.aiCalls(), 0);
+});
+
+test('real Automation resolution loads current contextual facts and prevents Autopilot', async () => {
+  const f = fixture();
+  f.setPolicy({ defaultMode: 'AUTOPILOT', autopilotEnabled: true, autoExecutionDisabled: false });
+  for (const [effect, state, reason] of [
+    [ConstitutionEffect.REQUIRE_HUMAN, 'ESCALATED', 'CONSTITUTION_REQUIRES_HUMAN'],
+    [ConstitutionEffect.REQUIRE_APPROVAL, 'PENDING_APPROVAL', 'CONSTITUTION_REQUIRES_APPROVAL'],
+  ] as const) {
+    f.setRules([{ id: 'context-fit', name: 'Strong fit review', category: 'CUSTOM', scope: 'GLOBAL',
+      severity: 'HIGH', priority: 1, effect, enabled: true, archivedAt: null, actionTypes: ['OUTREACH'],
+      constraint: { kind: 'FACT', field: 'FIT_TIER', operator: 'EQ', value: 'STRONG' } }]);
+    const result = await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db);
+    assert.equal(result.state, state);
+    assert.notEqual(result.resolvedMode, AutomationMode.AUTOPILOT);
+    assert.ok(result.reasons.includes(reason));
+    assert.ok(result.constitutionRuleIds.includes('context-fit'));
+  }
+  assert.equal(f.sends(), 0); assert.equal(f.aiCalls(), 0);
 });
 
 test('review, confidence, kill switch, suppression and cap fail closed', async () => {

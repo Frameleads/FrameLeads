@@ -145,6 +145,7 @@ export async function simulateDecision(input: SimulationInput, deps: Dependencie
   const reviewReasons = analysis ? decideReview({ analysis, policy: [] }) : source.reviewReasons;
   const simulatedDecision = { ...source,
     primaryIntent: analysis?.primaryIntent ?? source.primaryIntent,
+    secondaryIntents: analysis ? analysis.intents.filter(row => row.intent !== analysis.primaryIntent).map(row => row.intent) : source.secondaryIntents,
     confidenceScore: confidence, requiresReview: analysis ? reviewReasons.length > 0 :
       source.requiresReview || (confidence != null && confidence < 70),
     reviewReasons: !analysis && confidence != null && confidence < 70 ? [...new Set([...reviewReasons, 'LOW_CONFIDENCE'])] : reviewReasons,
@@ -152,8 +153,10 @@ export async function simulateDecision(input: SimulationInput, deps: Dependencie
   const automation = await (deps.evaluateAutomation ?? evaluateAutomationMode)({ userId: input.userId,
     decisionId: source.id, proposedReply: analysis ? analysis.suggestedReply : undefined,
     simulation: { primaryIntent: simulatedDecision.primaryIntent, confidenceScore: confidence ?? undefined,
+      secondaryIntents: simulatedDecision.secondaryIntents,
       requiresReview: simulatedDecision.requiresReview, reviewReasons, status: simulatedDecision.status,
-      requestedMode: validated.overrides?.requestedMode, holdActive: validated.overrides?.holdActive } }, db);
+      requestedMode: validated.overrides?.requestedMode, holdActive: validated.overrides?.holdActive,
+      riskBand: validated.overrides?.riskBand } }, db);
   const facts = await readRiskFacts(input.userId, simulatedDecision, automation, now, db);
   if (analysis) { facts.inboundAt = now; facts.recentInboundCount = facts.recentInboundCount == null ? null : facts.recentInboundCount + 1; }
   const scoredRisk = scoreRevenueRisk(facts, now);

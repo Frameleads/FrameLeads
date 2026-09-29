@@ -15,13 +15,14 @@ const analysis = { primaryIntent: 'PRICING_INQUIRY', intents: [{ intent: 'PRICIN
 function fixture(effect: string | null = null) {
   const writes: string[] = [], usages: any[] = [];
   let providerCalls = 0;
+  let providerAnalysis: any = analysis;
   const decision: any = { id: 'decision-a', userId: tenant, prospectId: 'prospect-a',
     conversationId: 'conversation-a', inputMessageId: 'message-a', primaryIntent: 'POSITIVE_INTEREST',
     secondaryIntents: [], status: 'READY', confidenceScore: 95, requiresReview: false, reviewReasons: [],
     suggestedReply: 'Thanks for your interest.', recommendedNextAction: 'REPLY_WITH_FACTS',
     explanation: 'The prospect is interested.', trace: null,
     inputMessage: { sourceId: 'signal-a', sourceType: 'INBOUND_SIGNAL', occurredAt: new Date('2026-09-29T11:00:00Z') } };
-  const rule = effect ? [{ id: 'rule-a', name: 'Rule A', category: 'CLAIM', scope: 'GLOBAL', severity: 'HIGH',
+  let rule: any[] = effect ? [{ id: 'rule-a', name: 'Rule A', category: 'CLAIM', scope: 'GLOBAL', severity: 'HIGH',
     priority: 1, effect, actionTypes: ['CLAIM'], constraint: { kind: 'PROHIBITED_CLAIM', terms: ['Thanks'] },
     machineEvaluable: true, enabled: true, archivedAt: null }] : [];
   const read = (name: string, methods: Record<string, (...args: any[]) => any>) => new Proxy(methods, {
@@ -42,7 +43,7 @@ function fixture(effect: string | null = null) {
     prospectMemoryEvent: read('prospectMemoryEvent', { findMany: async () => [] }),
     brainKnowledgeEntry: read('brainKnowledgeEntry', { findMany: async () => [] }),
     revenuePlaybookRule: read('revenuePlaybookRule', { findMany: async () => [] }),
-    salesConstitutionRule: read('salesConstitutionRule', { findMany: async ({ where }: any) => rule.filter(r => r.actionTypes.includes(where.actionTypes.has)) }),
+    salesConstitutionRule: read('salesConstitutionRule', { findMany: async ({ where }: any) => rule.filter(r => !where.actionTypes || r.actionTypes.includes(where.actionTypes.has)) }),
     salesConstitution: read('salesConstitution', { findUnique: async () => ({ id: 'constitution-a', revision: 1 }) }),
     automationPolicy: read('automationPolicy', { findUnique: async () => ({ id: 'policy-a', userId: tenant,
       defaultMode: 'HUMAN_APPROVAL', fallbackMode: 'HUMAN_APPROVAL', autopilotEnabled: false,
@@ -57,16 +58,17 @@ function fixture(effect: string | null = null) {
     revenuePlaybook: read('revenuePlaybook', { findUnique: async () => null }),
     responseSLAPolicy: read('responseSLAPolicy', { findUnique: async () => null }),
     responseSLAInstance: read('responseSLAInstance', {}),
-    decisionRevenueRisk: read('decisionRevenueRisk', {}),
+    decisionRevenueRisk: read('decisionRevenueRisk', { findFirst: async () => null }),
     decisionAssignment: read('decisionAssignment', {}),
     outboundLog: read('outboundLog', {}),
     decisionAutomationResolution: read('decisionAutomationResolution', {}),
     aIUsageEvent: read('aIUsageEvent', {}),
   };
   const provider: any = { analyze: async (_request: any, observer: any) => {
-    providerCalls++; observer?.onRequestStart(); observer?.onResponse({ inputTokens: 100, outputTokens: 50 }); return analysis; } };
+    providerCalls++; observer?.onRequestStart(); observer?.onResponse({ inputTokens: 100, outputTokens: 50 }); return providerAnalysis; } };
   const recordUsage: any = async (value: any) => { usages.push(value); };
-  return { db, provider, recordUsage, writes, usages, providerCalls: () => providerCalls };
+  return { db, provider, recordUsage, writes, usages, providerCalls: () => providerCalls,
+    setRules: (next: any[]) => { rule = next; }, setAnalysis: (next: any) => { providerAnalysis = next; } };
 }
 
 test('existing Decision reuses production Constitution, automation, risk, and SLA with zero AI and zero writes', async () => {
@@ -101,6 +103,22 @@ test('explicit hypothetical reply calls the production provider at most once and
     { db: f.db, provider: f.provider, recordUsage: f.recordUsage, now });
   assert.equal(result.type, 'HYPOTHETICAL_REPLY'); assert.equal(result.intent.primary, 'PRICING_INQUIRY');
   assert.equal(f.providerCalls(), 1); assert.equal(f.usages.length, 1); assert.equal(f.usages[0].userId, tenant);
+  assert.deepEqual(f.writes, []);
+});
+
+test('hypothetical secondary intent governs through the real Constitution and Automation evaluator', async () => {
+  const f = fixture();
+  f.setRules([{ id: 'secondary-legal', name: 'Legal secondary intent', category: 'LEGAL', scope: 'GLOBAL',
+    severity: 'HIGH', priority: 1, effect: 'REQUIRE_HUMAN', actionTypes: ['OUTREACH'], enabled: true, archivedAt: null,
+    constraint: { kind: 'FACT', field: 'SECONDARY_INTENT', operator: 'CONTAINS', value: 'LEGAL' } }]);
+  f.setAnalysis({ ...analysis, intents: [...analysis.intents, { intent: 'LEGAL', confidence: 88, evidence: 'legal terms' }] });
+  const result = await simulateDecision({ userId: tenant, sourceDecisionId: 'decision-a',
+    hypotheticalReply: 'I would like to discuss pricing and legal terms.', overrides: { requestedMode: 'AUTOPILOT' } },
+  { db: f.db, provider: f.provider, recordUsage: f.recordUsage, now });
+  assert.deepEqual(result.intent.secondary, ['LEGAL']);
+  assert.equal(result.automation.state, 'ESCALATED');
+  assert.ok(result.automation.reasons.includes('CONSTITUTION_REQUIRES_HUMAN'));
+  assert.ok(result.constitution.some(row => row.matchedRuleIds.includes('secondary-legal')));
   assert.deepEqual(f.writes, []);
 });
 

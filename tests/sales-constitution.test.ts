@@ -8,6 +8,9 @@ import { archiveConstitutionRule, createConstitutionRule, detectConstitutionConf
   getConstitutionRevision, getOrCreateSalesConstitution, getSalesConstitutionContext,
   listConstitutionRevisionEvents, listConstitutionRules, updateConstitutionRule,
   validateConstitutionRule, POLICY_AUTHORITY_ORDER } from '../src/lib/sales-constitution';
+import { buildSalesConstitutionFacts, loadSalesConstitutionFacts,
+  selectConstitutionAccountFacts } from '../src/lib/sales-constitution-facts';
+import { parseNumericConditionValue } from '../src/lib/sales-constitution-editor-validation';
 
 const base = { name: 'Discount approval', category: C.DISCOUNT, effect: E.REQUIRE_APPROVAL,
   description: 'Discounts above twenty percent require approval.',
@@ -60,6 +63,116 @@ function fixture() {
   };
   return { db: { ...tx, $transaction: async (work: any) => work(tx) } as PrismaClient, roots, rules, events, usage: () => usage };
 }
+
+const contextual = (constraint: any, effect: E = E.REQUIRE_APPROVAL) => ({ userId: 'a',
+  name: 'Context boundary', category: C.CUSTOM, effect,
+  description: 'Contextual decision requires review.', constraint, actionTypes: [A.TOPIC_RESPONSE] });
+const fact = (field: string, operator: string, value: string | number) => ({ kind: 'FACT', field, operator, value });
+async function contextResult(constraint: any, facts: any, effect: E = E.REQUIRE_APPROVAL) {
+  const f = fixture();
+  await createConstitutionRule(contextual(constraint, effect), f.db);
+  const result = await evaluateSalesConstitution({ userId: 'a',
+    action: { actionType: A.TOPIC_RESPONSE, facts } }, f.db);
+  return { result, fixture: f };
+}
+
+test('contextual fit, qualification, intent, confidence, and risk use canonical facts', async () => {
+  const facts = buildSalesConstitutionFacts({ qualificationStatus: 'QUALIFIED', fitTier: 'STRONG',
+    primaryIntent: 'PRICING_INQUIRY', secondaryIntents: ['LEGAL'], confidence: 75, riskBand: 'HIGH' });
+  for (const condition of [fact('FIT_TIER','EQ','STRONG'), fact('QUALIFICATION_STATUS','EQ','QUALIFIED'),
+    fact('PRIMARY_INTENT','EQ','PRICING_INQUIRY'), fact('SECONDARY_INTENT','CONTAINS','LEGAL'),
+    fact('CONFIDENCE','LT',80), fact('RISK_BAND','EQ','HIGH')]) {
+    const { result } = await contextResult(condition, facts);
+    assert.equal(result.approvalRequirements.length, 1, condition.field);
+    assert.equal(result.trace[0].conditions.at(-1)?.result, 'MATCH');
+  }
+});
+
+test('prospect attributes and ranges evaluate conservatively', async () => {
+  const facts = buildSalesConstitutionFacts({ jobTitle: 'VP Sales', industry: 'B2B SaaS', country: 'US',
+    companySizeMin: 201, companySizeMax: 1000 });
+  for (const condition of [fact('JOB_TITLE','EQ','vp sales'), fact('INDUSTRY','EQ','B2B SaaS'), fact('COUNTRY','EQ','us')])
+    assert.equal((await contextResult(condition, facts)).result.matchedRules.length, 1);
+  assert.equal((await contextResult(fact('COMPANY_SIZE','GTE',200), facts)).result.matchedRules.length, 1);
+  assert.equal((await contextResult(fact('COMPANY_SIZE','LTE',500), facts)).result.unresolvedRules.length, 1);
+  assert.equal((await contextResult(fact('COMPANY_SIZE','LT',100), facts)).result.matchedRules.length, 0);
+});
+
+test('missing contextual fact is UNRESOLVED and visible in trace', async () => {
+  const { result } = await contextResult(fact('RISK_BAND','EQ','HIGH'), buildSalesConstitutionFacts({}));
+  assert.equal(result.unresolvedRules.length, 1);
+  assert.equal(result.decision, 'REQUIRES_REVIEW');
+  assert.equal(result.trace[0].conditions.at(-1)?.observed, 'UNKNOWN');
+});
+
+test('ALL and ANY preserve matched, not matched, and unresolved semantics', async () => {
+  const strong = fact('FIT_TIER','EQ','STRONG'), pricing = fact('PRIMARY_INTENT','EQ','PRICING_INQUIRY');
+  const all = { kind: 'ALL', conditions: [strong, pricing] }, any = { kind: 'ANY', conditions: [strong, pricing] };
+  assert.equal((await contextResult(all, { FIT_TIER: 'STRONG', PRIMARY_INTENT: 'PRICING_INQUIRY' })).result.matchedRules.length, 1);
+  assert.equal((await contextResult(all, { FIT_TIER: 'WEAK' })).result.unresolvedRules.length, 0);
+  assert.equal((await contextResult(all, { FIT_TIER: 'STRONG' })).result.unresolvedRules.length, 1);
+  assert.equal((await contextResult(any, { FIT_TIER: 'STRONG' })).result.matchedRules.length, 1);
+  assert.equal((await contextResult(any, { FIT_TIER: 'WEAK' })).result.unresolvedRules.length, 1);
+  assert.equal((await contextResult(any, { FIT_TIER: 'WEAK', PRIMARY_INTENT: 'LEGAL' })).result.allowed, true);
+  const traced = (await contextResult(all, { FIT_TIER: 'STRONG' })).result.trace[0].conditions;
+  assert.deepEqual(traced.slice(-3).map(c => c.field), ['FIT_TIER','PRIMARY_INTENT','ALL']);
+});
+
+test('invalid operators, values, depth, and leaf count fail validation', () => {
+  for (const constraint of [fact('FIT_TIER','LT','STRONG'), fact('CONFIDENCE','EQ',80),
+    fact('PRIMARY_INTENT','EQ','MADE_UP'), { kind: 'ALL', conditions: [] },
+    { kind: 'ALL', conditions: Array(7).fill(fact('FIT_TIER','EQ','STRONG')) },
+    { kind: 'ALL', conditions: [{ kind: 'ANY', conditions: [{ kind: 'ALL', conditions: [fact('FIT_TIER','EQ','STRONG')] }] }] }])
+    assert.throws(() => validateConstitutionRule(contextual(constraint)), TypeError);
+});
+
+test('contextual restrictive effects win and conflict claims require proven overlap', async () => {
+  const f = fixture();
+  const condition = fact('FIT_TIER','EQ','STRONG');
+  await createConstitutionRule(contextual(condition, E.REQUIRE_SAFE_RESPONSE), f.db);
+  await createConstitutionRule({ ...contextual(condition, E.REQUIRE_APPROVAL), name: 'Approval' }, f.db);
+  const result = await evaluateSalesConstitution({ userId: 'a', action: { actionType: A.TOPIC_RESPONSE,
+    facts: { FIT_TIER: 'STRONG' } } }, f.db);
+  assert.equal(result.effectiveEffect, E.REQUIRE_APPROVAL);
+  assert.equal((await detectConstitutionConflicts({ userId: 'a' }, f.db)).conflicts.length, 1);
+  const compound = { kind: 'ALL', conditions: [condition, fact('PRIMARY_INTENT','EQ','PRICING_INQUIRY')] };
+  await createConstitutionRule({ ...contextual(compound, E.BLOCK), name: 'Compound block' }, f.db);
+  assert.equal((await detectConstitutionConflicts({ userId: 'a' }, f.db)).conflicts.length, 1);
+  assert.equal((await contextResult(condition, { FIT_TIER: 'STRONG' }, E.REQUIRE_HUMAN)).result.humanReviewRequirements.length, 1);
+});
+
+test('canonical loader is tenant-scoped and preserves unknown risk', async () => {
+  const seen: any[] = [];
+  const db: any = {
+    prospect: { findUnique: async ({ where }: any) => { seen.push(where); return where.userId_id.userId === 'a' ?
+      { jobTitle: 'VP Sales', industry: 'Prospect Services', country: 'US', companySizeMin: 201, companySizeMax: null,
+        company: { industry: 'Company SaaS', companySizeMin: 50, companySizeMax: 500 } } : null; } },
+    prospectQualification: { findUnique: async ({ where }: any) => { seen.push(where); return { status: 'QUALIFIED' }; } },
+    prospectIntelligence: { findUnique: async ({ where }: any) => { seen.push(where); return { fitTier: 'STRONG' }; } },
+    decisionRevenueRisk: { findFirst: async ({ where }: any) => { seen.push(where); return null; } },
+  };
+  const facts = await loadSalesConstitutionFacts({ userId: 'a', prospectId: 'p', decisionId: 'd' }, db);
+  assert.equal(facts.RISK_BAND, null);
+  const decisionTime = selectConstitutionAccountFacts(
+    { industry: 'Prospect Services', companySizeMin: 201, companySizeMax: null },
+    { industry: 'Company SaaS', companySizeMin: 50, companySizeMax: 500 });
+  assert.equal(decisionTime.industry, facts.INDUSTRY);
+  assert.deepEqual({ min: decisionTime.companySizeMin, max: decisionTime.companySizeMax }, facts.COMPANY_SIZE);
+  assert.equal(facts.INDUSTRY, 'Company SaaS');
+  assert.deepEqual(facts.COMPANY_SIZE, { min: 50, max: 500 });
+  assert.deepEqual(selectConstitutionAccountFacts(
+    { industry: 'Prospect Services', companySizeMin: 201, companySizeMax: null },
+    { industry: ' ', companySizeMin: null, companySizeMax: null }),
+    { industry: 'Prospect Services', companySizeMin: 201, companySizeMax: null });
+  assert.ok(seen.every(where => where.userId_id?.userId === 'a' || where.userId_prospectId?.userId === 'a' || where.userId === 'a'));
+  await assert.rejects(loadSalesConstitutionFacts({ userId: 'b', prospectId: 'p' }, db), /not found/);
+});
+
+test('blank numeric condition is rejected while zero remains valid', () => {
+  for (const value of ['', '  ', 'NaN', 'Infinity']) assert.throws(() => parseNumericConditionValue(value), /numeric condition/);
+  assert.equal(parseNumericConditionValue('0'), 0);
+  assert.equal(parseNumericConditionValue('80'), 80);
+});
 
 test('one tenant root; reads, mutation and evaluation cannot cross tenants', async () => {
   const f = fixture();

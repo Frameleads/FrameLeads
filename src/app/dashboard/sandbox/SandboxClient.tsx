@@ -60,6 +60,8 @@ interface Lead {
   whatsAppDraft?: string | null;
   listId?: string | null;
   deployment_status: string;
+  marketProfile?: { source: string; profileKey: string; profileId: string | null; profileName: string;
+    detectedCountry: string | null; summary: string } | null;
   scout?: {
     prospectId: string; companyId: string | null; jobTitle: string | null; industry: string | null; country: string | null;
     fitScore: number | null; fitTier: string | null; whyFit: string | null; whyNow: string | null;
@@ -160,6 +162,7 @@ interface BatchResponse {
   processed_count: number;
   error_message: string | null;
 }
+type MarketChoice = { profileKey: string; profileId: string | null; profileName: string };
 
 // ── Status badge config ─────────────────────────────────────────────
 
@@ -235,6 +238,8 @@ export default function SandboxClient({
   const [isNavigating, startTransition] = useTransition();
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [marketChoices, setMarketChoices] = useState<MarketChoice[]>([]);
+  const [marketProfileOverride, setMarketProfileOverride] = useState('AUTO');
   const [batchId, setBatchId] = useState<string | null>(null);
   const [batchStatus, setBatchStatus] = useState<string>("processing");
   const [selectedId, setSelectedId] = useState<string>("");
@@ -255,6 +260,12 @@ export default function SandboxClient({
   useEffect(() => {
     setSearchQuery(initialQuery);
   }, [initialQuery]);
+
+  useEffect(() => { fetch('/api/market-profiles', { cache: 'no-store' }).then(response => response.ok ? response.json() : null)
+    .then(data => setMarketChoices([...(data?.builtins ?? []).map((profile: any) => ({ profileKey: profile.key,
+      profileId: null, profileName: profile.name })), ...(data?.profiles ?? []).filter((profile: any) => profile.enabled)
+      .map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name }))]))
+    .catch(() => setMarketChoices([])); }, []);
 
   useEffect(() => {
     setLeads(initialLeads);
@@ -626,7 +637,8 @@ useEffect(() => {
         creditsUsed: leadsProcessed,
         tier: isDemoAdmin ? 'ENTERPRISE' : userTier,
         force_regenerate: true,
-        regenerate: true
+        regenerate: true,
+        marketProfileOverride: marketProfileOverride === 'AUTO' ? null : marketProfileOverride
       };
       
       const res = await fetch(`/api/generate`, {
@@ -1062,6 +1074,17 @@ useEffect(() => {
             Intelligence
           </button>
         </div>
+        {activeTab === 'email' && <div className="flex items-center justify-end gap-2 border-b border-border/40 px-4 py-2 sm:px-6">
+          <label htmlFor="sandbox-market-profile" className="text-xs text-muted-foreground">Market Profile</label>
+          <select id="sandbox-market-profile" value={marketProfileOverride} onChange={event => setMarketProfileOverride(event.target.value)}
+            className="h-9 max-w-[60%] rounded-md border border-border/60 bg-background px-2 text-xs text-foreground sm:max-w-56">
+            <option value="AUTO">Auto - prospect country</option>{marketChoices.map(profile => <option key={profile.profileKey} value={profile.profileId || profile.profileKey}>{profile.profileName}</option>)}
+          </select>
+        </div>}
+        {selectedLead?.marketProfile && <p className="border-b border-border/40 px-4 py-2 text-xs text-muted-foreground sm:px-6">
+          Market profile: <span className="text-foreground">{selectedLead.marketProfile.profileName} - {selectedLead.marketProfile.summary}</span>
+          {' '}<span>{selectedLead.marketProfile.detectedCountry ? `${selectedLead.marketProfile.detectedCountry} detected` : 'Country not available; Global / Neutral used'}</span>
+        </p>}
         <div className="relative flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === "email" && selectedLead && sentLeads.has(selectedLead.id) && (
             <div className="mb-4 inline-flex items-center gap-1.5 px-2.5 py-1 rounded border border-[#004225] bg-[#002514] text-[#00FF85] text-[10px] font-bold uppercase tracking-widest w-max">

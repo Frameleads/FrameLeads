@@ -5,6 +5,7 @@ import { getProspectMemoryContext } from '../prospects/memory';
 import { getBrainContext } from '../brain';
 import { getPlaybookContext } from '../revenue-playbook';
 import { getSalesConstitutionContext } from '../sales-constitution';
+import { selectConstitutionAccountFacts } from '../sales-constitution-facts';
 
 const cap = (value: string | null | undefined, max: number) => (value ?? '').trim().slice(0, max);
 export const DECISION_ENGINE_VERSION = 'reply-decision-v1';
@@ -16,7 +17,7 @@ export async function buildReplyDecisionContext(input: { userId: string; prospec
   const [prospect, message] = await Promise.all([
     db.prospect.findUnique({ where: { userId_id: { userId, id: prospectId } },
       select: { id: true, firstName: true, lastName: true, companyName: true, companyId: true,
-        jobTitle: true, industry: true, country: true } }),
+        jobTitle: true, industry: true, country: true, companySizeMin: true, companySizeMax: true } }),
     db.conversationMessage.findFirst({ where: { id: messageId, userId, prospectId, conversationId,
       sourceType: Source.INBOUND_SIGNAL }, select: { id: true, body: true, sourceId: true, occurredAt: true } }),
   ]);
@@ -41,9 +42,10 @@ export async function buildReplyDecisionContext(input: { userId: string; prospec
     fitScore: intelligence?.fitScore ?? null, fitTier: intelligence?.fitTier ?? null,
     valueBand: intelligence?.potentialValueBand ?? company?.intelligence?.valueBand ?? null,
     researchStatus: intelligence?.researchStatus ?? null };
+  const accountFacts = selectConstitutionAccountFacts(prospect, company);
   const account = { name: cap(company?.name ?? prospect.companyName, 120),
-    industry: cap(company?.industry ?? prospect.industry, 120),
-    companySizeMin: company?.companySizeMin ?? null, companySizeMax: company?.companySizeMax ?? null,
+    industry: accountFacts.industry ?? '',
+    companySizeMin: accountFacts.companySizeMin, companySizeMax: accountFacts.companySizeMax,
     contactRole: cap(prospect.jobTitle, 120), country: cap(prospect.country, 80) };
   const recentLines = recent.reverse().map(row => `${row.direction} ${row.occurredAt.toISOString()}: ${
     row.body ? cap(row.body, 320) : '[send logged; actual body unavailable]'}`).join('\n').slice(0, 2800);

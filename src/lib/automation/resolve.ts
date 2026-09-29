@@ -13,14 +13,17 @@ const fallback = (mode: Mode) => mode === Mode.MANDATORY_ESCALATION ? Mode.MANDA
 /** All factual controls are re-read at call time. This function makes no AI or send call. */
 export async function evaluateAutomationMode(input: { userId: string; decisionId: string;
   proposedReply?: string | null; simulation?: { primaryIntent?: TriageIntent | null;
+    secondaryIntents?: TriageIntent[];
     confidenceScore?: number; requiresReview?: boolean; reviewReasons?: string[];
-    status?: DecisionStatus; requestedMode?: Mode; holdActive?: boolean } }, db: PrismaClient = prisma) {
+    status?: DecisionStatus; requestedMode?: Mode; holdActive?: boolean;
+    riskBand?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' } }, db: PrismaClient = prisma) {
   if (!input.userId || !input.decisionId) throw new TypeError('Tenant and Decision required');
   const storedDecision = await db.decision.findFirst({ where: { id: input.decisionId, userId: input.userId },
     include: { trace: true, inputMessage: { select: { sourceId: true, sourceType: true } } } });
   if (!storedDecision) throw new Error('Decision not found for tenant');
   const decision = { ...storedDecision, ...input.simulation && {
     primaryIntent: input.simulation.primaryIntent === undefined ? storedDecision.primaryIntent : input.simulation.primaryIntent,
+    secondaryIntents: input.simulation.secondaryIntents === undefined ? storedDecision.secondaryIntents : input.simulation.secondaryIntents,
     confidenceScore: input.simulation.confidenceScore ?? storedDecision.confidenceScore,
     requiresReview: input.simulation.requiresReview ?? storedDecision.requiresReview,
     reviewReasons: input.simulation.reviewReasons ?? storedDecision.reviewReasons,
@@ -50,12 +53,15 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   const reasons: string[] = [];
   if (override?.mode === CampaignMode.DISABLE_AUTOMATION) reasons.push('LEAD_LIST_AUTOMATION_DISABLED');
   const topic = decision.primaryIntent ? topicFor(decision.primaryIntent as TriageIntent) : null;
+  const contextRef = { prospectId: decision.prospectId, decisionId: decision.id,
+    primaryIntent: decision.primaryIntent, secondaryIntents: decision.secondaryIntents,
+    confidence: decision.confidenceScore, riskBandOverride: input.simulation?.riskBand };
   const evaluations: Evaluation[] = [await evaluateSalesConstitution({ userId: input.userId,
-    action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND, unsubscribeConfirmed: Boolean(suppression) } }, db)];
+    action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND, unsubscribeConfirmed: Boolean(suppression), contextRef } }, db)];
   if (topic) evaluations.push(await evaluateSalesConstitution({ userId: input.userId,
-    action: { actionType: 'TOPIC_RESPONSE', topic: topic.category, scope: topic.scope } }, db));
+    action: { actionType: 'TOPIC_RESPONSE', topic: topic.category, scope: topic.scope, contextRef } }, db));
   if (reply?.trim()) evaluations.push(await evaluateSalesConstitution({ userId: input.userId,
-    action: { actionType: 'CLAIM', proposedClaim: reply.trim().slice(0, 3000), scope: Scope.REPLY_DECISION } }, db));
+    action: { actionType: 'CLAIM', proposedClaim: reply.trim().slice(0, 3000), scope: Scope.REPLY_DECISION, contextRef } }, db));
   const ruleIds = [...new Set(evaluations.flatMap(result => result.matchedRules.map(rule => rule.id)))];
   const currentConstitutionRevision = Math.max(...evaluations.map(result => result.revision));
   const decisionConstitutionRevision = decision.trace?.constitutionRevision ?? null;

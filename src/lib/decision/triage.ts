@@ -5,6 +5,7 @@ import { AIFeature, AIOperation, AIProvider, AIUsageStatus, ConstitutionCategory
 import { prisma } from '../prisma';
 import { recordAIUsage, type AIUsageTokens } from '../ai/usage';
 import { evaluateSalesConstitution } from '../sales-constitution';
+import { buildSalesConstitutionFacts } from '../sales-constitution-facts';
 import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
 import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput,
@@ -146,6 +147,12 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
   const policyResults: Awaited<ReturnType<typeof evaluateSalesConstitution>>[] = [];
   const policyActions: string[] = [];
   const evaluate = deps.evaluatePolicy ?? evaluateSalesConstitution;
+  const constitutionFacts = buildSalesConstitutionFacts({ qualificationStatus: context.icp?.qualification,
+    fitTier: context.icp?.fitTier, primaryIntent: analysis?.primaryIntent,
+    secondaryIntents: analysis?.intents.filter(v => v.intent !== analysis?.primaryIntent).map(v => v.intent),
+    confidence: analysis?.overallConfidence, jobTitle: context.account?.contactRole,
+    industry: context.account?.industry, country: context.account?.country,
+    companySizeMin: context.account?.companySizeMin, companySizeMax: context.account?.companySizeMax });
   const intents = analysis?.intents.map(v => v.intent) ?? [];
   const topics = [...new Map(intents.map(intent => topicFor(intent)).filter((v): v is NonNullable<typeof v> => Boolean(v))
     .map(v => [v.category, v])).values()].slice(0, 3);
@@ -153,26 +160,26 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     if (topics.length) for (const topic of topics) {
       policyActions.push(`TOPIC_RESPONSE:${topic.category}`);
       policyResults.push(await evaluate({ userId: input.userId,
-        action: { actionType: 'TOPIC_RESPONSE', topic: topic.category, scope: topic.scope } }, db));
+        action: { actionType: 'TOPIC_RESPONSE', topic: topic.category, scope: topic.scope, facts: constitutionFacts } }, db));
     } else {
       policyActions.push('TOPIC_RESPONSE');
       policyResults.push(await evaluate({ userId: input.userId,
-        action: { actionType: 'TOPIC_RESPONSE', scope: Scope.REPLY_DECISION } }, db));
+        action: { actionType: 'TOPIC_RESPONSE', scope: Scope.REPLY_DECISION, facts: constitutionFacts } }, db));
     }
     if (analysis?.suggestedReply) {
       policyActions.push('CLAIM');
       policyResults.push(await evaluate({ userId: input.userId,
-        action: { actionType: 'CLAIM', proposedClaim: analysis.suggestedReply, scope: Scope.REPLY_DECISION } }, db));
+        action: { actionType: 'CLAIM', proposedClaim: analysis.suggestedReply, scope: Scope.REPLY_DECISION, facts: constitutionFacts } }, db));
     }
     if (analysis?.recommendedNextAction !== 'NO_SALES_OUTREACH') {
       policyActions.push('OUTREACH');
       policyResults.push(await evaluate({ userId: input.userId,
-        action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND } }, db));
+        action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND, facts: constitutionFacts } }, db));
     }
     if (fast?.intent === Intent.UNSUBSCRIBE) {
       policyActions.push('OUTREACH:UNSUBSCRIBE_CONFIRMED');
       policyResults.push(await evaluate({ userId: input.userId,
-        action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND, unsubscribeConfirmed: true } }, db));
+        action: { actionType: 'OUTREACH', scope: Scope.OUTBOUND, unsubscribeConfirmed: true, facts: constitutionFacts } }, db));
     }
   } catch {
     console.error('Inbox triage Constitution evaluation failed');

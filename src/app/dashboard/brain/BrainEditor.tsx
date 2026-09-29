@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { BrainKnowledgeCategory } from '@prisma/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import MarketProfiles from './MarketProfiles';
 
 type Entry = { id: string; category: BrainKnowledgeCategory; key: string; value: string; sourceType: string; verification: string; importance: number };
 type View = { revision: number; compactSummary: string; entries: Entry[] };
@@ -62,5 +63,6 @@ export default function BrainEditor({ initial }: { initial: View }) {
       {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
     </div></section>
     <section className="rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">Knowledge entries</h2>{view.entries.length ? <ul className="mt-4 space-y-3">{view.entries.map(entry => <li key={entry.id} className="rounded-lg border border-border/50 p-3 text-sm"><div className="flex flex-wrap items-start justify-between gap-2"><div><span className="text-xs uppercase text-muted-foreground">{entry.category.replaceAll('_', ' ')} · {entry.sourceType.replaceAll('_', ' ')} · {entry.verification}</span><h3 className="mt-1 font-medium">{entry.key}</h3></div>{entry.sourceType === 'USER_ENTERED' && <div className="flex gap-2"><button type="button" className="text-primary underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setDraft({ id: entry.id, category: entry.category, key: entry.key, value: entry.value })}>Edit</button><button type="button" disabled={pending} className="text-red-300 underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => remove(entry.id)}>Remove</button></div>}</div><p className="mt-2 whitespace-pre-wrap break-words text-muted-foreground">{entry.value}</p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No knowledge entries yet.</p>}</section>
+    <MarketProfiles />
   </main>;
 }

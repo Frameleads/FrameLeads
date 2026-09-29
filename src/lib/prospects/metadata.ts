@@ -21,6 +21,7 @@ export const cleanFactualText = (value: unknown): string | null => {
 
 const countryAliases: Record<string, string> = {
   us: 'United States', usa: 'United States', 'u s': 'United States', 'u s a': 'United States', 'united states': 'United States',
+  uk: 'United Kingdom', gb: 'United Kingdom', 'great britain': 'United Kingdom', 'united kingdom': 'United Kingdom',
   ae: 'United Arab Emirates', uae: 'United Arab Emirates', 'u a e': 'United Arab Emirates', 'united arab emirates': 'United Arab Emirates',
 };
 export function normalizeCountry(value: unknown): string | null {

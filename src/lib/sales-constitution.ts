@@ -1,9 +1,17 @@
 import { ConstitutionActionType as ActionType, ConstitutionCategory as Category,
   ConstitutionEffect as Effect, ConstitutionSource as Source, ConstitutionSeverity as Severity,
   ConstitutionScope as Scope, ConstitutionChangeType as ChangeType, type Prisma,
-  type PrismaClient, type SalesConstitutionRule } from '@prisma/client';
+  TriageIntent, type PrismaClient, type SalesConstitutionRule } from '@prisma/client';
 import { prisma } from './prisma';
 import { identityTransaction } from './prospects/identity';
+import { loadSalesConstitutionFacts } from './sales-constitution-facts';
+
+export const CONTEXT_FIELDS = ['QUALIFICATION_STATUS', 'FIT_TIER', 'PRIMARY_INTENT', 'SECONDARY_INTENT',
+  'CONFIDENCE', 'JOB_TITLE', 'INDUSTRY', 'COUNTRY', 'COMPANY_SIZE', 'RISK_BAND'] as const;
+export type ContextField = typeof CONTEXT_FIELDS[number];
+export type ConstitutionFacts = Partial<Record<ContextField, string | number | string[] | { min: number | null; max: number | null } | null>>;
+export type ContextLeaf = { kind: 'FACT'; field: ContextField; operator: 'EQ' | 'NEQ' | 'CONTAINS' | 'LT' | 'LTE' | 'GT' | 'GTE'; value: string | number };
+export type ContextCompound = { kind: 'ALL' | 'ANY'; conditions: (ContextLeaf | { kind: 'ALL' | 'ANY'; conditions: ContextLeaf[] })[] };
 
 export type ConstitutionConstraint =
   | { kind: 'DISCOUNT_PERCENT'; threshold: number; comparison: 'GT' | 'GTE' }
@@ -11,7 +19,8 @@ export type ConstitutionConstraint =
   | { kind: 'PROHIBITED_CLAIM'; terms: string[] }
   | { kind: 'TOPIC'; topic: Category }
   | { kind: 'UNSUBSCRIBE' }
-  | { kind: 'CUSTOM_MANUAL' };
+  | { kind: 'CUSTOM_MANUAL' }
+  | ContextLeaf | ContextCompound;
 export type ConstitutionRuleInput = {
   name: string; category: Category; effect: Effect; description: string;
   constraint: ConstitutionConstraint; actionTypes: ActionType[]; severity?: Severity; scope?: Scope;
@@ -20,6 +29,9 @@ export type ConstitutionRuleInput = {
 export type ConstitutionAction = {
   actionType: ActionType; proposedDiscountPercent?: number | null; proposedContractMonths?: number | null;
   proposedClaim?: string | null; topic?: Category | null; unsubscribeConfirmed?: boolean | null; scope?: Scope | null;
+  facts?: ConstitutionFacts | null;
+  contextRef?: { prospectId: string; decisionId?: string; primaryIntent?: TriageIntent | null;
+    secondaryIntents?: TriageIntent[]; confidence?: number | null; riskBandOverride?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' };
 };
 /** Hard Constitution results outrank all lower-authority guidance and recommendations. */
 export const CONSTITUTION_AUTHORITY = 'SALES_CONSTITUTION' as const;
@@ -70,10 +82,50 @@ const positive = (value: unknown, label: string, max: number) => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) throw new TypeError(`Invalid ${label}`);
   return value;
 };
+const factEnums: Partial<Record<ContextField, readonly string[]>> = {
+  QUALIFICATION_STATUS: ['UNASSESSED','QUALIFIED','REJECTED','NEEDS_REVIEW'],
+  FIT_TIER: ['STRONG','MODERATE','WEAK','DISQUALIFIED'],
+  PRIMARY_INTENT: Object.values(TriageIntent),
+  SECONDARY_INTENT: Object.values(TriageIntent),
+  RISK_BAND: ['LOW','MEDIUM','HIGH','CRITICAL'],
+};
+const textFields: ContextField[] = ['JOB_TITLE','INDUSTRY','COUNTRY'];
+function validateContextConstraint(value: Record<string, unknown>, depth = 1): ContextLeaf | ContextCompound {
+  if (value.kind === 'FACT') {
+    shape(value, ['kind','field','operator','value']);
+    if (!CONTEXT_FIELDS.includes(value.field as ContextField)) throw new TypeError('Invalid contextual field');
+    const field = value.field as ContextField, operator = value.operator as ContextLeaf['operator'];
+    if (field === 'CONFIDENCE' || field === 'COMPANY_SIZE') {
+      if (!['LT','LTE','GT','GTE'].includes(operator) || typeof value.value !== 'number' ||
+        !Number.isInteger(value.value) || value.value < 0 || value.value > (field === 'CONFIDENCE' ? 100 : 1_000_000_000))
+        throw new TypeError('Invalid numeric contextual condition');
+    } else if (field === 'SECONDARY_INTENT') {
+      if (operator !== 'CONTAINS' || !factEnums[field]?.includes(value.value as string)) throw new TypeError('Invalid secondary intent condition');
+    } else if (factEnums[field]) {
+      if (!['EQ','NEQ'].includes(operator) || !factEnums[field]?.includes(value.value as string)) throw new TypeError('Invalid enum contextual condition');
+    } else if (textFields.includes(field)) {
+      if (!['EQ','NEQ'].includes(operator)) throw new TypeError('Invalid text contextual operator');
+      boundedText(value.value, 'Context value', 120);
+    }
+    return { kind: 'FACT', field, operator, value: value.value as string | number };
+  }
+  if (value.kind !== 'ALL' && value.kind !== 'ANY') throw new TypeError('Invalid compound kind');
+  shape(value, ['kind','conditions']);
+  if (!Array.isArray(value.conditions) || !value.conditions.length || value.conditions.length > 6 || depth > 2)
+    throw new TypeError('Compound conditions must contain 1-6 leaves at depth <= 2');
+  const conditions = value.conditions.map(child => {
+    if (!plain(child)) throw new TypeError('Invalid child condition');
+    return validateContextConstraint(child, depth + 1);
+  });
+  const count = conditions.reduce((sum, child) => sum + (child.kind === 'FACT' ? 1 : child.conditions.length), 0);
+  if (count > 6) throw new TypeError('At most 6 leaf conditions');
+  return { kind: value.kind, conditions } as ContextCompound;
+}
 
 export function validateConstitutionConstraint(value: unknown): ConstitutionConstraint {
   if (!plain(value)) throw new TypeError('Constraint must be an object');
   switch (value.kind) {
+    case 'FACT': case 'ALL': case 'ANY': return validateContextConstraint(value);
     case 'DISCOUNT_PERCENT':
       shape(value, ['kind', 'threshold', 'comparison']);
       if (!['GT', 'GTE'].includes(value.comparison as string)) throw new TypeError('Invalid discount comparison');
@@ -214,7 +266,7 @@ export async function archiveConstitutionRule(input: { userId: string; actorId?:
 
 function validatedAction(input: ConstitutionAction): ConstitutionAction {
   if (!plain(input)) throw new TypeError('Action is required');
-  const allowed = ['actionType', 'proposedDiscountPercent', 'proposedContractMonths', 'proposedClaim', 'topic', 'unsubscribeConfirmed', 'scope'];
+  const allowed = ['actionType', 'proposedDiscountPercent', 'proposedContractMonths', 'proposedClaim', 'topic', 'unsubscribeConfirmed', 'scope', 'facts', 'contextRef'];
   if (Object.keys(input).some(key => !allowed.includes(key))) throw new TypeError('Unknown action field');
   const actionType = enumValues(input.actionType, ActionType, 'action type');
   if (input.proposedDiscountPercent != null) positive(input.proposedDiscountPercent, 'discount percent', 100);
@@ -223,9 +275,15 @@ function validatedAction(input: ConstitutionAction): ConstitutionAction {
   if (input.topic != null) enumValues(input.topic, Category, 'topic');
   if (input.unsubscribeConfirmed != null && typeof input.unsubscribeConfirmed !== 'boolean') throw new TypeError('Invalid unsubscribe status');
   if (input.scope != null) enumValues(input.scope, Scope, 'scope');
+  if (input.facts != null && (!plain(input.facts) || Object.keys(input.facts).some(key => !CONTEXT_FIELDS.includes(key as ContextField))))
+    throw new TypeError('Invalid Constitution facts');
+  if (input.contextRef != null && (!plain(input.contextRef) || !input.contextRef.prospectId ||
+    Object.keys(input.contextRef).some(key => !['prospectId','decisionId','primaryIntent','secondaryIntents','confidence','riskBandOverride'].includes(key))))
+    throw new TypeError('Invalid Constitution context reference');
   return { actionType, proposedDiscountPercent: input.proposedDiscountPercent ?? null,
     proposedContractMonths: input.proposedContractMonths ?? null, proposedClaim: input.proposedClaim ?? null,
-    topic: input.topic ?? null, unsubscribeConfirmed: input.unsubscribeConfirmed ?? null, scope: input.scope ?? null };
+    topic: input.topic ?? null, unsubscribeConfirmed: input.unsubscribeConfirmed ?? null, scope: input.scope ?? null,
+    facts: input.facts ?? null, contextRef: input.contextRef };
 }
 type Match = 'MATCH' | 'PASS' | 'UNRESOLVED';
 const effectRank: Record<Effect, number> = {
@@ -239,20 +297,60 @@ function precedence(a: SalesConstitutionRule, b: SalesConstitutionRule) {
     b.priority - a.priority || a.id.localeCompare(b.id);
 }
 function constraintField(constraint: ConstitutionConstraint) {
+  if (constraint.kind === 'FACT') return constraint.field;
+  if (constraint.kind === 'ALL' || constraint.kind === 'ANY') return constraint.kind;
   return constraint.kind === 'DISCOUNT_PERCENT' ? 'proposedDiscountPercent' :
     constraint.kind === 'MIN_CONTRACT_MONTHS' ? 'proposedContractMonths' :
     constraint.kind === 'PROHIBITED_CLAIM' ? 'proposedClaim' :
     constraint.kind === 'TOPIC' ? 'topic' : constraint.kind === 'UNSUBSCRIBE' ? 'unsubscribeConfirmed' : 'manualReview';
 }
 function constraintDescription(constraint: ConstitutionConstraint) {
+  if (constraint.kind === 'FACT') return `${constraint.field} ${constraint.operator} ${constraint.value}`;
+  if (constraint.kind === 'ALL' || constraint.kind === 'ANY') return `${constraint.kind} of ${constraint.conditions.length} conditions`;
   return constraint.kind === 'DISCOUNT_PERCENT' ? `discount ${constraint.comparison} ${constraint.threshold}%` :
     constraint.kind === 'MIN_CONTRACT_MONTHS' ? `contract shorter than ${constraint.minimum} months` :
     constraint.kind === 'PROHIBITED_CLAIM' ? `claim contains one of ${constraint.terms.length} prohibited phrases` :
     constraint.kind === 'TOPIC' ? `topic is ${constraint.topic}` :
     constraint.kind === 'UNSUBSCRIBE' ? 'confirmed unsubscribe is true' : 'manual interpretation required';
 }
+function contextualMatch(constraint: ContextLeaf | ContextCompound, facts: ConstitutionFacts | null | undefined,
+  conditions: { field: string; expected: string; observed: string; result: Match }[]): Match {
+  if (constraint.kind !== 'FACT') {
+    const childResults = constraint.conditions.map(child => contextualMatch(child, facts, conditions));
+    const result: Match = constraint.kind === 'ALL' ? childResults.includes('PASS') ? 'PASS' :
+      childResults.includes('UNRESOLVED') ? 'UNRESOLVED' : 'MATCH' :
+      childResults.includes('MATCH') ? 'MATCH' : childResults.includes('UNRESOLVED') ? 'UNRESOLVED' : 'PASS';
+    conditions.push({ field: constraint.kind, expected: constraint.kind, observed: childResults.join(','), result });
+    return result;
+  }
+  const observed = facts?.[constraint.field];
+  let result: Match = 'UNRESOLVED';
+  if (observed != null && observed !== '') {
+    if (constraint.field === 'COMPANY_SIZE') {
+      const range = observed as { min: number | null; max: number | null }, threshold = constraint.value as number;
+      const min = range.min, max = range.max;
+      if (constraint.operator === 'GTE') result = min != null && min >= threshold ? 'MATCH' : max != null && max < threshold ? 'PASS' : 'UNRESOLVED';
+      else if (constraint.operator === 'GT') result = min != null && min > threshold ? 'MATCH' : max != null && max <= threshold ? 'PASS' : 'UNRESOLVED';
+      else if (constraint.operator === 'LTE') result = max != null && max <= threshold ? 'MATCH' : min != null && min > threshold ? 'PASS' : 'UNRESOLVED';
+      else result = max != null && max < threshold ? 'MATCH' : min != null && min >= threshold ? 'PASS' : 'UNRESOLVED';
+    } else if (constraint.field === 'CONFIDENCE' && typeof observed === 'number') {
+      const value = constraint.value as number;
+      result = (constraint.operator === 'LT' && observed < value || constraint.operator === 'LTE' && observed <= value ||
+        constraint.operator === 'GT' && observed > value || constraint.operator === 'GTE' && observed >= value) ? 'MATCH' : 'PASS';
+    } else if (constraint.field === 'SECONDARY_INTENT' && Array.isArray(observed))
+      result = observed.includes(String(constraint.value)) ? 'MATCH' : 'PASS';
+    else if (typeof observed === 'string') {
+      const equal = observed.trim().toLocaleLowerCase() === String(constraint.value).trim().toLocaleLowerCase();
+      result = (constraint.operator === 'EQ' ? equal : !equal) ? 'MATCH' : 'PASS';
+    }
+  }
+  conditions.push({ field: constraint.field, expected: `${constraint.operator} ${constraint.value}`,
+    observed: observed == null ? 'UNKNOWN' : JSON.stringify(observed).slice(0, 160), result });
+  return result;
+}
 function matches(constraint: ConstitutionConstraint, action: ConstitutionAction): Match {
   switch (constraint.kind) {
+    case 'FACT': case 'ALL': case 'ANY': return contextualMatch(constraint, action.facts, []);
     case 'DISCOUNT_PERCENT':
       if (action.proposedDiscountPercent == null) return 'UNRESOLVED';
       return (constraint.comparison === 'GT' ? action.proposedDiscountPercent > constraint.threshold : action.proposedDiscountPercent >= constraint.threshold) ? 'MATCH' : 'PASS';
@@ -279,6 +377,7 @@ export async function evaluateSalesConstitution(input: { userId: string; action:
     priority: number; effect: Effect; machineEvaluable: boolean; matchResult: Match | 'OUT_OF_SCOPE';
     conditions: { field: string; expected: string; observed: string; result: Match }[];
     finalEffectiveResult: string; precedenceReason: string | null }[] = [];
+  let facts = action.facts;
   if (!constitution) return { authority: CONSTITUTION_AUTHORITY, authorityOrder: POLICY_AUTHORITY_ORDER,
     revision: 0, configurationMissing: true, allowed: false, decision: 'REQUIRES_REVIEW' as const,
     effectiveEffect: null, winningRule: null, winnerReason: 'No Constitution is initialized for this tenant.',
@@ -304,10 +403,17 @@ export async function evaluateSalesConstitution(input: { userId: string; action:
         try {
           const constraint = validateConstitutionConstraint(rule.constraint);
           machineEvaluable = constraint.kind !== 'CUSTOM_MANUAL';
-          result = matches(constraint, action);
-          const value = action[constraintField(constraint) as keyof ConstitutionAction];
-          conditions.push({ field: constraintField(constraint), expected: constraintDescription(constraint),
-            observed: value == null ? 'UNKNOWN' : typeof value === 'string' ? value.slice(0, 120) : String(value), result });
+          if (constraint.kind === 'FACT' || constraint.kind === 'ALL' || constraint.kind === 'ANY') {
+            if (!facts && action.contextRef) facts = await loadSalesConstitutionFacts({ userId,
+              ...action.contextRef }, db);
+            result = contextualMatch(constraint, facts, conditions);
+          }
+          else {
+            result = matches(constraint, action);
+            const value = action[constraintField(constraint) as keyof ConstitutionAction];
+            conditions.push({ field: constraintField(constraint), expected: constraintDescription(constraint),
+              observed: value == null ? 'UNKNOWN' : typeof value === 'string' ? value.slice(0, 120) : String(value), result });
+          }
         } catch {
           result = 'UNRESOLVED';
           conditions.push({ field: 'constraint', expected: 'valid typed constraint', observed: 'INVALID', result: 'UNRESOLVED' });
@@ -357,6 +463,8 @@ function overlapKeys(constraint: ConstitutionConstraint): string[] {
     case 'PROHIBITED_CLAIM': return constraint.terms.map(v => `claim:${clean(v).toLowerCase()}`);
     case 'TOPIC': return [`topic:${constraint.topic}`];
     case 'UNSUBSCRIBE': return ['unsubscribe:confirmed'];
+    case 'FACT': return [`fact:${constraint.field}:${constraint.operator}:${constraint.value}`];
+    case 'ALL': case 'ANY': return []; // Compound overlap is not proven by a shared leaf.
     case 'CUSTOM_MANUAL': return []; // Unknown conditions cannot prove a conflict.
   }
 }
@@ -418,6 +526,7 @@ function render(rule: SalesConstitutionRule) {
   const summary = constraint.kind === 'DISCOUNT_PERCENT' ? `Discount ${constraint.comparison} ${constraint.threshold}%` :
     constraint.kind === 'MIN_CONTRACT_MONTHS' ? `Contract shorter than ${constraint.minimum} months` :
     constraint.kind === 'PROHIBITED_CLAIM' ? `Prohibited claim phrases: ${constraint.terms.join(', ').slice(0, 240)}` :
+    constraint.kind === 'FACT' || constraint.kind === 'ALL' || constraint.kind === 'ANY' ? constraintDescription(constraint) :
     constraint.kind === 'TOPIC' ? `Topic ${constraint.topic}` : constraint.kind === 'UNSUBSCRIBE' ? 'Confirmed unsubscribe' :
     'Manual review required; not machine-evaluable';
   return `${rule.category} | ${rule.effect} | severity ${rule.severity} | scope ${rule.scope} | priority ${rule.priority} | ${rule.name.slice(0, 120)} | ${summary} | ${rule.description.slice(0, 300)} | source ${rule.source} | rule revision ${rule.revision}`;

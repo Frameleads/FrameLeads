@@ -59,6 +59,7 @@ interface LeadListOption {
   id: string;
   name: string;
 }
+type MarketChoice = { profileKey: string; profileId?: string | null; profileName: string };
 
 interface ManualContactForm {
   firstName: string;
@@ -127,6 +128,8 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   const [error, setError] = useState<string | null>(null);
   const [campaignContext, setCampaignContext] = useState<any>(null);
   const [availableLists, setAvailableLists] = useState<LeadListOption[]>([]);
+  const [marketChoices, setMarketChoices] = useState<MarketChoice[]>([]);
+  const [marketProfileOverride, setMarketProfileOverride] = useState('AUTO');
   const [selectedListId, setSelectedListId] = useState("");
   const [newListName, setNewListName] = useState("");
   const [newListSource, setNewListSource] = useState<'UNKNOWN' | 'USER_CURATED' | 'BROAD_POOL'>('UNKNOWN');
@@ -170,6 +173,11 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     window.addEventListener("frameleads:lists-changed", loadLists);
     return () => window.removeEventListener("frameleads:lists-changed", loadLists);
   }, [loadLists]);
+
+  useEffect(() => { fetch('/api/market-profiles', { cache: 'no-store' }).then(response => response.ok ? response.json() : null)
+    .then(data => setMarketChoices([...(data?.builtins ?? []).map((profile: any) => ({ profileKey: profile.key, profileId: null, profileName: profile.name })),
+      ...(data?.profiles ?? []).filter((profile: any) => profile.enabled).map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name }))]))
+    .catch(() => setMarketChoices([])); }, []);
 
   const handleCreateList = async () => {
     const name = newListName.trim();
@@ -396,6 +404,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       tier: userTier,
       listId: selectedListId || null,
       overwriteExisting,
+      marketProfileOverride: marketProfileOverride === 'AUTO' ? null : marketProfileOverride,
     };
 
     // ── POST to backend ───────────────────────────────────────────
@@ -478,6 +487,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       tier: userTier,
       listId: selectedListId || null,
       overwriteExisting,
+      marketProfileOverride: marketProfileOverride === 'AUTO' ? null : marketProfileOverride,
     };
 
     setIsSavingManualContact(true);
@@ -713,6 +723,13 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                 Create
               </button>
             </div>
+            <label className="mt-3 block text-sm text-gray-300">Market Profile
+              <select value={marketProfileOverride} onChange={event => setMarketProfileOverride(event.target.value)}
+                className="mt-1 h-10 w-full rounded-xl border border-[#242424] bg-black px-3 text-sm text-gray-200">
+                <option value="AUTO">Auto - prospect country</option>
+                {marketChoices.map(profile => <option key={profile.profileId || profile.profileKey} value={profile.profileKey === 'GLOBAL' || !profile.profileId ? profile.profileKey : profile.profileId}>{profile.profileName}</option>)}
+              </select>
+            </label>
             <label className="mt-3 flex items-center gap-3 text-sm text-gray-300">How was this list selected?
               <select value={newListSource} onChange={event => setNewListSource(event.target.value as typeof newListSource)} className="h-9 rounded-lg border border-[#242424] bg-[#000000] px-2 text-sm text-gray-200">
                 <option value="UNKNOWN">Not specified</option><option value="USER_CURATED">Already ICP-filtered</option><option value="BROAD_POOL">Broad prospect pool</option>

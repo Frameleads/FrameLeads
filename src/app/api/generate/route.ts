@@ -7,6 +7,10 @@ import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { enrichExistingLeadProspect, saveGeneratedLead } from '@/lib/prospects/persistence';
 import { extractProspectMetadata } from '@/lib/prospects/metadata';
+import { getBrainContext } from '@/lib/brain';
+import { getPlaybookContext } from '@/lib/revenue-playbook';
+import { getSalesConstitutionContext } from '@/lib/sales-constitution';
+import { buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   validateGeneratedChannels,
@@ -16,19 +20,13 @@ import {
   type PipelineContext,
 } from '@/lib/word-count-gate';
 
-const SYSTEM_PROMPT = `You are a B2B sales assistant. Your job is to fill in the blanks of a strict email template.
-Do NOT use any corporate jargon. Use 6th-grade English.
+const SYSTEM_PROMPT = `You are a careful B2B SDR writer. Keep copy human, peer-to-peer, concise, low-jargon, and low-pressure. Avoid fake empathy and generic openings. Email paragraph count and structure may vary with the supplied market presentation guidance.
 
 Output ONLY valid JSON in this exact format:
 {
 "email": {
 "subject": "2-3 word lowercase subject",
-"paragraphs": [
-"I noticed you are scaling the team at {company_name}.",
-"The trap most founders fall into here is manual CRM work, which actively burns [INVENT A SPECIFIC NUMERICAL METRIC: e.g., $40k/month, 11 hours/week] in lost pipeline.",
-"We built a triage architecture that governs this autonomously, dropping response times to under 5 minutes without adding payroll.",
-"Opposed to taking a look at the sandbox?"
-]
+"paragraphs": ["Email body paragraphs. Adapt structure to the supplied market profile while preserving the selected sales objective."]
 },
 "linkedin": "Short, direct 2-3 sentence LinkedIn connection note/DM focusing on pipeline fragility.",
 "coldCall": "Crisp 30-second conversational phone script: Opener -> Problem diagnosis -> Low-friction permission check.",
@@ -36,13 +34,14 @@ Output ONLY valid JSON in this exact format:
 "psLine": "A one-sentence P.S. offering a highly relevant, low-friction asset (like a visual case study or a brief technical breakdown) related to the specific bottleneck diagnosed in the email."
 }
 
-Ensure all four channels adhere to our core copy principles: 6th-grade English, concrete metrics ($15k–$67k loss / Zapier timeout errors), and zero corporate jargon.
+Use simple, clear language without corporate jargon. Do not add numerical details unless they exist in trusted input/context.
 
 CRITICAL SYSTEM DIRECTIVES (STRICTLY ENFORCED):
 
-1. Zero Hallucinated Context: The core pain point you address MUST be 100% derived from the [Incident_Details] variable. If the incident details mention manual labor, you only discuss the pain of manual labor. DO NOT invent, assume, or hallucinate that the prospect uses specific software (e.g., Zapier, Make, Hubspot, Salesforce) unless it is explicitly stated in the incident.
+1. Zero Hallucinated Context: The core pain point must be derived only from the incident field in TRUSTED PROSPECT INPUT (the supplied incident details). If incident is absent, do not invent a pain, event, software, metric, or monetary loss. If it mentions manual labor, discuss only that supplied operational issue. Do not assume specific software unless explicitly stated in incident.
+1a. Only FrameLeads Brain entries marked VERIFIED can support company/product factual claims; other Brain entries may guide voice only.
 2. Abolish Fake Empathy: You are forbidden from using generic B2B pleasantries. Do not start with phrases like "I noticed you are growing fast," or "Congrats on the scaling." The first sentence must immediately and cleanly address the operational reality extracted from the incident.
-3. No Fabricated Math: Do not invent specific monetary losses (e.g., "$28k/month"). Instead, frame the loss through universal operational metrics, such as "silent pipeline decay," "unnecessary manual overhead," or "wasted hours in triage," unless a specific dollar amount is provided in the raw data.
+3. No Fabrication: Never invent financial values, performance metrics, software/tool usage, company facts, business events, pains, ROI, or offers. Use numbers only when present in trusted supplied input/context. If evidence is absent, omit the claim.
 
 STRICT EMAIL SUBJECT FORMAT:
 - Output the subject line exactly once, only in "email.subject", with no "Subject:" prefix.
@@ -115,6 +114,7 @@ export async function POST(req: Request) {
       force_regenerate, 
       regenerate,
       preferredCtaStyle = 'Self-Serve Audit Link',
+      marketProfileOverride = null,
       listId = null,
       overwriteExisting = false,
       context = {}
@@ -166,6 +166,7 @@ export async function POST(req: Request) {
             linkedInUrl: { in: linkedInUrls },
           },
           orderBy: { createdAt: 'desc' },
+          include: { prospect: { select: { country: true } } },
         })
       : [];
     const existingByLinkedInUrl = new Map<string, (typeof existingRecords)[number]>();
@@ -230,22 +231,35 @@ export async function POST(req: Request) {
 
     if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
+      const [brain, playbook, constitution, marketProfiles] = await Promise.all([
+        getBrainContext({ userId: currentUserId, purpose: 'outbound', maxEntries: 8, maxCharacters: 650 }, prisma),
+        getPlaybookContext({ userId: currentUserId, purpose: 'outbound', maxRules: 4, maxCharacters: 550 }, prisma),
+        getSalesConstitutionContext({ userId: currentUserId, purpose: 'outbound', maxRules: 4, maxCharacters: 550 }, prisma),
+        listMarketProfiles(currentUserId, prisma),
+      ]);
 
       const generatedLeads = await Promise.all(
         allowedLeads.map(async (lead: any, index: number) => {
           try {
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-            const prompt = `Generate outreach for:
-Name: ${lead.first_name || 'Founder'}
-Company: ${lead.company_name || 'Unknown'}
-Context: We provide autonomous AI acquisition infrastructure.
-Preferred CTA Style: "${preferredCtaStyle}"
-Unique Generation Seed: ${uniqueSeed}
-CRITICAL DIRECTIVE: Write a completely original, fresh variation. Do not repeat previous sentence structures. End EVERY channel script with a CTA that strictly matches: "${preferredCtaStyle}". Ensure you use a No-Oriented/Permission-based question.
-WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This is a hard constraint.`;
-
-            // ── WORD-COUNT GATE: Retry loop ─────────────────────────
+            const savedLead = lead.lead_id ? existingByLinkedInUrl.get(getLeadLinkedInUrl(lead)) : undefined;
+            const marketRequestedLeadId = regenerate === true && typeof (lead.lead_id || lead.id) === 'string' ? (lead.lead_id || lead.id) as string : null;
+            const ownedLead = marketRequestedLeadId ? await prisma.generatedLead.findFirst({ where: { id: marketRequestedLeadId, userId: currentUserId },
+              include: { prospect: { select: { country: true } } } }) : null;
+            if (marketRequestedLeadId && !ownedLead) throw new Error('Regeneration lead is not owned by authenticated user');
+            const metadata = extractProspectMetadata(lead);
+            const country = ownedLead?.prospect?.country || savedLead?.prospect?.country || metadata.country;
+            const marketProfile = await resolveMarketProfile({ userId: currentUserId, country, override: marketProfileOverride,
+              profiles: marketProfiles }, prisma);
+            const factualLead = { name: [lead.first_name, lead.last_name].filter(Boolean).join(' '),
+              company: lead.company_name || null, incident: lead.provided_incident_details || lead.incident_details || null,
+              jobTitle: metadata.jobTitle, industry: metadata.industry, country, location: metadata.location,
+              companySizeMin: metadata.companySizeMin, companySizeMax: metadata.companySizeMax };
+            const prompt = buildMarketAwareGenerationPrompt({ brain: brain.contextText, playbook: playbook.contextText,
+              constitution: constitution.contextText, profile: marketProfile, prospect: factualLead,
+              preferredCtaStyle: String(preferredCtaStyle), seed: uniqueSeed, wordLimit: OUTBOUND_WORD_LIMIT });
+            // â”€â”€ WORD-COUNT GATE: Retry loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             const pipelineContext: PipelineContext = 'outbound';
             let generated: any = null;
             let attempt = 0;
@@ -397,6 +411,7 @@ WORD LIMIT: Each channel body MUST be under ${OUTBOUND_WORD_LIMIT} words. This i
               generated_linkedin: generated.linkedin || { body: "" },
               generated_script: generated.coldCall || { body: "" },
               generated_whatsapp: generated.whatsapp || { body: "" },
+              marketProfile,
               deployment_status: "pending"
             };
           } catch (e) {
