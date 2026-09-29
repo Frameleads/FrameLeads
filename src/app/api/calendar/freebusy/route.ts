@@ -17,6 +17,7 @@ import {
   startOfDay,
 } from "date-fns";
 import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { requireFeatureAccess } from "@/lib/auth-guard";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface OperatingHours {
@@ -140,6 +141,8 @@ function computeAvailableSlots(
 // ── Main Route Handler ────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
+  const entitlementError = await requireFeatureAccess('INBOX_TRIAGE');
+  if (entitlementError) return entitlementError;
   try {
     const body: FreeBusyRequest = await req.json();
     const { timezone, operatingHours } = body;

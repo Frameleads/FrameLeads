@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireEnterpriseTier } from "@/lib/auth-guard";
+import { requireFeatureAccess } from "@/lib/auth-guard";
 
 async function getCurrentUserId() {
   const cookieStore = await cookies();
@@ -26,7 +26,7 @@ async function getOwnedSignal(id: string, userId: string) {
 
 export async function POST(request: Request) {
   try {
-    const authError = await requireEnterpriseTier();
+    const authError = await requireFeatureAccess('INBOX_TRIAGE');
     if (authError) return authError;
 
     const userId = await getCurrentUserId();
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const authError = await requireEnterpriseTier();
+    const authError = await requireFeatureAccess('INBOX_TRIAGE');
     if (authError) return authError;
 
     const userId = await getCurrentUserId();

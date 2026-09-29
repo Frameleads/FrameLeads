@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authenticatedAutomationUserId, validMutationOrigin } from '@/lib/automation/auth';
 import { getAutomationPolicy, saveAutomationPolicy } from '@/lib/automation/policy';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export async function GET() {
+  const entitlementError = await requireFeatureAccess('AUTOMATION');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const [policy, lists, overrides] = await Promise.all([
@@ -15,6 +18,8 @@ export async function GET() {
   return NextResponse.json({ policy, lists, overrides });
 }
 export async function PATCH(request: Request) {
+  const entitlementError = await requireFeatureAccess('AUTOMATION');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!validMutationOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });

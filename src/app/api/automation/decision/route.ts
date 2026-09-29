@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { authenticatedAutomationUserId } from '@/lib/automation/auth';
 import { resolveAutomationMode } from '@/lib/automation/resolve';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
+  const entitlementError = await requireFeatureAccess('AUTOMATION');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const signalId = new URL(request.url).searchParams.get('signalId');

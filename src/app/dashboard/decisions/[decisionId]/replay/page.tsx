@@ -5,6 +5,9 @@ import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { getDecisionReplay } from '@/lib/decision/replay';
 import OutcomeRecorder from './OutcomeRecorder';
+import CorePaywall from '@/components/CorePaywall';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 export const dynamic = 'force-dynamic';
 const shown = (value: string | number | null | undefined) => value == null || value === '' ? 'Not recorded' : String(value);
@@ -16,6 +19,10 @@ export default async function DecisionReplayPage({ params }: { params: Promise<{
   const jar = await cookies();
   const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
   if (!user) redirect('/login');
+  const tier = await getUserEntitlementTier(user.id);
+  if (!hasFeatureAccess(tier, 'DECISION_REPLAY')) {
+    return <CorePaywall userTier={tier} featureName="Decision Replay"><main aria-hidden="true" className="mx-auto max-w-4xl px-4 py-8 text-sm text-gray-300 sm:px-8"><h1 className="text-2xl font-semibold text-white">Decision Replay</h1></main></CorePaywall>;
+  }
   const { decisionId } = await params;
   if (!decisionId || decisionId.length > 100) notFound();
   const replay = await getDecisionReplay({ userId: user.id, decisionId }).catch(error => {
@@ -24,7 +31,7 @@ export default async function DecisionReplayPage({ params }: { params: Promise<{
   });
   const { trigger, knownAtDecision: known, interpretation, governance, automation, risk, sla, human, execution } = replay;
   const name = `${trigger.prospect.firstName} ${trigger.prospect.lastName}`.trim();
-  return <main className="mx-auto max-w-4xl space-y-5 px-4 py-8 text-sm text-gray-300 sm:px-8">
+  return <CorePaywall userTier={tier} featureName="Decision Replay"><main className="mx-auto max-w-4xl space-y-5 px-4 py-8 text-sm text-gray-300 sm:px-8">
     <header className="space-y-2"><Link href="/dashboard/inbox-triage" className="text-xs text-[#FF5A1F] underline focus-visible:outline">Back to Inbox</Link>
       <h1 className="text-2xl font-semibold text-white">Decision Replay</h1>
       <p>What was recorded for {name || 'this prospect'} · {trigger.prospect.companyName ?? 'Company not recorded'}</p>
@@ -104,5 +111,5 @@ export default async function DecisionReplayPage({ params }: { params: Promise<{
         <p className="font-medium text-white">{item.title}</p><p className="text-xs text-gray-500">{when(item.at)} · {item.sourceType} {item.sourceId}</p>
         {item.detail && <p className="mt-1 whitespace-pre-wrap break-words text-gray-400">{item.detail}</p>}
       </li>)}</ol></section>
-  </main>;
+  </main></CorePaywall>;
 }

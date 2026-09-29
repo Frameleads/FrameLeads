@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import CorePaywall from "@/components/CorePaywall";
 
 export const dynamic = "force-dynamic";
 
@@ -27,9 +26,5 @@ export default async function DeployAccessLayout({
     redirect("/login");
   }
 
-  return (
-    <CorePaywall userTier={user.tier} featureName="Deploy Dashboard">
-      {children}
-    </CorePaywall>
-  );
+  return <>{children}</>;
 }

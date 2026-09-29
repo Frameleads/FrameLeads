@@ -1,19 +1,20 @@
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
-import { resolveScoutUser } from '@/lib/scout-data';
 import { triageInboundSignal } from '@/lib/decision/triage';
 import { canManuallyAnalyze } from '@/lib/decision/rollout';
 import { runAutopilot } from '@/lib/automation/actions';
 import { syncResponseSLAForDecision } from '@/lib/response-sla/service';
 import { assessRevenueAtRisk } from '@/lib/revenue-risk/service';
+import { featureAccessErrorForTier, getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
-  const jar = await cookies();
-  const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const entitlementUser = await getAuthenticatedEntitlementUser();
+  if (!entitlementUser) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  const entitlementError = featureAccessErrorForTier(entitlementUser.tier, 'DECISION_ENGINE');
+  if (entitlementError) return entitlementError;
+  const { id: userId } = entitlementUser;
   if (!canManuallyAnalyze()) return NextResponse.json({ error: 'Decision analysis is disabled.' }, { status: 403 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body.signalId !== 'string' || !body.signalId.trim() || body.signalId.length > 100 ||
@@ -24,13 +25,15 @@ export async function POST(request: Request) {
       retryOfDecisionId: body.retryOfDecisionId || undefined });
     let automation = null;
     if (result.decision) {
-      try { const resolved = await runAutopilot({ userId, decisionId: result.decision.id });
-        automation = { state: resolved.state, reasons: 'reasons' in resolved ? resolved.reasons : [] }; }
-      catch { console.error('[AUTOMATION] Resolution failed after Decision persistence'); }
-      try { await assessRevenueAtRisk({ userId, decisionId: result.decision.id }); }
-      catch { console.error('[RESPONSE_SLA] Risk assessment unavailable; unknown duration may apply'); }
-      try { await syncResponseSLAForDecision({ userId, decisionId: result.decision.id }); }
-      catch { console.error('[RESPONSE_SLA] Materialization failed after Decision persistence'); }
+      if (hasFeatureAccess(entitlementUser.tier, 'AUTOMATION')) {
+        try { const resolved = await runAutopilot({ userId, decisionId: result.decision.id });
+          automation = { state: resolved.state, reasons: 'reasons' in resolved ? resolved.reasons : [] }; }
+        catch { console.error('[AUTOMATION] Resolution failed after Decision persistence'); }
+        try { await assessRevenueAtRisk({ userId, decisionId: result.decision.id }); }
+        catch { console.error('[RESPONSE_SLA] Risk assessment unavailable; unknown duration may apply'); }
+        try { await syncResponseSLAForDecision({ userId, decisionId: result.decision.id }); }
+        catch { console.error('[RESPONSE_SLA] Materialization failed after Decision persistence'); }
+      }
     }
     return NextResponse.json({ ...result, automation });
   } catch (error) {

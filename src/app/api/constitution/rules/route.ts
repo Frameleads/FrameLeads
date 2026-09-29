@@ -3,9 +3,12 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { createConstitutionRule, type ConstitutionRuleInput } from '@/lib/sales-constitution';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('CONSTITUTION_MANAGEMENT');
+  if (entitlementError) return entitlementError;
   const jar = await cookies();
   const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

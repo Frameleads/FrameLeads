@@ -1,77 +1,38 @@
 import { cookies } from 'next/headers';
-import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { resolveScoutUser } from '@/lib/scout-data';
+import { hasFeatureAccess, normalizeFrameLeadsTier, requiredTierForFeature, type FeatureKey, type FrameLeadsTier } from '@/lib/entitlements';
 
-export async function requireEnterpriseTier() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get('frameleads_session')?.value;
-
-  const email = cookieStore.get('user_email')?.value;
-  if (!email) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized: Missing identity." },
-      { status: 403 }
-    );
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email },
-    select: { tier: true }
-  });
-
-  if (!user || user.tier !== 'ENTERPRISE') {
-    return NextResponse.json(
-      { success: false, error: "Payment Required: Enterprise tier strictly required for this Velvet Rope feature." },
-      { status: 402 }
-    );
-  }
-
-  return null; // Authorized
+export async function getAuthenticatedEntitlementUser() {
+  const jar = await cookies();
+  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
+  if (!user) return null;
+  const row = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true, email: true } });
+  if (!row) return null;
+  const isSystemAdmin = Boolean(process.env.NEXT_PUBLIC_ADMIN_EMAIL) &&
+    row.email.trim().toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL!.trim().toLowerCase();
+  return { id: user.id, tier: (isSystemAdmin ? 'ENTERPRISE' : normalizeFrameLeadsTier(row.tier)) as FrameLeadsTier };
 }
 
-export const requireCoreOrEnterpriseTier = async () => {
-  const cookieStore = await cookies();
-  const email = cookieStore.get('user_email')?.value;
-
-  if (!email) {
-    return NextResponse.json(
-      { success: false, error: "Unauthorized: Missing identity." },
-      { status: 403 }
-    );
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email: email.trim().toLowerCase() },
-    select: { tier: true }
-  });
-
-  if (!user || (user.tier !== 'CORE' && user.tier !== 'ENTERPRISE')) {
-    return NextResponse.json(
-      { success: false, error: "Payment Required: Inbox Triage requires Core tier or higher." },
-      { status: 402 }
-    );
-  }
-
-  return null;
-};
-
-export async function requireMinimumCoreTier() {
-  const cookieStore = await cookies();
-  const session = cookieStore.get('frameleads_session')?.value;
-
-  const email = cookieStore.get('user_email')?.value;
-  if (!email) {
-    return NextResponse.json({ success: false, error: "Unauthorized: Missing identity." }, { status: 403 });
-  }
-
-  const user = await prisma.user.findUnique({ where: { email }, select: { tier: true } });
-
-  if (!user || !['CORE', 'ENTERPRISE'].includes(user.tier)) {
-    return NextResponse.json(
-      { success: false, error: "Payment Required: Deploy feature requires Core tier or higher." },
-      { status: 402 }
-    );
-  }
-
-  return null;
+export async function getUserEntitlementTier(userId: string): Promise<FrameLeadsTier> {
+  const row = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true, email: true } });
+  if (!row) return 'INACTIVE';
+  if (process.env.NEXT_PUBLIC_ADMIN_EMAIL && row.email.trim().toLowerCase() === process.env.NEXT_PUBLIC_ADMIN_EMAIL.trim().toLowerCase()) return 'ENTERPRISE';
+  return normalizeFrameLeadsTier(row.tier);
 }
+
+export async function requireFeatureAccess(feature: FeatureKey) {
+  const user = await getAuthenticatedEntitlementUser();
+  if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  return featureAccessErrorForTier(user.tier, feature);
+}
+
+export function featureAccessErrorForTier(tier: FrameLeadsTier, feature: FeatureKey) {
+  if (hasFeatureAccess(tier, feature)) return null;
+  return NextResponse.json({ error: 'FEATURE_LOCKED', feature, requiredTier: requiredTierForFeature(feature) }, { status: 403 });
+}
+
+export const requireEnterpriseTier = () => requireFeatureAccess('GOVERNANCE');
+export const requireCoreOrEnterpriseTier = () => requireFeatureAccess('INBOX_TRIAGE');
+export const requireMinimumCoreTier = () => requireFeatureAccess('DECISION_REPLAY');

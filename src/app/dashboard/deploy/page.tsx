@@ -105,9 +105,9 @@ export default function DeployPage() {
   }
 
   const pageContent = (
-    <div className="max-w-5xl mx-auto space-y-8 px-4 md:px-0">
+    <div className="mx-auto w-full max-w-5xl space-y-8">
       <div className="mb-10 md:mb-12">
-        <h1 className="text-4xl font-bold tracking-tight flex items-center gap-4 font-heading">
+        <h1 className="text-3xl font-bold tracking-tight flex flex-wrap items-center gap-3 font-heading sm:text-4xl sm:gap-4">
           <Rocket className="w-8 h-8 text-primary" />
           Deploy to {platform === 'instantly' ? 'Instantly' : 'Smartlead'}
         </h1>
@@ -130,13 +130,13 @@ export default function DeployPage() {
         </div>
       )}
 
-      <div className="space-y-6 bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-8">
+      <div className="space-y-6 bg-card/50 backdrop-blur-sm border border-border/50 rounded-2xl p-4 sm:p-6 md:p-8">
         
         <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/30 border border-border/50">
           <Inbox className="w-5 h-5 text-muted-foreground" />
           <div>
             <p className="text-sm font-medium">Active Batch</p>
-            <p className="text-xs text-muted-foreground font-mono mt-0.5">{displayBatchId}</p>
+            <p className="break-all text-xs text-muted-foreground font-mono mt-0.5">{displayBatchId}</p>
           </div>
         </div>
 

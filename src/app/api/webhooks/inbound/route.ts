@@ -5,6 +5,8 @@ import { resolvePipelineValue } from '@/lib/pipeline-value';
 import Anthropic from '@anthropic-ai/sdk';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 import { scheduleInboundDecisions } from '@/lib/decision/schedule';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 const SYSTEM_PROMPT = `You are an elite sales triage AI. Read this inbound email reply. Score the buying intent from 0-100. Categorize it as HOT (score >= 80), WARM (score 40-79), or COLD (score < 40). Evaluate your confidence in this intent classification. If it is a clear rejection or unsubscribe, score confidence > 90. If it is ambiguous, sarcastic, or complex, score < 70. Return strictly a JSON object: { "intentScore": number, "status": "HOT" | "WARM" | "COLD", "signalAnalysis": "1 sentence explanation", "confidenceScore": number }.`;
 
@@ -60,6 +62,8 @@ export async function POST(req: Request) {
     }, identityFromFullName(leadFirstName, companyName));
     scheduleInboundDecisions(auth.userId, [newSignal.id]);
 
+    const mayAnalyze = hasFeatureAccess(await getUserEntitlementTier(auth.userId), 'DECISION_ENGINE');
+
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     
     let finalIntentScore = 0;
@@ -69,7 +73,9 @@ export async function POST(req: Request) {
     let finalLifecycleStatus = 'PENDING';
 
     try {
-      if (!apiKey) {
+      if (!mayAnalyze) {
+        finalSignalAnalysis = 'Reply saved; Decision Engine access is not included in this tier.';
+      } else if (!apiKey) {
         console.warn("ANTHROPIC_API_KEY is missing. Defaulting intent values.");
       } else {
         const anthropic = new Anthropic({ apiKey });

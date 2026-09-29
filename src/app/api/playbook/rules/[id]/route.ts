@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { archivePlaybookRule, updatePlaybookRule, type PlaybookRuleInput } from '@/lib/revenue-playbook';
@@ -10,6 +11,8 @@ async function owner() {
   return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
 }
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const entitlementError = await requireFeatureAccess('PLAYBOOK');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;
@@ -32,6 +35,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 }
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const entitlementError = await requireFeatureAccess('PLAYBOOK');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await params;

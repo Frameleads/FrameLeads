@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Lock as LockIcon } from 'lucide-react';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
-import { ENTERPRISE_CHECKOUT_URL } from '@/lib/checkout';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
+import { hasFeatureAccess } from '@/lib/entitlements';
 import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/deadline';
 
 /**
@@ -91,10 +90,10 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
   escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
   riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPercent }: { signalId: string;
+function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier }: { signalId: string;
   onDecision: (signalId: string, status: string) => void;
   onRisk: (signalId: string, risk: RevenueRiskView) => void;
-  onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number }) {
+  onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -136,34 +135,34 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
     return () => window.clearInterval(timer);
   }, [packet?.status, signalId, onDecision]);
   useEffect(() => {
-    if (!packet?.id) { setAutomation(null); return; }
+    if (!isEnterpriseTier || !packet?.id) { setAutomation(null); return; }
     let active = true;
     fetch(`/api/automation/decision?signalId=${encodeURIComponent(signalId)}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => { if (active) setAutomation(data?.automation ?? null); })
       .catch(() => { if (active) setActionError('Automation state could not load.'); });
     return () => { active = false; };
-  }, [packet?.id, signalId]);
+  }, [packet?.id, signalId, isEnterpriseTier]);
   useEffect(() => {
-    if (!packet?.id) { setRisk(null); return; }
+    if (!isEnterpriseTier || !packet?.id) { setRisk(null); return; }
     let active = true;
     fetch(`/api/revenue-risk?decisionId=${encodeURIComponent(packet.id)}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => { if (active && data?.risk) { setRisk(data.risk); onRisk(signalId, data.risk); } })
       .catch(() => { /* Persisted Inbox assessment remains available after a transient refresh failure. */ });
     return () => { active = false; };
-  }, [packet?.id, signalId, onRisk]);
+  }, [packet?.id, signalId, onRisk, isEnterpriseTier]);
   useEffect(() => {
-    if (!packet?.id) { setSLA(null); return; }
+    if (!isEnterpriseTier || !packet?.id) { setSLA(null); return; }
     let active = true;
     fetch(`/api/response-sla?decisionId=${encodeURIComponent(packet.id)}`)
       .then(response => response.ok ? response.json() : null)
       .then(data => { if (active && data) { setSLA(data.sla ?? null); onSLA(signalId, data.sla ?? null); } })
       .catch(() => { /* The persisted Inbox SLA remains visible after a transient refresh failure. */ });
     return () => { active = false; };
-  }, [packet?.id, signalId, onSLA]);
+  }, [packet?.id, signalId, onSLA, isEnterpriseTier]);
   async function refreshSLA() {
-    if (!packet?.id) return;
+    if (!isEnterpriseTier || !packet?.id) return;
     const response = await fetch(`/api/response-sla?decisionId=${encodeURIComponent(packet.id)}`);
     if (response.ok) { const next = (await response.json()).sla ?? null; setSLA(next); onSLA(signalId, next); }
   }
@@ -248,14 +247,14 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
       {packet.suggestedReply && <div><p className="text-gray-500">Suggested draft · review before use</p>
         <p className="mt-1 whitespace-pre-wrap rounded border border-[#333] p-3">{packet.suggestedReply}</p></div>}
       {packet.explanation && <p className="text-gray-400">{packet.explanation}</p>}
-      {risk && <div className="rounded border border-[#333] p-3" aria-label="Revenue priority">
+      {isEnterpriseTier && risk && <div className="rounded border border-[#333] p-3" aria-label="Revenue priority">
         <p className="text-xs uppercase tracking-wide text-gray-400">Revenue-at-Risk priority</p>
         {risk.status === 'APPLICABLE' ? <p className="mt-1 font-semibold text-white">{risk.score} / 100 · {risk.band} <span className="text-xs font-normal text-gray-400">· {risk.confidence} confidence</span></p> :
           <p className="mt-1 text-sm text-gray-300">{risk.status === 'NOT_APPLICABLE' ? 'Not applicable to revenue' : 'Insufficient data to rank'}</p>}
         <ul className="mt-2 space-y-1 text-xs text-gray-400">{risk.reasons.slice(0, 4).map(reason => <li key={reason}>• {reason}</li>)}</ul>
         <p className="mt-2 text-[11px] text-gray-500">Priority index, not a dollar-loss estimate. It does not change execution permissions.</p>
       </div>}
-      {sla && <div className="rounded border border-[#333] p-3" aria-label="Response SLA">
+      {isEnterpriseTier && sla && <div className="rounded border border-[#333] p-3" aria-label="Response SLA">
         <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Response SLA</strong>
           <a href="/dashboard/response-sla" className="text-xs text-[#FF5A1F] underline">SLA settings</a></div>
         {(() => { const display = displayResponseSLA({ status: sla.status, startedAt: new Date(sla.startedAt),
@@ -294,31 +293,26 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
         {actionBusy && <p role="status" className="text-xs text-gray-400">Updating governed action...</p>}
         {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
       </div>}
+      {!isEnterpriseTier && packet && <div className="space-y-3 rounded border border-[#333] p-3" aria-label="Human reply workflow">
+        <strong className="text-white">Human reply workflow</strong>
+        <p className="text-xs text-gray-400">Review the Decision and send only after you approve the reply.</p>
+        {packet.suggestedReply && <>
+          <p className="whitespace-pre-wrap rounded border border-[#333] bg-black/20 p-3 text-sm text-gray-200">{packet.suggestedReply}</p>
+          <textarea aria-label="Edited reply" value={editedReply} onChange={event => setEditedReply(event.target.value)} placeholder="Edit reply before sending" maxLength={4000} rows={3}
+            className="w-full rounded border border-[#444] bg-[#181818] p-2 text-sm text-white focus-visible:outline-[#FF5A1F]" />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={actionBusy} onClick={() => void governedAction('APPROVE')} className="rounded border border-[#FF5A1F] px-3 py-2 text-xs disabled:opacity-40">Approve and send</button>
+            <button type="button" disabled={actionBusy || !editedReply.trim()} onClick={() => void governedAction('EDIT_AND_SEND')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Send edited reply</button>
+            <button type="button" disabled={actionBusy} onClick={() => void governedAction('REJECT')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Reject</button>
+            <button type="button" disabled={actionBusy} onClick={() => void governedAction('ESCALATE')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Escalate</button>
+          </div>
+          {actionBusy && <p role="status" className="text-xs text-gray-400">Updating reply...</p>}
+          {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
+        </>}
+      </div>}
       {packet.shadowMode && <p className="text-xs text-gray-500">Shadow analysis · sending follows the separate automation controls.</p>}
     </div>}
   </section>;
-}
-
-function EnterpriseFeatureGate({ locked, children }: { locked: boolean; children: ReactNode }) {
-  if (!locked) return <>{children}</>;
-
-  return (
-    <div className="relative">
-      <div className="filter blur-md opacity-40 pointer-events-none select-none" aria-hidden="true">
-        {children}
-      </div>
-      <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
-        <LockIcon className="w-8 h-8 text-[#FF5A1F] mb-4" />
-        <button
-          type="button"
-          onClick={() => window.open(ENTERPRISE_CHECKOUT_URL, '_blank', 'noopener,noreferrer')}
-          className="bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
-        >
-          Upgrade to Enterprise to Unlock AI Intent Scoring
-        </button>
-      </div>
-    </div>
-  );
 }
 
 export default function TriageCommandCenter({
@@ -331,8 +325,10 @@ export default function TriageCommandCenter({
   slaDueSoonPercent?: number;
 }) {
   const router = useRouter();
-  const isCoreTier = userTier === 'CORE';
-  const hasInboxAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
+  const isCoreTier = !hasFeatureAccess(userTier, 'AUTOMATION');
+  const hasInboxAccess = hasFeatureAccess(userTier, 'INBOX_TRIAGE');
+  const isEnterpriseTier = hasFeatureAccess(userTier, 'REVENUE_RISK');
+  const hasDecisionEngineAccess = hasFeatureAccess(userTier, 'DECISION_ENGINE');
   const dbLeads = useMemo(() => Array.isArray(initialData) && initialData.length > 0
     ? initialData.map((s: any) => ({
         id: s.id,
@@ -376,12 +372,12 @@ export default function TriageCommandCenter({
   const filteredLeads = leads.filter((lead) =>
     (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING') &&
     (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW') &&
-    (!urgentSLAOnly || (lead.responseSLA && ['DUE_SOON', 'OVERDUE'].includes(displayResponseSLA({
+    (!isEnterpriseTier || !urgentSLAOnly || (lead.responseSLA && ['DUE_SOON', 'OVERDUE'].includes(displayResponseSLA({
       status: lead.responseSLA.status, startedAt: new Date(lead.responseSLA.startedAt),
       dueAt: new Date(lead.responseSLA.dueAt), dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state))),
   );
-  const visibleLeads = orderBy === 'risk' ? sortInboxByRevenueRisk(filteredLeads) :
-    orderBy === 'sla' ? sortInboxByResponseSLA(filteredLeads, new Date(clock), slaDueSoonPercent) : filteredLeads;
+  const visibleLeads = isEnterpriseTier && orderBy === 'risk' ? sortInboxByRevenueRisk(filteredLeads) :
+    isEnterpriseTier && orderBy === 'sla' ? sortInboxByResponseSLA(filteredLeads, new Date(clock), slaDueSoonPercent) : filteredLeads;
   const [activeLeadId, setActiveLeadId] = useState(
     dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
   );
@@ -609,7 +605,7 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = !isCoreTier && intentScore >= 71;
+  const isHotLead = hasDecisionEngineAccess && intentScore >= 71;
 
   const handleLockMeeting = async () => {
     if (!bookingSlotStart || !bookingSlotEnd) return;
@@ -895,7 +891,7 @@ export default function TriageCommandCenter({
     ? createPortal(
         <div
           role="status"
-          className="fixed right-6 top-6 z-[10000] rounded-xl border border-[#FF5A1F]/30 bg-[#121212] px-5 py-4 text-sm font-semibold text-white shadow-2xl shadow-[#FF5A1F]/10 animate-in fade-in slide-in-from-top-2 duration-300"
+          className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-[10000] rounded-xl border border-[#FF5A1F]/30 bg-[#121212] px-5 py-4 text-sm font-semibold text-white shadow-2xl shadow-[#FF5A1F]/10 animate-in fade-in slide-in-from-top-2 duration-300"
         >
           🔥 New inbound signal detected!
         </div>,
@@ -906,46 +902,42 @@ export default function TriageCommandCenter({
   const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
-    <div className="inline-flex max-w-full flex-wrap rounded-lg border border-[#242424] bg-[#121212] p-1">
-      <button type="button" aria-pressed={orderBy === 'risk'} onClick={() => setOrderBy(current => current === 'risk' ? 'received' : 'risk')}
-        className={`rounded-md px-3 py-2 text-xs font-semibold ${orderBy === 'risk' ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
-        Revenue priority
-      </button>
-      <button type="button" aria-pressed={orderBy === 'sla'} onClick={() => setOrderBy(current => current === 'sla' ? 'received' : 'sla')}
-        className={`rounded-md px-3 py-2 text-xs font-semibold ${orderBy === 'sla' ? 'bg-[#FF5A1F]/20 text-[#FF5A1F]' : 'text-[#888888] hover:text-white'}`}>
-        SLA due
-      </button>
-      <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(value => !value)}
-        className={`rounded-md px-3 py-2 text-xs font-semibold ${urgentSLAOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
-        Due soon / overdue
-      </button>
-      <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(value => !value)}
-        className={`rounded-md px-3 py-2 text-xs font-semibold ${needsReviewOnly ? 'bg-amber-500/20 text-amber-300' : 'text-[#888888] hover:text-white'}`}>
-        Needs review
-      </button>
-      <button
-        type="button"
-        onClick={() => handleQueueViewChange('active')}
-        className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors ${
-          queueView === 'active' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:text-white'
-        }`}
-      >
-        Active ({activeCount})
-      </button>
-      <button
-        type="button"
-        onClick={() => handleQueueViewChange('archived')}
-        className={`rounded-md px-4 py-2 text-xs font-semibold transition-colors ${
-          queueView === 'archived' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:text-white'
-        }`}
-      >
-        Archived ({archivedCount})
-      </button>
+    <div className="grid w-full min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
+        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Sort by</p>
+        <div className="flex flex-wrap gap-1">
+          {(isEnterpriseTier ? [{ value: 'received', label: 'Received' }, { value: 'risk', label: 'Revenue priority' }, { value: 'sla', label: 'SLA due' }] : [{ value: 'received', label: 'Received' }]).map(option => <button key={option.value} type="button" aria-pressed={orderBy === option.value} onClick={() => setOrderBy(option.value as typeof orderBy)}
+            className={`min-h-10 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
+            {option.label}
+          </button>)}
+        </div>
+      </div>
+      {isEnterpriseTier && <div role="group" aria-label="SLA urgency" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
+        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">SLA urgency</p>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/15 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
+        </div>
+      </div>}
+      <div role="group" aria-label="Review" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
+        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Review</p>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/15 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
+        </div>
+      </div>
+      <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
+        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Queue</p>
+        <div className="flex flex-wrap gap-1">
+          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
+          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
+        </div>
+      </div>
     </div>
   );
 
   const archiveToastElement = archiveToast ? (
-    <div role="status" className="fixed top-6 right-6 z-[10000] rounded-xl border border-[#333] bg-[#121212] px-5 py-4 text-sm font-medium text-white shadow-2xl shadow-black/60">
+    <div role="status" className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-[10000] rounded-xl border border-[#333] bg-[#121212] px-5 py-4 text-sm font-medium text-white shadow-2xl shadow-black/60">
       {archiveToast}
     </div>
   ) : null;
@@ -953,7 +945,7 @@ export default function TriageCommandCenter({
   if (!activeLead) {
     return (
       <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl p-6">
-          <div className="mb-8 flex items-center justify-between gap-4">
+          <div className="mb-6 space-y-3">
             <span className="text-xs font-mono text-[#888888] uppercase tracking-widest">
               {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
             </span>
@@ -984,10 +976,10 @@ export default function TriageCommandCenter({
   }
 
   const pageContent = (
-    <div className="flex flex-col min-h-screen overflow-x-hidden overflow-y-auto pb-24 bg-[#0D0D0D] text-[#F5F1E8] font-sans">
+    <div className="flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto pb-24 bg-[#0D0D0D] text-[#F5F1E8] font-sans">
       
       {/* QUEUE HEADER */}
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 pb-0 shrink-0">
+      <div className="space-y-3 p-4 pb-0 shrink-0">
         <div className="flex items-center gap-3">
         <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest text-[#888888]">
           {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
@@ -1023,9 +1015,9 @@ export default function TriageCommandCenter({
             {lead.decisionStatus && <p className={`mt-2 text-[10px] font-mono uppercase ${lead.decisionStatus === 'NEEDS_REVIEW' ? 'text-amber-400' : lead.decisionStatus === 'FAILED' ? 'text-red-400' : 'text-gray-500'}`}>
               Decision: {lead.decisionStatus.replaceAll('_', ' ')}
             </p>}
-            {lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
-            {lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
-            {lead.responseSLA && <p className={`mt-1 text-[10px] font-mono ${lead.responseSLA.status === 'BREACHED' || new Date(lead.responseSLA.dueAt).getTime() <= clock ? 'text-red-300' : 'text-gray-400'}`}>
+            {isEnterpriseTier && lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
+            {isEnterpriseTier && lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
+            {isEnterpriseTier && lead.responseSLA && <p className={`mt-1 text-[10px] font-mono ${lead.responseSLA.status === 'BREACHED' || new Date(lead.responseSLA.dueAt).getTime() <= clock ? 'text-red-300' : 'text-gray-400'}`}>
               SLA: {displayResponseSLA({ status: lead.responseSLA.status,
                 startedAt: new Date(lead.responseSLA.startedAt), dueAt: new Date(lead.responseSLA.dueAt),
                 dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state.replaceAll('_', ' ')}
@@ -1056,7 +1048,7 @@ export default function TriageCommandCenter({
         </div>
 
         <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus}
-          onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} />
+          onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier} />
 
         <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           
@@ -1103,7 +1095,6 @@ export default function TriageCommandCenter({
           <div className="w-full flex flex-col gap-6 h-full">
 
             {/* TOP ROW: Intent & Strategy (Stacked on mobile, Side-by-Side on Desktop) */}
-            <EnterpriseFeatureGate locked={isCoreTier}>
             <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Intent Intelligence Widget */}
@@ -1150,7 +1141,6 @@ export default function TriageCommandCenter({
               </div>
 
             </div>
-            </EnterpriseFeatureGate>
 
             {/* BOTTOM ROW: Draft Response & Buttons (Full Width) */}
               <div className="relative flex h-auto min-h-min w-full flex-col gap-3 overflow-visible">
@@ -1213,18 +1203,16 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    <button type="button" onClick={handleRegenerate} disabled={isCoreTier || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
-                      {isCoreTier ? 'Enterprise Required for Claude Classification' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                    <button type="button" onClick={handleRegenerate} disabled={!hasDecisionEngineAccess || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
+                      {!hasDecisionEngineAccess ? 'Decision Engine unavailable' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
                     </button>
                     <button
                       type="button"
-                      onClick={() => isCoreTier ? window.open(ENTERPRISE_CHECKOUT_URL, '_blank', 'noopener,noreferrer') : void handleDispatch()}
+                      onClick={() => void handleDispatch()}
                       disabled={isGenerating || isDispatching || isBooking || isArchiving}
-                      className={isCoreTier
-                        ? "bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
-                        : "w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]"}
+                      className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]"
                     >
-                      {isCoreTier ? 'Upgrade to Enterprise to Approve & Send' : isDispatching ? 'Sending...' : 'Approve & Send'}
+                      {isDispatching ? 'Sending...' : 'Approve & Send'}
                     </button>
 
                     {isHotLead && (
@@ -1337,7 +1325,7 @@ return (
 
       {/* Success Toast */}
       {bookingSuccess && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 bg-[#121212] border border-green-500/30 rounded-xl shadow-2xl shadow-green-500/10 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-50 flex items-center gap-3 px-5 py-4 bg-[#121212] border border-green-500/30 rounded-xl shadow-2xl shadow-green-500/10 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="p-1.5 bg-green-500/10 rounded-full">
             <CalendarCheck className="w-4 h-4 text-green-500" />
           </div>
@@ -1350,7 +1338,7 @@ return (
 
       {/* Dispatch Success Toast */}
       {dispatchSuccess && (
-        <div className="fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 bg-[#121212] border border-[#FF5A1F]/30 rounded-xl shadow-2xl shadow-[#FF5A1F]/10 animate-in fade-in slide-in-from-top-2 duration-300">
+        <div className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-50 flex items-center gap-3 px-5 py-4 bg-[#121212] border border-[#FF5A1F]/30 rounded-xl shadow-2xl shadow-[#FF5A1F]/10 animate-in fade-in slide-in-from-top-2 duration-300">
           <div className="p-1.5 bg-[#FF5A1F]/10 rounded-full">
             <svg className="w-4 h-4 text-[#FF5A1F]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

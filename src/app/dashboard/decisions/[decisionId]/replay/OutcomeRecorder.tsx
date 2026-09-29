@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import FrameSelect from '@/components/ui/FrameSelect';
 
 const TYPES = ['MEETING_BOOKED', 'OPPORTUNITY_ADVANCED', 'WON', 'LOST',
   'NOT_INTERESTED', 'BAD_FIT', 'NO_RESPONSE', 'OTHER'] as const;
@@ -32,10 +33,9 @@ export default function OutcomeRecorder({ decisionId, hasCurrent }: { decisionId
     <h3 className="mb-3 font-medium text-white">{hasCurrent ? 'Correct recorded outcome' : 'Record business outcome'}</h3>
     <p className="mb-3 text-xs text-gray-400">Human-reported business fact. A send or approval does not automatically count as success. Corrections keep prior revisions.</p>
     <div className="grid gap-3 sm:grid-cols-2">
-      <label>Outcome<select className={`${field} mt-1`} value={outcomeType}
-        onChange={event => setOutcomeType(event.target.value as (typeof TYPES)[number])}>
-        {TYPES.map(type => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
-      </select></label>
+      <label>Outcome<FrameSelect className="mt-1" ariaLabel="Outcome" value={outcomeType}
+        onValueChange={value => setOutcomeType(value as (typeof TYPES)[number])}
+        options={TYPES.map(type => ({ value: type, label: type.replaceAll('_', ' ') }))} /></label>
       <label>Occurred at<input className={`${field} mt-1`} type="datetime-local" required value={occurredAt}
         onChange={event => setOccurredAt(event.target.value)} /></label>
     </div>

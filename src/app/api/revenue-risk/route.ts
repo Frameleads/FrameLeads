@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { authenticatedAutomationUserId } from '@/lib/automation/auth';
 import { assessRevenueAtRisk } from '@/lib/revenue-risk/service';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
+  const entitlementError = await requireFeatureAccess('REVENUE_RISK');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const decisionId = new URL(request.url).searchParams.get('decisionId');

@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Papa from "papaparse";
 import { extractProspectMetadata } from '@/lib/prospects/metadata';
+import { readCampaignContext } from '@/lib/campaign-session';
+import MarketProfilePicker from '@/components/MarketProfilePicker';
+import FrameSelect from '@/components/ui/FrameSelect';
 import {
   Upload,
   FileSpreadsheet,
@@ -59,7 +62,7 @@ interface LeadListOption {
   id: string;
   name: string;
 }
-type MarketChoice = { profileKey: string; profileId?: string | null; profileName: string };
+type MarketChoice = { profileKey: string; profileId?: string | null; profileName: string; summary?: string };
 
 interface ManualContactForm {
   firstName: string;
@@ -150,8 +153,8 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem("campaign_context");
-      if (stored) setCampaignContext(JSON.parse(stored));
+      const stored = readCampaignContext();
+      if (stored) setCampaignContext(stored as typeof campaignContext);
     } catch {
       // ignore
     }
@@ -175,8 +178,8 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   }, [loadLists]);
 
   useEffect(() => { fetch('/api/market-profiles', { cache: 'no-store' }).then(response => response.ok ? response.json() : null)
-    .then(data => setMarketChoices([...(data?.builtins ?? []).map((profile: any) => ({ profileKey: profile.key, profileId: null, profileName: profile.name })),
-      ...(data?.profiles ?? []).filter((profile: any) => profile.enabled).map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name }))]))
+    .then(data => setMarketChoices([...(data?.builtins ?? []).map((profile: any) => ({ profileKey: profile.key, profileId: null, profileName: profile.name, summary: profile.summary })),
+      ...(data?.profiles ?? []).filter((profile: any) => profile.enabled).map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name, summary: 'Custom market communication profile.' }))]))
     .catch(() => setMarketChoices([])); }, []);
 
   const handleCreateList = async () => {
@@ -531,7 +534,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
   // ── Render ────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8 px-4 sm:px-6 md:px-8 lg:px-0">
+    <div className="mx-auto w-full max-w-5xl space-y-8">
       <div className="mb-10 md:mb-12">
         <h1 className="text-3xl font-bold tracking-tight font-heading sm:text-4xl">
           Data Ingestion
@@ -584,7 +587,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-all duration-300 sm:min-h-[360px] sm:p-10 md:min-h-[400px] md:p-16 ${
+        className={`relative flex min-h-[280px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition-all duration-300 sm:min-h-[360px] sm:p-10 md:min-h-[400px] md:p-10 lg:p-16 ${
           isDragging
             ? "border-primary bg-primary/5 scale-[1.01]"
             : fileName
@@ -649,7 +652,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       {/* 2x2 Apollo-style Mapping Grid */}
       {csvColumns.length > 0 && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {SCHEMA_FIELDS.map((schemaField) => (
             <div
               key={schemaField}
@@ -663,29 +666,9 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                   <Check className="w-4 h-4 text-green-500 flex-shrink-0" />
                 )}
               </div>
-              <div className="relative">
-                <select
-                  value={fieldMappings[schemaField] || ""}
-                  onChange={(e) => updateFieldMapping(schemaField, e.target.value)}
-                  className="w-full h-11 rounded-xl border border-[#242424] bg-[#000000] text-gray-200 px-4 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-[#FF5A1F] focus:border-[#FF5A1F] transition-all"
-                >
-                  <option value="" className="bg-[#000000] text-gray-500">
-                    &mdash; Skip mapping &mdash;
-                  </option>
-                  {csvColumns.map((col) => (
-                    <option
-                      key={col}
-                      value={col}
-                      className="bg-[#000000] text-gray-200"
-                    >
-                      {col}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-4 flex items-center pointer-events-none">
-                  <ArrowRight className="w-4 h-4 text-gray-500 rotate-90" />
-                </div>
-              </div>
+              <FrameSelect ariaLabel={`CSV column for ${SCHEMA_LABELS[schemaField]}`} value={fieldMappings[schemaField] || ""}
+                onValueChange={value => updateFieldMapping(schemaField, value)}
+                options={[{ value: "", label: "— Skip mapping —" }, ...csvColumns.map(col => ({ value: col, label: col }))]} />
             </div>
           ))}
         </div>
@@ -695,17 +678,9 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
               Destination List (Optional)
             </label>
             <div className="flex flex-col gap-2 lg:flex-row">
-              <select
-                id="destination-list"
-                value={selectedListId}
-                onChange={(event) => setSelectedListId(event.target.value)}
-                className="h-11 min-w-0 flex-1 appearance-none rounded-xl border border-[#242424] bg-[#000000] px-4 text-sm text-gray-200 outline-none transition-all focus:border-[#FF5A1F] focus:ring-2 focus:ring-[#FF5A1F]"
-              >
-                <option value="">Unassigned (General Sandbox)</option>
-                {availableLists.map((list) => (
-                  <option key={list.id} value={list.id}>{list.name}</option>
-                ))}
-              </select>
+              <FrameSelect id="destination-list" ariaLabel="Destination list" className="h-11 min-w-0 flex-1" value={selectedListId}
+                onValueChange={setSelectedListId} options={[{ value: "", label: "Unassigned (General Sandbox)" },
+                  ...availableLists.map(list => ({ value: list.id, label: list.name }))]} />
               <input
                 value={newListName}
                 onChange={(event) => setNewListName(event.target.value)}
@@ -724,16 +699,13 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
               </button>
             </div>
             <label className="mt-3 block text-sm text-gray-300">Market Profile
-              <select value={marketProfileOverride} onChange={event => setMarketProfileOverride(event.target.value)}
-                className="mt-1 h-10 w-full rounded-xl border border-[#242424] bg-black px-3 text-sm text-gray-200">
-                <option value="AUTO">Auto - prospect country</option>
-                {marketChoices.map(profile => <option key={profile.profileId || profile.profileKey} value={profile.profileKey === 'GLOBAL' || !profile.profileId ? profile.profileKey : profile.profileId}>{profile.profileName}</option>)}
-              </select>
+              <MarketProfilePicker className="mt-1" value={marketProfileOverride} onChange={setMarketProfileOverride}
+                options={marketChoices.map(profile => ({ value: profile.profileId || profile.profileKey,
+                  label: profile.profileName, description: profile.summary }))} />
             </label>
             <label className="mt-3 flex items-center gap-3 text-sm text-gray-300">How was this list selected?
-              <select value={newListSource} onChange={event => setNewListSource(event.target.value as typeof newListSource)} className="h-9 rounded-lg border border-[#242424] bg-[#000000] px-2 text-sm text-gray-200">
-                <option value="UNKNOWN">Not specified</option><option value="USER_CURATED">Already ICP-filtered</option><option value="BROAD_POOL">Broad prospect pool</option>
-              </select>
+              <FrameSelect className="mt-1" ariaLabel="How was this list selected?" value={newListSource} onValueChange={value => setNewListSource(value as typeof newListSource)}
+                options={[{ value: "UNKNOWN", label: "Not specified" }, { value: "USER_CURATED", label: "Already ICP-filtered" }, { value: "BROAD_POOL", label: "Broad prospect pool" }]} />
             </label>
             <label className="mt-3 flex cursor-pointer items-center gap-3 text-sm text-gray-300">
               <input
@@ -776,7 +748,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
       {successToast && (
         <div
           role="status"
-          className="fixed right-6 top-6 z-[1000] rounded-xl border border-[#FF5A1F]/30 bg-[#1A1A1A] px-4 py-3 text-sm font-medium text-[#FFFFFF] shadow-2xl"
+          className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-[1000] rounded-xl border border-[#FF5A1F]/30 bg-[#1A1A1A] px-4 py-3 text-sm font-medium text-[#FFFFFF] shadow-2xl"
         >
           {successToast}
         </div>
@@ -892,17 +864,9 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
                   Destination List (Optional)
                 </label>
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <select
-                    id="manual-destination-list"
-                    value={selectedListId}
-                    onChange={(event) => setSelectedListId(event.target.value)}
-                    className="w-full bg-[#000000] border border-[#242424] text-[#FFFFFF] placeholder-[#888888] rounded-lg px-4 py-3 focus:outline-none focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] transition-colors"
-                  >
-                    <option value="">Unassigned (General Sandbox)</option>
-                    {availableLists.map((list) => (
-                      <option key={list.id} value={list.id}>{list.name}</option>
-                    ))}
-                  </select>
+                  <FrameSelect id="manual-destination-list" ariaLabel="Destination list" value={selectedListId}
+                    onValueChange={setSelectedListId} options={[{ value: "", label: "Unassigned (General Sandbox)" },
+                      ...availableLists.map(list => ({ value: list.id, label: list.name }))]} />
 
                   <div className="flex w-full gap-2">
                     <input

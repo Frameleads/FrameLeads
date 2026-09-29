@@ -10,7 +10,10 @@ import { extractProspectMetadata } from '@/lib/prospects/metadata';
 import { getBrainContext } from '@/lib/brain';
 import { getPlaybookContext } from '@/lib/revenue-playbook';
 import { getSalesConstitutionContext } from '@/lib/sales-constitution';
-import { buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
+import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { resolveScoutUser } from '@/lib/scout-data';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   validateGeneratedChannels,
@@ -109,8 +112,8 @@ export async function POST(req: Request) {
       leads, 
       batch_id, 
       timestamp, 
-      creditsUsed = 0, 
-      tier = 'UNAUTHORIZED',
+      creditsUsed: _clientCreditsUsed = 0,
+      tier: _clientTier = 'UNAUTHORIZED',
       force_regenerate, 
       regenerate,
       preferredCtaStyle = 'Self-Serve Audit Link',
@@ -127,14 +130,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
-    const currentUser = userEmail
-      ? await prisma.user.findUnique({
-          where: { email: userEmail.trim().toLowerCase() },
-          select: { id: true },
-        })
-      : null;
+    const authenticatedUser = await resolveScoutUser(prisma, cookieStore.get('frameleads_session')?.value, userEmail);
+    const currentUser = authenticatedUser ? await prisma.user.findUnique({
+      where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true },
+    }) : null;
     if (!currentUser) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const currentUserId = currentUser.id;
+    const tier = await getUserEntitlementTier(currentUserId);
+    if (!hasFeatureAccess(tier, 'BASE_OUTBOUND'))
+      return NextResponse.json({ error: 'FEATURE_LOCKED', feature: 'BASE_OUTBOUND', requiredTier: 'MICRO_PILOT' }, { status: 403 });
     const shouldOverwriteExisting = overwriteExisting === true || regenerate === true || force_regenerate === true;
 
     listId = typeof listId === 'string' ? listId.trim() : null;
@@ -150,9 +154,8 @@ export async function POST(req: Request) {
       }
     }
 
-    const maxQuota = tier === 'ENTERPRISE' ? 20000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
-    
-    const remainingQuota = Math.max(0, maxQuota - (Number(creditsUsed) || 0));
+    const maxQuota = monthlyLeadQuotaForTier(tier);
+    const remainingQuota = Math.max(0, maxQuota - currentUser.leadsProcessed);
 
     const getLeadLinkedInUrl = (lead: any) => {
       const value = lead.linkedin || lead.linkedInUrl || lead.linkedin_url;
@@ -232,10 +235,10 @@ export async function POST(req: Request) {
     if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
       const [brain, playbook, constitution, marketProfiles] = await Promise.all([
-        getBrainContext({ userId: currentUserId, purpose: 'outbound', maxEntries: 8, maxCharacters: 650 }, prisma),
-        getPlaybookContext({ userId: currentUserId, purpose: 'outbound', maxRules: 4, maxCharacters: 550 }, prisma),
+        hasFeatureAccess(tier, 'BRAIN') ? getBrainContext({ userId: currentUserId, purpose: 'outbound', maxEntries: 8, maxCharacters: 650 }, prisma) : Promise.resolve({ contextText: '' }),
+        hasFeatureAccess(tier, 'PLAYBOOK') ? getPlaybookContext({ userId: currentUserId, purpose: 'outbound', maxRules: 4, maxCharacters: 550 }, prisma) : Promise.resolve({ contextText: '' }),
         getSalesConstitutionContext({ userId: currentUserId, purpose: 'outbound', maxRules: 4, maxCharacters: 550 }, prisma),
-        listMarketProfiles(currentUserId, prisma),
+        hasFeatureAccess(tier, 'CUSTOM_MARKET_PROFILES') ? listMarketProfiles(currentUserId, prisma) : Promise.resolve([]),
       ]);
 
       const generatedLeads = await Promise.all(
@@ -250,7 +253,9 @@ export async function POST(req: Request) {
             if (marketRequestedLeadId && !ownedLead) throw new Error('Regeneration lead is not owned by authenticated user');
             const metadata = extractProspectMetadata(lead);
             const country = ownedLead?.prospect?.country || savedLead?.prospect?.country || metadata.country;
-            const marketProfile = await resolveMarketProfile({ userId: currentUserId, country, override: marketProfileOverride,
+            const allowedOverride = hasFeatureAccess(tier, 'CUSTOM_MARKET_PROFILES') || (typeof marketProfileOverride === 'string' && BUILT_IN_MARKET_PROFILES.some(profile => profile.key === marketProfileOverride))
+              ? marketProfileOverride : null;
+            const marketProfile = await resolveMarketProfile({ userId: currentUserId, country, override: allowedOverride,
               profiles: marketProfiles }, prisma);
             const factualLead = { name: [lead.first_name, lead.last_name].filter(Boolean).join(' '),
               company: lead.company_name || null, incident: lead.provided_incident_details || lead.incident_details || null,

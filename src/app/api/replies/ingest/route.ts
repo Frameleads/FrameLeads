@@ -26,6 +26,8 @@ import { prisma } from "@/lib/prisma";
 import { createInboundSignal } from '@/lib/prospects/persistence';
 import { resolvePipelineValue } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
+import { getUserEntitlementTier } from "@/lib/auth-guard";
+import { hasFeatureAccess, requiredTierForFeature } from "@/lib/entitlements";
 import { scheduleInboundDecisions } from '@/lib/decision/schedule';
 import {
   classifyReply,
@@ -44,6 +46,11 @@ export async function POST(req: Request) {
     const auth = await verifyApiKey(rawKey);
     if (!auth.authenticated || !auth.userId) {
       return NextResponse.json({ success: false, error: auth.error || "Invalid API key." }, { status: 401 });
+    }
+    const tier = await getUserEntitlementTier(auth.userId);
+    if (!hasFeatureAccess(tier, 'DECISION_ENGINE')) {
+      return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'DECISION_ENGINE',
+        requiredTier: requiredTierForFeature('DECISION_ENGINE') }, { status: 403 });
     }
 
     const payload = await req.json();

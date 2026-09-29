@@ -4,9 +4,12 @@ import { assessRevenueAtRisk } from '@/lib/revenue-risk/service';
 import { displayResponseSLA } from '@/lib/response-sla/deadline';
 import { getResponseSLAPolicy } from '@/lib/response-sla/policy';
 import { syncResponseSLAForDecision } from '@/lib/response-sla/service';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
+  const entitlementError = await requireFeatureAccess('RESPONSE_SLA');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const decisionId = new URL(request.url).searchParams.get('decisionId');

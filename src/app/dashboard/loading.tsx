@@ -6,7 +6,7 @@ export default function DashboardLoading() {
         <div className="h-4 w-80 max-w-full rounded bg-[#1A1A1A]" />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((item) => (
           <div key={item} className="h-40 rounded-2xl border border-[#242424] bg-[#111111] p-6">
             <div className="h-4 w-28 rounded bg-[#242424]" />

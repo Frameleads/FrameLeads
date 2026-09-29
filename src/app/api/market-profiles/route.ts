@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { BUILT_IN_MARKET_PROFILES, listMarketProfiles, saveMarketProfile } from '@/lib/market-messaging';
+import { requireFeatureAccess, getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 export const dynamic = 'force-dynamic';
 async function owner() {
@@ -10,12 +12,17 @@ async function owner() {
   return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
 }
 export async function GET() {
+  const entitlementError = await requireFeatureAccess('BUILTIN_MARKET_MESSAGING');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  try { return NextResponse.json({ profiles: await listMarketProfiles(userId), builtins: BUILT_IN_MARKET_PROFILES }); }
+  const entitlementUser = await getAuthenticatedEntitlementUser();
+  try { return NextResponse.json({ profiles: hasFeatureAccess(entitlementUser?.tier, 'CUSTOM_MARKET_PROFILES') ? await listMarketProfiles(userId) : [], builtins: BUILT_IN_MARKET_PROFILES }); }
   catch (error) { console.error('[MARKET PROFILE] Read failed', error); return NextResponse.json({ error: 'Market profiles could not be loaded.' }, { status: 500 }); }
 }
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('CUSTOM_MARKET_PROFILES');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await request.json().catch(() => null);

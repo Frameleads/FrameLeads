@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
@@ -12,6 +13,8 @@ async function userId() {
 }
 
 export async function GET() {
+  const entitlementError = await requireFeatureAccess('ICP');
+  if (entitlementError) return entitlementError;
   const id = await userId();
   if (!id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const profile = await prisma.iCPProfile.findUnique({ where: { userId: id } });
@@ -19,6 +22,8 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const entitlementError = await requireFeatureAccess('ICP');
+  if (entitlementError) return entitlementError;
   const id = await userId();
   if (!id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const input = await request.json().catch(() => null);

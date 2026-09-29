@@ -5,6 +5,7 @@ import { prisma } from '../prisma';
 import { evaluateSalesConstitution } from '../sales-constitution';
 import { topicFor } from '../decision/triage';
 import { automaticExecutionRolloutEnabled, getAutomationPolicy } from './policy';
+import { hasFeatureAccess, normalizeFrameLeadsTier } from '../entitlements';
 
 type Evaluation = Awaited<ReturnType<typeof evaluateSalesConstitution>>;
 const MAX_REASON = 12;
@@ -41,7 +42,7 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
     db.decisionActionEvent.findFirst({ where: { userId: input.userId, decisionId: decision.id }, orderBy: { createdAt: 'desc' } }),
     db.frameLeadsBrain.findUnique({ where: { userId: input.userId }, select: { revision: true } }),
     db.revenuePlaybook.findUnique({ where: { userId: input.userId }, select: { revision: true } }),
-    db.user.findUnique({ where: { id: input.userId }, select: { imapEmail: true, imapPassword: true, imapHost: true } }),
+    db.user.findUnique({ where: { id: input.userId }, select: { imapEmail: true, imapPassword: true, imapHost: true, tier: true, email: true } }),
   ]);
   if (!source || decision.inputMessage.sourceType !== 'INBOUND_SIGNAL') throw new Error('Decision inbound source not found for tenant');
   const override = source.generatedLead?.listId ? await db.automationCampaignOverride.findUnique({
@@ -51,6 +52,12 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
     requestedMode = override.mode as Mode;
   if (input.simulation?.requestedMode) requestedMode = input.simulation.requestedMode;
   const reasons: string[] = [];
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL?.trim().toLowerCase();
+  const tier = adminEmail && user?.email?.trim().toLowerCase() === adminEmail ? 'ENTERPRISE' : normalizeFrameLeadsTier(user?.tier);
+  if (!hasFeatureAccess(tier, 'AUTOMATION') && requestedMode === Mode.AUTOPILOT) {
+    requestedMode = Mode.HUMAN_APPROVAL;
+    reasons.push('ENTERPRISE_AUTOMATION_NOT_ENTITLED');
+  }
   if (override?.mode === CampaignMode.DISABLE_AUTOMATION) reasons.push('LEAD_LIST_AUTOMATION_DISABLED');
   const topic = decision.primaryIntent ? topicFor(decision.primaryIntent as TriageIntent) : null;
   const contextRef = { prospectId: decision.prospectId, decisionId: decision.id,

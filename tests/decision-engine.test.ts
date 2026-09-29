@@ -242,6 +242,7 @@ test('MANUAL and DISABLED schedule no automatic triage or usage; SHADOW_AUTO sch
   const queued: (() => Promise<void>)[] = [];
   const analyzed: string[] = [];
   const deps: any = { enqueue: (task: () => Promise<void>) => { queued.push(task); },
+    tier: async () => 'CORE',
     triage: async ({ signalId }: any) => { analyzed.push(signalId); } };
   try {
     delete process.env.DECISION_ENGINE_ROLLOUT_MODE;
@@ -261,6 +262,23 @@ test('MANUAL and DISABLED schedule no automatic triage or usage; SHADOW_AUTO sch
   }
 });
 
+test('Micro tier inbound scheduling persists normally but skips Decision Engine work', async () => {
+  const original = process.env.DECISION_ENGINE_ROLLOUT_MODE;
+  process.env.DECISION_ENGINE_ROLLOUT_MODE = 'SHADOW_AUTO';
+  try {
+    let callback: (() => Promise<void>) | null = null;
+    let aiCalls = 0;
+    scheduleInboundDecisions('tenant-a', ['signal-micro'], { enqueue: (task: any) => { callback = task; },
+      tier: async () => 'MICRO_PILOT', triage: (async () => { aiCalls++; }) as any });
+    assert.ok(callback);
+    await (callback as () => Promise<void>)();
+    assert.equal(aiCalls, 0);
+  } finally {
+    if (original === undefined) delete process.env.DECISION_ENGINE_ROLLOUT_MODE;
+    else process.env.DECISION_ENGINE_ROLLOUT_MODE = original;
+  }
+});
+
 test('automatic scheduling and triage failures cannot reject an already persisted inbound event', async () => {
   const original = process.env.DECISION_ENGINE_ROLLOUT_MODE;
   process.env.DECISION_ENGINE_ROLLOUT_MODE = 'SHADOW_AUTO';
@@ -271,7 +289,7 @@ test('automatic scheduling and triage failures cannot reject an already persiste
     }));
     let callback: (() => Promise<void>) | null = null;
     scheduleInboundDecisions('tenant-a', ['signal-1'], { enqueue: ((task: any) => { callback = task; }) as any,
-      triage: (async () => { throw new Error('provider failed'); }) as any });
+      tier: async () => 'CORE', triage: (async () => { throw new Error('provider failed'); }) as any });
     assert.ok(callback);
     await (callback as () => Promise<void>)();
     assert.equal(inboundSaved, true);

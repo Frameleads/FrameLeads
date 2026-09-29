@@ -4,6 +4,7 @@ import { createContext, ReactNode, useContext } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ENTERPRISE_CHECKOUT_URL } from "@/lib/checkout";
+import { hasFeatureAccess } from "@/lib/entitlements";
 
 interface Props {
   children: ReactNode;
@@ -23,7 +24,7 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
   // Strict Fail-Closed Architecture
   // Block unless the user has Enterprise access.
   // ONLY allow if strictly 'ENTERPRISE'
-  const hasEnterpriseAccess = userTier === 'ENTERPRISE';
+  const hasEnterpriseAccess = hasFeatureAccess(userTier, 'GOVERNANCE');
 
   if (hasEnterpriseAccess) {
     return (

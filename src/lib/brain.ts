@@ -93,7 +93,8 @@ export async function rebuildBrainFromCanonicalSources(userId: string, db: Prism
 
 export async function getBrainKnowledge(input: { userId: string; take?: number; cursor?: string }, db: PrismaClient = prisma) {
   const userId = tenant(input.userId);
-  await getOrCreateFrameLeadsBrain(userId, db);
+  const brain = await db.frameLeadsBrain.findUnique({ where: { userId }, select: { id: true } });
+  if (!brain) return [];
   return db.brainKnowledgeEntry.findMany({ where: { userId, archivedAt: null }, orderBy: [{ category: 'asc' }, { key: 'asc' }, { id: 'asc' }],
     take: Math.min(100, Math.max(1, input.take ?? 50)), ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}) });
 }

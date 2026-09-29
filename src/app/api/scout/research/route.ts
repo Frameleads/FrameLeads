@@ -4,10 +4,13 @@ import { prisma } from '@/lib/prisma';
 import { resolveScoutUser, runScoutResearch } from '@/lib/scout-data';
 import { ProspectIntelligenceNotFound } from '@/lib/prospects/intelligence';
 import { researchProspectICP } from '@/lib/prospects/research';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('PROSPECT_RESEARCH');
+  if (entitlementError) return entitlementError;
   try {
     const cookieStore = await cookies();
     const user = await resolveScoutUser(

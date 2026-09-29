@@ -2,11 +2,14 @@ import { NextResponse } from 'next/server';
 import { authenticatedAutomationUserId, validMutationOrigin } from '@/lib/automation/auth';
 import { prisma } from '@/lib/prisma';
 import { simulateDecision, validateSimulationInput } from '@/lib/decision/simulation';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET() {
+  const entitlementError = await requireFeatureAccess('DECISION_SANDBOX');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const decisions = await prisma.decision.findMany({ where: { userId, status: { not: 'PENDING' } },
@@ -17,6 +20,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('DECISION_SANDBOX');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!validMutationOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });

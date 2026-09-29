@@ -29,6 +29,9 @@
     "test:decision-replay": "node scripts/run-prospect-tool.cjs decision-replay-test",
     "test:outcome-learning": "node scripts/run-prospect-tool.cjs outcome-learning-test",
     "test:market-messaging": "node scripts/run-prospect-tool.cjs market-messaging-test",
+    "test:campaign-session": "node scripts/run-prospect-tool.cjs campaign-session-test",
+    "test:entitlements": "node scripts/run-prospect-tool.cjs entitlements-test",
+    "test:entitlement-routes": "node scripts/run-prospect-tool.cjs entitlement-routes-test",
     "test:diagnostic": "node scripts/run-prospect-tool.cjs diagnostic-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },

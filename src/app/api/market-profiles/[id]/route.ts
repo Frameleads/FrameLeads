@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { deleteMarketProfile, saveMarketProfile } from '@/lib/market-messaging';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 async function owner() {
@@ -10,6 +11,8 @@ async function owner() {
   return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
 }
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const entitlementError = await requireFeatureAccess('CUSTOM_MARKET_PROFILES');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { id } = await context.params, body = await request.json().catch(() => null);
@@ -22,6 +25,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 }
 export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const entitlementError = await requireFeatureAccess('CUSTOM_MARKET_PROFILES');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {

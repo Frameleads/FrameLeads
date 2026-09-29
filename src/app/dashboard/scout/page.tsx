@@ -5,6 +5,9 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { listScoutProspects, resolveScoutUser } from '@/lib/scout-data';
 import ScoutWorkspace from './ScoutWorkspace';
+import CorePaywall from '@/components/CorePaywall';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 export default async function ScoutPage() {
   const cookieStore = await cookies();
@@ -14,6 +17,10 @@ export default async function ScoutPage() {
     cookieStore.get('user_email')?.value,
   );
   if (!user) redirect('/login');
+  const tier = await getUserEntitlementTier(user.id);
+  if (!hasFeatureAccess(tier, 'SCOUT')) {
+    return <CorePaywall userTier={tier} featureName="Scout"><div aria-hidden="true"><ScoutWorkspace prospects={[]} /></div></CorePaywall>;
+  }
   const prospects = await listScoutProspects(prisma, user.id);
-  return <ScoutWorkspace prospects={prospects} />;
+  return <CorePaywall userTier={tier} featureName="Scout"><ScoutWorkspace prospects={prospects} /></CorePaywall>;
 }

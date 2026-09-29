@@ -3,11 +3,14 @@ import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import ResponseSLASettings from './ResponseSLASettings';
+import EnterprisePaywall from '@/components/EnterprisePaywall';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export default async function ResponseSLASettingsPage() {
   const jar = await cookies();
   const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
   if (!user) redirect('/login');
-  return <ResponseSLASettings />;
+  const tier = await getUserEntitlementTier(user.id);
+  return <EnterprisePaywall userTier={tier} featureName="Response SLA"><ResponseSLASettings /></EnterprisePaywall>;
 }

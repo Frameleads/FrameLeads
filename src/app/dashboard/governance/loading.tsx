@@ -1,6 +1,6 @@
 export default function GovernanceLoading() {
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 lg:px-0 mt-8">
+    <div className="mx-auto w-full max-w-6xl mt-8">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8 md:mb-10">
         <div>
@@ -10,7 +10,7 @@ export default function GovernanceLoading() {
       </div>
 
       {/* ── Primary Metrics Grid ────────────────────────────────────── */}
-      <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+      <div className="mb-8 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-[172px] animate-pulse rounded-xl border border-gray-800 bg-gray-900/60 p-6">
             <div className="mb-5 h-3 w-36 rounded bg-[#242424]" />
@@ -20,7 +20,7 @@ export default function GovernanceLoading() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+      <div className="grid grid-cols-1 gap-5 mb-8 sm:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
           <div key={i} className="rounded-2xl border border-[#242424] bg-[#121212] p-6 md:p-7 h-[200px] animate-pulse">
             <div className="w-11 h-11 bg-[#1A1A1A] rounded-xl mb-5"></div>

@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 import { google } from "googleapis";
 import { prisma } from '@/lib/prisma';
 import { DEFAULT_PIPELINE_VALUE } from '@/lib/pipeline-value';
-import { requireEnterpriseTier } from '@/lib/auth-guard';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface BookingRequest {
@@ -21,7 +21,7 @@ interface BookingRequest {
 
 export async function POST(req: Request) {
   try {
-    const authError = await requireEnterpriseTier();
+    const authError = await requireFeatureAccess('INBOX_TRIAGE');
     if (authError) return authError;
     const cookieStore = await cookies();
     const email = cookieStore.get('user_email')?.value;

@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { requireEnterpriseTier } from '@/lib/auth-guard';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
@@ -124,7 +124,7 @@ function unavailableClassification(): TriageClassification {
 
 export async function POST(request: Request) {
   try {
-    const authError = await requireEnterpriseTier();
+    const authError = await requireFeatureAccess('DECISION_ENGINE');
     if (authError) return authError;
 
     const payload = await request.json().catch(() => null);

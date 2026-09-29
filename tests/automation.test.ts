@@ -8,7 +8,7 @@ import { actOnDecision, runAutopilot } from '../src/lib/automation/actions';
 
 const tenant = 'tenant-a';
 function fixture() {
-  let policy: any = null, hold: any = null, override: any = null, suppression = false;
+  let policy: any = null, hold: any = null, override: any = null, suppression = false, tier = 'ENTERPRISE';
   let constitutionRevision = 1, rules: any[] = [], sends = 0, aiCalls = 0;
   let confidence = 96, status = 'READY', review = false, leadEmail = 'lead@example.com';
   let priorAutoSends = 0;
@@ -19,7 +19,7 @@ function fixture() {
     inputMessage: { sourceId: 'signal-a', sourceType: 'INBOUND_SIGNAL' } };
   const db: any = {
     $transaction: async (fn: any) => fn(db),
-    user: { findUnique: async ({ where }: any) => where.id === tenant ? { id: tenant,
+    user: { findUnique: async ({ where }: any) => where.id === tenant ? { id: tenant, tier, email: 'owner@example.com',
       imapEmail: 'owner@example.com', imapPassword: 'encrypted', imapHost: 'imap.gmail.com' } : null,
       findUniqueOrThrow: async () => ({ imapEmail: 'owner@example.com' }) },
     automationPolicy: { findUnique: async ({ where }: any) => where.userId === tenant ? policy : null },
@@ -65,6 +65,7 @@ function fixture() {
     setPolicy: (value: any) => { policy = { id: 'policy-a', userId: tenant, ...DEFAULT_AUTOMATION_POLICY, revision: 2, ...value }; },
     setHold: (active: boolean) => { hold = { id: 'hold-a', active, reason: 'Review required' }; },
     setSuppression: (value: boolean) => { suppression = value; },
+    setTier: (value: string) => { tier = value; },
     setDecision: (value: any) => { Object.assign(decision, value); },
     setRules: (value: any[]) => { rules = value; constitutionRevision++; },
     sends: () => sends, aiCalls: () => aiCalls,
@@ -109,6 +110,26 @@ test('Constitution block, human, approval and unresolved rules constrain autonom
   f.setRules([rule(ConstitutionEffect.REQUIRE_APPROVAL, 'CUSTOM_MANUAL')]);
   assert.equal((await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db)).state, 'ESCALATED');
   assert.equal(f.aiCalls(), 0);
+});
+
+test('Downgraded tenant cannot execute persisted Autopilot and stored Constitution blocks still apply', async () => {
+  const f = fixture();
+  const prior = process.env.AUTOMATION_EXECUTION_ENABLED;
+  process.env.AUTOMATION_EXECUTION_ENABLED = 'true';
+  try {
+    f.setTier('CORE'); f.setPolicy({ defaultMode: 'AUTOPILOT', autopilotEnabled: true, autoExecutionDisabled: false });
+    const gated = await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db);
+    assert.equal(gated.resolvedMode, 'HUMAN_APPROVAL');
+    assert.ok(gated.reasons.includes('ENTERPRISE_AUTOMATION_NOT_ENTITLED'));
+    const blockedAttempt = await runAutopilot({ userId: tenant, decisionId: 'decision-a' }, { db: f.db, sender: f.sender });
+    assert.notEqual(blockedAttempt.state, 'EXECUTED');
+    assert.equal(f.sends(), 0);
+    f.setRules([rule(ConstitutionEffect.BLOCK)]);
+    assert.equal((await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db)).state, 'BLOCKED');
+  } finally {
+    if (prior === undefined) delete process.env.AUTOMATION_EXECUTION_ENABLED;
+    else process.env.AUTOMATION_EXECUTION_ENABLED = prior;
+  }
 });
 
 test('real Automation resolution loads current contextual facts and prevents Autopilot', async () => {

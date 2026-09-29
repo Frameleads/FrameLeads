@@ -30,6 +30,8 @@ import { prisma } from "@/lib/prisma";
 import { createInboundSignal, identityFromFullName } from '@/lib/prospects/persistence';
 import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { extractApiKey, verifyApiKey } from "@/lib/webhook-auth";
+import { getUserEntitlementTier } from "@/lib/auth-guard";
+import { hasFeatureAccess, requiredTierForFeature } from "@/lib/entitlements";
 import { normalizeSignalPayload, type NormalizedSignal } from "@/lib/signal-normalizer";
 import {
   enforceWordLimit,
@@ -187,6 +189,12 @@ export async function POST(req: Request) {
         { success: false, error: auth.error },
         { status: 401 }
       );
+    }
+    if (!auth.userId) return NextResponse.json({ success: false, error: "Invalid API key." }, { status: 401 });
+    const tier = await getUserEntitlementTier(auth.userId);
+    if (!hasFeatureAccess(tier, 'INBOX_TRIAGE')) {
+      return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'INBOX_TRIAGE',
+        requiredTier: requiredTierForFeature('INBOX_TRIAGE') }, { status: 403 });
     }
 
     // ── Step 2: PARSE & NORMALIZE ────────────────────────────────────

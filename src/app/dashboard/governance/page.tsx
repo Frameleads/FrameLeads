@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { cookies } from 'next/headers';
 import { Suspense } from 'react';
 import GovernanceDashboard from './GovernanceDashboard';
 import GovernanceLoading from './loading';
+import { getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,14 +15,16 @@ export default function GovernancePage() {
 }
 
 async function GovernanceData() {
-  const cookieStore = await cookies();
-  const email = cookieStore.get('user_email')?.value;
-  const user = email
-    ? await prisma.user.findUnique({
-        where: { email: email.trim().toLowerCase() },
-        select: { id: true, tier: true },
-      })
-    : null;
+  const user = await getAuthenticatedEntitlementUser();
+  if (user?.tier !== 'ENTERPRISE') return <GovernanceDashboard initialMetrics={{
+    dealsProtected: { totalValue: 0, dealCount: 0, label: 'Qualified Pipeline Protected' },
+    timeToApproval: { avgMilliseconds: 0, avgMinutes: 0, avgHours: 0, sampleSize: 0, label: 'Average Latency' },
+    institutionalMemory: { score: 0, label: 'Codified Rules' },
+    queue: { pendingCount: 0, signalTriggeredCount: 0, protectionSignalCount: 0 },
+    macroMetrics: { totalOutputVolume: 0, currentMonthOutput: 0, positiveIntentRate: 0,
+      positiveIntentCount: 0, totalSignals: 0, approvedSignalCount: 0, approvedPipelineValue: 0 },
+    timeSeriesData: [],
+  }} userTier={user?.tier ?? 'INACTIVE'} />;
 
   const metricsUserId = user?.id ?? '__unauthenticated__';
   const now = new Date();
@@ -157,7 +159,7 @@ async function GovernanceData() {
   return (
     <GovernanceDashboard
       initialMetrics={metrics}
-      userTier={user?.tier ?? 'INACTIVE'}
+      userTier={user.tier}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { NextResponse } from 'next/server';
 import { QualificationOverride } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
@@ -9,6 +10,8 @@ import { setQualificationOverride } from '@/lib/prospects/qualification';
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('ICP');
+  if (entitlementError) return entitlementError;
   const jar = await cookies();
   const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

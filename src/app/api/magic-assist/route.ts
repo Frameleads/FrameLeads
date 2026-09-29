@@ -3,6 +3,7 @@ export const revalidate = 0;
 
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { requireFeatureAccess } from "@/lib/auth-guard";
 
 const SYSTEM_PROMPT = `You are an elite B2B copywriter. Analyze the provided website HTML. Extract the core business offering. Return a strict JSON object with two keys: targetAudience (who they sell to, max 5 words) and valueProposition (what painful problem they solve, stripped of ALL corporate jargon, written in punchy 6th-grade English, max 15 words).`;
 
@@ -20,6 +21,8 @@ function extractJsonObject(rawText: string): any {
 }
 
 export async function POST(req: Request) {
+  const entitlementError = await requireFeatureAccess('BASE_OUTBOUND');
+  if (entitlementError) return entitlementError;
   try {
     const { url } = await req.json();
 

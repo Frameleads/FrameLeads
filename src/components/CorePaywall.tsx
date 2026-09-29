@@ -4,6 +4,7 @@ import { createContext, ReactNode, useContext } from "react";
 import { Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { CORE_CHECKOUT_URL } from "@/lib/checkout";
+import { hasFeatureAccess } from "@/lib/entitlements";
 
 interface Props {
   children: ReactNode;
@@ -23,7 +24,7 @@ export default function CorePaywall({ children, userTier, featureName }: Props) 
   // Strict Fail-Closed Architecture
   // Block unless the user has Core or Enterprise access.
   // ONLY allow if strictly 'CORE' or 'ENTERPRISE'
-  const hasCoreAccess = userTier === 'CORE' || userTier === 'ENTERPRISE';
+  const hasCoreAccess = hasFeatureAccess(userTier, 'SCOUT');
 
   if (hasCoreAccess) {
     return (

@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { authenticatedAutomationUserId } from '@/lib/automation/auth';
 import { getDecisionReplay } from '@/lib/decision/replay';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(_request: Request, { params }: { params: Promise<{ decisionId: string }> }) {
+  const entitlementError = await requireFeatureAccess('DECISION_REPLAY');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const { decisionId } = await params;

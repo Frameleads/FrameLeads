@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { playUISound } from "@/lib/audio";
 import { CORE_CHECKOUT_URL, ENTERPRISE_CHECKOUT_URL } from "@/lib/checkout";
+import MarketProfilePicker from '@/components/MarketProfilePicker';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -162,7 +163,7 @@ interface BatchResponse {
   processed_count: number;
   error_message: string | null;
 }
-type MarketChoice = { profileKey: string; profileId: string | null; profileName: string };
+type MarketChoice = { profileKey: string; profileId: string | null; profileName: string; summary?: string };
 
 // ── Status badge config ─────────────────────────────────────────────
 
@@ -263,8 +264,8 @@ export default function SandboxClient({
 
   useEffect(() => { fetch('/api/market-profiles', { cache: 'no-store' }).then(response => response.ok ? response.json() : null)
     .then(data => setMarketChoices([...(data?.builtins ?? []).map((profile: any) => ({ profileKey: profile.key,
-      profileId: null, profileName: profile.name })), ...(data?.profiles ?? []).filter((profile: any) => profile.enabled)
-      .map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name }))]))
+      profileId: null, profileName: profile.name, summary: profile.summary })), ...(data?.profiles ?? []).filter((profile: any) => profile.enabled)
+      .map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name, summary: 'Custom market communication profile.' }))]))
     .catch(() => setMarketChoices([])); }, []);
 
   useEffect(() => {
@@ -806,11 +807,11 @@ useEffect(() => {
   console.log("Sandbox Props:", { userTier, monthlyQuota, leadsProcessed });
 
   return (
-    <div className="relative flex min-h-[calc(100vh-8rem)] flex-col gap-6 md:h-[calc(100vh-8rem)] md:flex-row">
+    <div className="relative flex min-h-[calc(100vh-8rem)] flex-col gap-6 xl:h-[calc(100vh-8rem)] xl:flex-row">
 
       
       {/* Left Panel Column */}
-      <div className="flex min-h-[300px] w-full flex-col gap-4 md:h-full md:min-h-0 md:w-1/2">
+      <div className="flex min-h-[300px] w-full flex-col gap-4 xl:h-full xl:min-h-0 xl:w-1/2">
         
         {/* Tier Quota Header */}
         <div className="rounded-2xl border border-primary/30 bg-primary/10 px-5 py-6 mb-6 md:p-6 md:mb-0 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
@@ -849,17 +850,17 @@ useEffect(() => {
         </div>
 
         {isEmpty ? (
-          <div className="flex-1 bg-[#0a0a0a] border border-[#1A1A1A] rounded-2xl overflow-hidden flex flex-col items-center justify-center text-center px-4">
-            <div className="w-20 h-20 rounded-2xl bg-muted/50 border border-border/50 flex items-center justify-center mb-8">
-              <Inbox className="w-10 h-10 text-muted-foreground" />
+          <div className="flex-none min-h-[280px] bg-[#0a0a0a] border border-[#1A1A1A] rounded-2xl overflow-hidden flex flex-col items-center justify-center text-center px-4 py-8 xl:min-h-0 xl:flex-1 xl:py-0">
+            <div className="w-14 h-14 rounded-2xl bg-muted/50 border border-border/50 flex items-center justify-center mb-4 xl:mb-8 xl:h-20 xl:w-20">
+              <Inbox className="h-8 w-8 text-muted-foreground xl:h-10 xl:w-10" />
             </div>
             <h2 className="text-2xl font-semibold font-heading">No leads yet</h2>
-            <p className="text-lg text-muted-foreground mt-2 mb-8 max-w-md">
+            <p className="mt-2 mb-4 max-w-md text-sm text-muted-foreground xl:mb-8 xl:text-lg">
               Upload a CSV in the Ingestion tab to get started.
             </p>
             <button
               onClick={() => router.push("/dashboard/ingestion")}
-              className="h-12 px-8 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98]"
+              className="h-11 px-6 rounded-xl bg-primary text-primary-foreground text-base font-medium transition-all hover:opacity-90 hover:shadow-lg hover:shadow-primary/20 active:scale-[0.98] xl:h-12 xl:px-8"
             >
               Go to Ingestion
             </button>
@@ -986,7 +987,7 @@ useEffect(() => {
       </div>
 
       {/* Right Panel — AI Copy Editor */}
-      <div ref={detailPanelRef} className="flex min-h-[400px] w-full scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm md:h-full md:min-h-0 md:w-1/2">
+      <div ref={detailPanelRef} className="flex min-h-[400px] w-full scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm xl:h-full xl:min-h-0 xl:w-1/2">
         <div className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
@@ -1074,12 +1075,11 @@ useEffect(() => {
             Intelligence
           </button>
         </div>
-        {activeTab === 'email' && <div className="flex items-center justify-end gap-2 border-b border-border/40 px-4 py-2 sm:px-6">
-          <label htmlFor="sandbox-market-profile" className="text-xs text-muted-foreground">Market Profile</label>
-          <select id="sandbox-market-profile" value={marketProfileOverride} onChange={event => setMarketProfileOverride(event.target.value)}
-            className="h-9 max-w-[60%] rounded-md border border-border/60 bg-background px-2 text-xs text-foreground sm:max-w-56">
-            <option value="AUTO">Auto - prospect country</option>{marketChoices.map(profile => <option key={profile.profileKey} value={profile.profileId || profile.profileKey}>{profile.profileName}</option>)}
-          </select>
+        {activeTab === 'email' && <div className="flex flex-wrap items-center justify-end gap-2 border-b border-border/40 px-4 py-2 sm:px-6 xl:flex-col xl:items-start xl:justify-start">
+          <label className="w-full text-xs text-muted-foreground sm:w-auto">Market Profile</label>
+          <MarketProfilePicker className="w-full sm:w-64 xl:w-[320px]" value={marketProfileOverride} onChange={setMarketProfileOverride}
+            options={marketChoices.map(profile => ({ value: profile.profileId || profile.profileKey,
+              label: profile.profileName, description: profile.summary }))} />
         </div>}
         {selectedLead?.marketProfile && <p className="border-b border-border/40 px-4 py-2 text-xs text-muted-foreground sm:px-6">
           Market profile: <span className="text-foreground">{selectedLead.marketProfile.profileName} - {selectedLead.marketProfile.summary}</span>
@@ -1334,13 +1334,13 @@ useEffect(() => {
         </div>
       </div>
       {handoffToast && (
-        <div className="fixed top-6 right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60">
+        <div className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60">
           <CheckCircle2 className="h-4 w-4" />
           Draft copied to clipboard!
         </div>
       )}
       {emailSendSuccess && (
-        <div className="fixed top-6 right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60" role="status">
+        <div className="fixed inset-x-4 top-6 sm:left-auto sm:right-6 z-[220] flex items-center gap-2 rounded-xl border border-green-500/30 bg-[#111111] px-4 py-3 text-sm font-medium text-green-400 shadow-2xl shadow-black/60" role="status">
           <CheckCircle2 className="h-4 w-4" />
           🔥 Outreach deployed successfully!
         </div>

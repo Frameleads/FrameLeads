@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import { authenticatedAutomationUserId, validMutationOrigin } from '@/lib/automation/auth';
 import { reviewLearningSuggestion } from '@/lib/outcome-learning/learning';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const entitlementError = await requireFeatureAccess('OUTCOME_LEARNING');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!validMutationOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });

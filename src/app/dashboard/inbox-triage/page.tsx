@@ -11,6 +11,8 @@ import { resolveScoutUser } from "@/lib/scout-data";
 import { assessRevenueAtRiskBatch } from '@/lib/revenue-risk/service';
 import { syncResponseSLAsBatch } from '@/lib/response-sla/service';
 import { getResponseSLAPolicy } from '@/lib/response-sla/policy';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 
 export default function InboxTriagePage() {
@@ -25,20 +27,23 @@ async function InboxTriageData() {
   const cookieStore = await cookies();
   const user = await resolveScoutUser(prisma,
     cookieStore.get('frameleads_session')?.value, cookieStore.get('user_email')?.value);
-  const userTier = user ? (await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true } }))?.tier ?? 'INACTIVE' : 'INACTIVE';
 
   // Phase 4: Priority-sorted query — SIGNAL_TRIGGERED items with
   // isHighPriority=true always surface at the top of the triage queue.
+  const userTier = user ? await getUserEntitlementTier(user.id) : 'INACTIVE';
+  if (!hasFeatureAccess(userTier, 'INBOX_TRIAGE')) return <CorePaywall userTier={userTier} featureName="Inbox Triage">
+    <TriageCommandCenter initialData={[]} slaDueSoonPercent={75} userTier={userTier} />
+  </CorePaywall>;
   const triageSignals = await prisma.inboundSignal.findMany({
-    where: {
-      userId: user?.id ?? "__unauthenticated__",
-      status: { in: ["PENDING", "ARCHIVED"] },
-    },
-    orderBy: [
-      { isHighPriority: "desc" },
-      { createdAt: "asc" },
-    ],
-  });
+      where: {
+        userId: user?.id ?? "__unauthenticated__",
+        status: { in: ["PENDING", "ARCHIVED"] },
+      },
+      orderBy: [
+        { isHighPriority: "desc" },
+        { createdAt: "asc" },
+      ],
+    });
   const decisionRows = triageSignals.length ? await prisma.decision.findMany({
     where: { userId: user!.id, inputMessage: { sourceType: 'INBOUND_SIGNAL',
       sourceId: { in: triageSignals.map(signal => signal.id) } } },
@@ -48,14 +53,16 @@ async function InboxTriageData() {
   const latestBySignal = new Map<string, { id: string; status: string; source: string }>();
   for (const row of decisionRows) if (!latestBySignal.has(row.inputMessage.sourceId))
     latestBySignal.set(row.inputMessage.sourceId, { id: row.id, status: row.status, source: row.source });
-  const riskRows = user && latestBySignal.size ? await assessRevenueAtRiskBatch({ userId: user.id,
-    decisionIds: [...latestBySignal.values()].map(row => row.id) }) : [];
-  const riskByDecision = new Map(riskRows.map(row => [row.decisionId, row]));
   const decisionIds = [...latestBySignal.values()].map(row => row.id);
-  const slaRows = user && decisionIds.length ? await syncResponseSLAsBatch({ userId: user.id,
+  const isEnterprise = hasFeatureAccess(userTier, 'REVENUE_RISK');
+  const [riskRows, slaPolicy] = await Promise.all([
+    isEnterprise && user && decisionIds.length ? assessRevenueAtRiskBatch({ userId: user.id, decisionIds }) : Promise.resolve([]),
+    isEnterprise && user ? getResponseSLAPolicy(user.id) : Promise.resolve(null),
+  ]);
+  const riskByDecision = new Map(riskRows.map(row => [row.decisionId, row]));
+  const slaRows = isEnterprise && user && decisionIds.length ? await syncResponseSLAsBatch({ userId: user.id,
     decisionIds, risks: riskRows }) : [];
   const slaByDecision = new Map(slaRows.filter(row => row != null).map(row => [row!.decisionId, row!]));
-  const slaPolicy = user ? await getResponseSLAPolicy(user.id) : null;
 
   return (
     <CorePaywall userTier={userTier} featureName="Inbox Triage">

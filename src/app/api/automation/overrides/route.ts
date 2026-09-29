@@ -1,9 +1,12 @@
 import { CampaignAutomationMode } from '@prisma/client';
 import { NextResponse } from 'next/server';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 import { authenticatedAutomationUserId, validMutationOrigin } from '@/lib/automation/auth';
 import { setLeadListAutomationOverride } from '@/lib/automation/policy';
 
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('AUTOMATION');
+  if (entitlementError) return entitlementError;
   const userId = await authenticatedAutomationUserId();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!validMutationOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { htmlToPlainText, sendNativeEmail, NativeMailUnavailable } from '@/lib/outbound/native-mail';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,6 +13,8 @@ function normalizeEmail(value: string) {
 
 export async function POST(request: Request) {
   try {
+    const entitlementError = await requireFeatureAccess('BASE_OUTBOUND');
+    if (entitlementError) return entitlementError;
     const requestOrigin = request.headers.get("origin");
     if (requestOrigin && requestOrigin !== new URL(request.url).origin) {
       return NextResponse.json({ success: false, error: "Invalid request origin." }, { status: 403 });

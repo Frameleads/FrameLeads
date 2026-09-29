@@ -5,6 +5,8 @@ import { resolvePipelineValue } from '@/lib/pipeline-value';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 import { scheduleInboundDecisions } from '@/lib/decision/schedule';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import { hasFeatureAccess } from '@/lib/entitlements';
 
 export async function POST(req: Request) {
   try {
@@ -40,6 +42,8 @@ export async function POST(req: Request) {
 
     // Legacy draft generation is optional and cannot reject the saved reply.
     try {
+    if (!hasFeatureAccess(await getUserEntitlementTier(auth.userId), 'DECISION_ENGINE'))
+      throw new Error('Decision Engine entitlement is unavailable');
     if (!process.env.GEMINI_API_KEY) throw new Error('Legacy draft provider is not configured');
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({

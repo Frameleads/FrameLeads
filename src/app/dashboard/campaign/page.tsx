@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Save, Settings2, CheckCircle2, ChevronDown, Loader2, Sparkles } from "lucide-react";
+import { Save, Settings2, CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import FrameSelect from '@/components/ui/FrameSelect';
+import { readCampaignContext, writeCampaignContext } from "@/lib/campaign-session";
 
 // ── CTA Style Options ─────────────────────────────────────────────────
 // Each CTA style maps to a specific closing technique injected into the
@@ -87,22 +89,23 @@ export default function CampaignPage() {
 
   useEffect(() => {
     // Load existing context — backward compatible with the old string format.
-    const stored = localStorage.getItem("campaign_context");
+    const stored = readCampaignContext();
     if (stored) {
       try {
-        const parsed = JSON.parse(stored);
-        setCompanyName(parsed.company_name || "");
-        setSenderName(parsed.sender_name || "");
-        setValueProposition(parsed.value_proposition || "");
-        setTargetAudience(parsed.target_audience || "");
-        setWebsiteUrl(parsed.website_url || "");
+        const parsed = stored;
+        setCompanyName(typeof parsed.company_name === "string" ? parsed.company_name : "");
+        setSenderName(typeof parsed.sender_name === "string" ? parsed.sender_name : "");
+        setValueProposition(typeof parsed.value_proposition === "string" ? parsed.value_proposition : "");
+        setTargetAudience(typeof parsed.target_audience === "string" ? parsed.target_audience : "");
+        setWebsiteUrl(typeof parsed.website_url === "string" ? parsed.website_url : "");
 
         // Migration: if the old format stored `preferred_cta_style` as a raw
         // label string, attempt to match it to the new key-based system.
-        if (parsed.cta_style_key) {
-          setCtaStyleKey(parsed.cta_style_key);
-          setWedgeOfferDetail(parsed.wedge_offer_detail || "");
-        } else if (parsed.preferred_cta_style) {
+        const savedCtaStyle = CTA_OPTIONS.find((option) => option.key === parsed.cta_style_key)?.key;
+        if (savedCtaStyle) {
+          setCtaStyleKey(savedCtaStyle);
+          setWedgeOfferDetail(typeof parsed.wedge_offer_detail === "string" ? parsed.wedge_offer_detail : "");
+        } else if (typeof parsed.preferred_cta_style === "string") {
           const legacy = parsed.preferred_cta_style.toLowerCase();
           const match = CTA_OPTIONS.find((o) =>
             legacy.includes(o.label.toLowerCase().slice(0, 10))
@@ -134,7 +137,7 @@ export default function CampaignPage() {
       cta_style_key: ctaStyleKey,
       wedge_offer_detail: ctaStyleKey === "wedge_offer" ? wedgeOfferDetail : "",
     };
-    localStorage.setItem("campaign_context", JSON.stringify(payload));
+    writeCampaignContext(payload);
 
     setShowSuccess(true);
     setTimeout(() => {
@@ -171,11 +174,11 @@ export default function CampaignPage() {
     "rounded-xl border-2 border-[#242424] bg-transparent text-foreground ring-offset-background placeholder:text-muted-foreground focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 transition-colors duration-150";
 
   return (
-    <div className="h-screen overflow-y-auto flex flex-col">
-      <div className="w-full max-w-6xl mx-auto flex flex-col px-4 md:px-0 pb-12">
+    <div className="min-h-dvh flex flex-col">
+      <div className="mx-auto flex w-full max-w-6xl flex-col pb-12">
         {/* Header */}
         <div className="pt-2 pb-6 md:pb-8 shrink-0">
-          <h1 className="text-4xl font-bold flex items-center gap-4 font-heading tracking-tight">
+          <h1 className="text-3xl font-bold flex flex-wrap items-center gap-3 font-heading tracking-tight sm:text-4xl sm:gap-4">
             <Settings2 className="w-8 h-8 text-primary" />
             Campaign Context
           </h1>
@@ -292,7 +295,7 @@ export default function CampaignPage() {
               
               DATA CONSTRAINT: `wedge_offer_detail` is per-campaign state,
               NOT a global setting. Different campaigns can have different
-              wedge offers. This is stored in localStorage alongside the
+              wedge offers. This is stored in sessionStorage alongside the
               campaign context and cleared if the user switches away from
               the Wedge Offer CTA type.
           ───────────────────────────────────────────────────────────────── */}
@@ -304,10 +307,11 @@ export default function CampaignPage() {
               Defines how generated copy closes across Email, LinkedIn, and Inbox Triage.
             </p>
             <div className="relative w-full md:w-2/3">
-              <select
+              <FrameSelect
+                ariaLabel="Preferred CTA style"
                 value={ctaStyleKey}
-                onChange={(e) => {
-                  const newKey = e.target.value as CtaStyleKey;
+                onValueChange={(value) => {
+                  const newKey = value as CtaStyleKey;
                   setCtaStyleKey(newKey);
                   // Clear wedge offer detail when switching AWAY from wedge offer
                   // to prevent stale data from leaking into future prompts.
@@ -315,15 +319,9 @@ export default function CampaignPage() {
                     setWedgeOfferDetail("");
                   }
                 }}
-                className={`w-full p-4 text-sm leading-relaxed cursor-pointer appearance-none pr-10 ${inputClasses}`}
-              >
-                {CTA_OPTIONS.map((opt) => (
-                  <option key={opt.key} value={opt.key} className="bg-[#121212] text-white">
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+                options={CTA_OPTIONS.map(opt => ({ value: opt.key, label: opt.label, description: opt.description }))}
+                className={`w-full ${inputClasses}`}
+              />
             </div>
 
             {/* CTA Description — dynamically updates based on selection */}
@@ -368,7 +366,7 @@ export default function CampaignPage() {
 
           {/* Block 5: Save Action */}
           <div className="w-full md:col-span-2 flex justify-center md:justify-start mt-8">
-            <div className="flex items-center gap-4">
+            <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:gap-4">
               <button
                 onClick={handleSave}
                 disabled={

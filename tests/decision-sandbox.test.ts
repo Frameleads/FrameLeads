@@ -31,7 +31,7 @@ function fixture(effect: string | null = null) {
       return target[key as keyof typeof target]; } });
   const db: any = {
     user: read('user', { findUnique: async ({ where }: any) => where.id === tenant ?
-      { id: tenant, imapEmail: 'owner@example.com', imapPassword: 'secret', imapHost: 'imap.example.com' } : null }),
+      { id: tenant, tier: 'ENTERPRISE', email: 'owner@example.com', imapEmail: 'owner@example.com', imapPassword: 'secret', imapHost: 'imap.example.com' } : null }),
     decision: read('decision', { findFirst: async ({ where }: any) => where.userId === tenant && where.id === decision.id ? decision : null }),
     prospect: read('prospect', { findUnique: async ({ where }: any) => where.userId_id.userId === tenant ?
       { firstName: 'Alex', lastName: 'Lee', companyName: 'Acme', jobTitle: 'VP Sales', industry: 'SaaS', country: 'US' } : null }),

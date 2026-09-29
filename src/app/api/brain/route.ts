@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { resolveScoutUser } from '@/lib/scout-data';
 import { getBrainKnowledge, rebuildBrainFromCanonicalSources, upsertBrainKnowledge } from '@/lib/brain';
 import type { BrainKnowledgeCategory } from '@prisma/client';
+import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 async function owner() {
@@ -11,6 +12,8 @@ async function owner() {
   return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
 }
 export async function GET() {
+  const entitlementError = await requireFeatureAccess('BRAIN');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
@@ -26,6 +29,8 @@ export async function GET() {
   }
 }
 export async function POST(request: Request) {
+  const entitlementError = await requireFeatureAccess('BRAIN');
+  if (entitlementError) return entitlementError;
   const userId = await owner();
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const body = await request.json().catch(() => null);

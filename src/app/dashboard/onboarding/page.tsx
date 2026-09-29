@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Sparkles,
 } from "lucide-react";
+import { writeCampaignContext } from "@/lib/campaign-session";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ interface CampaignTemplate {
   name: string;
   description: string;
   icon: React.ElementType;
-  /** Pre-filled campaign context that gets saved to localStorage */
+  /** Pre-filled campaign context saved for the current browser tab session. */
   prefilledContext: {
     company_name: string;
     value_proposition: string;
@@ -156,8 +157,8 @@ export default function OnboardingPage() {
       company_name: userCompanyName.trim(),
     };
 
-    // Persist to localStorage — same format the Campaign Builder reads
-    localStorage.setItem("campaign_context", JSON.stringify(campaignContext));
+    // Persist temporary context for the current browser tab session.
+    writeCampaignContext(campaignContext);
 
     // Brief artificial delay for perceived processing
     await new Promise((r) => setTimeout(r, 800));
@@ -176,11 +177,11 @@ export default function OnboardingPage() {
   // ── Styles ──────────────────────────────────────────────────────────
 
   const inputClasses =
-    "rounded-xl border border-border/50 bg-transparent text-foreground ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[#FF5A1F] focus:border-transparent transition-all duration-150";
+    "rounded-xl border-2 border-[#242424] bg-transparent text-foreground ring-offset-background placeholder:text-muted-foreground focus:border-[#FF5A1F] focus:ring-1 focus:ring-[#FF5A1F] focus:outline-none transition-colors duration-150";
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 md:px-8 lg:px-0 py-8 md:py-12">
+      <div className="mx-auto max-w-5xl px-0 py-8 md:py-12">
 
         {/* ── Header ────────────────────────────────────────────────── */}
         <div className="text-center mb-10 md:mb-14">
@@ -207,7 +208,7 @@ export default function OnboardingPage() {
             pre-fills the ENTIRE campaign context, so the user only
             needs to add their company name and upload a CSV.
         ──────────────────────────────────────────────────────────────── */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+        <div className="grid grid-cols-1 gap-5 mb-8 sm:grid-cols-2 lg:grid-cols-3">
           {CAMPAIGN_TEMPLATES.map((template) => {
             const isSelected = selectedTemplateId === template.id;
             const Icon = template.icon;
@@ -309,7 +310,7 @@ export default function OnboardingPage() {
               <p className="text-xs text-gray-500 uppercase tracking-widest mb-3 font-medium">
                 Template Preview
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2 lg:grid-cols-3">
                 <div>
                   <p className="text-gray-500 text-xs mb-1">CTA Strategy</p>
                   <p className="text-gray-300">{selectedTemplate.prefilledContext.preferred_cta_style}</p>
@@ -431,7 +432,7 @@ export default function OnboardingPage() {
                 </div>
 
                 {/* Integration Status Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+                <div className="grid grid-cols-1 gap-3 mt-2 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     { name: "Clay", status: "Not Connected", connected: false },
                     { name: "Phantombuster", status: "Not Connected", connected: false },

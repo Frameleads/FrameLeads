@@ -207,7 +207,7 @@ export default function GovernanceDashboard({
   );
 
   const pageContent = (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 lg:px-0">
+    <div className="mx-auto w-full max-w-6xl">
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8 md:mb-10">
         <div>
@@ -234,7 +234,7 @@ export default function GovernanceDashboard({
       </div>
 
       {/* ── Primary Metrics Grid ────────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 gap-6 mb-8 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Total Output Volume</p>
           <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
@@ -275,7 +275,7 @@ export default function GovernanceDashboard({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
+      <div className="grid grid-cols-1 gap-5 mb-8 sm:grid-cols-2 lg:grid-cols-3">
 
         {/* ─── Metric 1: Deals Protected ────────────────────────────── */}
         <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7 group hover:border-[#FF5A1F]/30 transition-all duration-300">
