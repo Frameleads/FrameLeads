@@ -21,49 +21,54 @@ async function sha256(value: string) {
   return base64Url(new Uint8Array(digest));
 }
 
-function configuredAppOrigin() {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+function configuredWhopRedirectUri() {
+  const configuredUrl = process.env.WHOP_REDIRECT_URI?.trim();
   if (!configuredUrl) return null;
 
-  const url = new URL(configuredUrl);
-  const hasUnexpectedParts =
+  let url: URL;
+  try {
+    url = new URL(configuredUrl);
+  } catch {
+    throw new Error("WHOP_REDIRECT_URI must be a valid absolute URL.");
+  }
+
+  if (
     url.username ||
     url.password ||
     url.search ||
     url.hash ||
-    (url.pathname !== "/" && url.pathname !== "");
-
-  if (hasUnexpectedParts) {
+    url.pathname !== WHOP_CALLBACK_PATH
+  ) {
     throw new Error(
-      "NEXT_PUBLIC_APP_URL must contain only the application origin (for example, https://frame-leads.vercel.app).",
+      "WHOP_REDIRECT_URI must be an absolute callback URL ending exactly in /api/auth/callback, without credentials, query, or hash (for example, https://app.frameleads.io/api/auth/callback).",
     );
   }
 
   if (process.env.NODE_ENV === "production" && url.protocol !== "https:") {
-    throw new Error("NEXT_PUBLIC_APP_URL must use HTTPS in production.");
+    throw new Error("WHOP_REDIRECT_URI must use HTTPS in production.");
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("NEXT_PUBLIC_APP_URL must use HTTP or HTTPS.");
+    throw new Error("WHOP_REDIRECT_URI must use HTTP or HTTPS.");
   }
 
-  return url.origin;
+  return url.toString();
 }
 
 /**
- * Returns the one canonical redirect URI used for both OAuth authorization
- * and the subsequent token exchange. Production requires an explicit stable
- * origin; development derives it from the incoming request.
+ * Returns the one callback URI used for both OAuth authorization and token
+ * exchange. Production requires an explicit callback; development can fall
+ * back to the incoming request origin for local use.
  */
 export function getWhopRedirectUri(request: Request) {
-  const appOrigin = configuredAppOrigin();
+  const configuredUri = configuredWhopRedirectUri();
 
-  if (!appOrigin && process.env.NODE_ENV === "production") {
-    throw new Error("Missing NEXT_PUBLIC_APP_URL in the production environment.");
+  if (!configuredUri && process.env.NODE_ENV === "production") {
+    throw new Error("Missing WHOP_REDIRECT_URI in the production environment.");
   }
 
   const requestOrigin = new URL(request.url).origin;
-  return new URL(WHOP_CALLBACK_PATH, appOrigin || requestOrigin).toString();
+  return configuredUri || new URL(WHOP_CALLBACK_PATH, requestOrigin).toString();
 }
 
 export async function createWhopAuthorizationUrl(

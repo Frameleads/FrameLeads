@@ -10,7 +10,8 @@ require.extensions['.ts'] = (module, filename) => {
   module._compile(output.outputText, filename);
 };
 const tool = process.argv[2];
-if (!['test', 'intelligence-test', 'research-test', 'scout-test', 'qualification-test', 'metadata-test', 'trust-test', 'usage-test', 'company-test', 'handoff-test', 'memory-test', 'brain-test', 'playbook-test', 'constitution-test', 'decision-test', 'automation-test', 'revenue-risk-test', 'response-sla-test', 'decision-sandbox-test', 'decision-replay-test', 'outcome-learning-test', 'diagnostic-test', 'market-messaging-test', 'campaign-session-test', 'entitlements-test', 'entitlement-routes-test', 'backfill'].includes(tool)) throw new Error('Unknown prospect tool');
+if (!['test', 'intelligence-test', 'research-test', 'scout-test', 'qualification-test', 'metadata-test', 'trust-test', 'usage-test', 'company-test', 'handoff-test', 'memory-test', 'brain-test', 'playbook-test', 'constitution-test', 'decision-test', 'automation-test', 'revenue-risk-test', 'response-sla-test', 'decision-sandbox-test', 'decision-replay-test', 'outcome-learning-test', 'diagnostic-test', 'market-messaging-test', 'campaign-session-test', 'entitlements-test', 'entitlement-routes-test', 'whop-oauth-test', 'backfill'].includes(tool)) throw new Error('Unknown prospect tool');
+if (tool === 'whop-oauth-test') { require(path.join(__dirname, '../tests/whop-oauth.test.ts')); return; }
 if (tool === 'diagnostic-test') { require(path.join(__dirname, '../tests/diagnostic.test.ts')); return; }
 if (tool === 'market-messaging-test') { require(path.join(__dirname, '../tests/market-messaging.test.ts')); return; }
 if (tool === 'campaign-session-test') { require(path.join(__dirname, '../tests/campaign-session.test.ts')); return; }
