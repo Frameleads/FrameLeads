@@ -22,6 +22,8 @@
     "test:playbook": "node scripts/run-prospect-tool.cjs playbook-test",
     "test:constitution": "node scripts/run-prospect-tool.cjs constitution-test",
     "test:decision": "node scripts/run-prospect-tool.cjs decision-test",
+    "test:decision-intent-signals": "node scripts/run-prospect-tool.cjs decision-intent-signals-test",
+    "test:inbox-triage-qa": "node scripts/run-prospect-tool.cjs inbox-triage-qa-test",
     "test:automation": "node scripts/run-prospect-tool.cjs automation-test",
     "test:revenue-risk": "node scripts/run-prospect-tool.cjs revenue-risk-test",
     "test:response-sla": "node scripts/run-prospect-tool.cjs response-sla-test",

@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import FrameSelect from '@/components/ui/FrameSelect';
 import { parseNumericConditionValue } from '@/lib/sales-constitution-editor-validation';
+import { formatConstitutionCategory, formatConstitutionCondition, formatConstitutionLabel,
+  formatConstitutionScope } from '@/lib/sales-constitution-presentation';
 
 type Kind = 'DISCOUNT_PERCENT' | 'MIN_CONTRACT_MONTHS' | 'PROHIBITED_CLAIM' | 'TOPIC' | 'UNSUBSCRIBE' | 'CUSTOM_MANUAL' | 'FACT' | 'ALL' | 'ANY';
 type Field = 'QUALIFICATION_STATUS' | 'FIT_TIER' | 'PRIMARY_INTENT' | 'SECONDARY_INTENT' | 'CONFIDENCE' |
@@ -35,6 +37,57 @@ type Rule = { id: string; name: string; category: ConstitutionCategory; effect: 
 type Conflict = { ruleIds: [string, string]; rules: { id: string; name: string; effect: ConstitutionEffect }[];
   winningRuleId: string; winningEffect: ConstitutionEffect; explanation: string };
 type View = { name: string; revision: number; rules: Rule[]; conflicts: Conflict[]; nextCursor: string | null };
+type RuleCardProps = { rule: Rule; pending: boolean; onEdit: () => void; onToggle: () => void; onArchive: () => void };
+function RuleCard({ rule, pending, onEdit, onToggle, onArchive }: RuleCardProps) {
+  const severityTone = rule.severity === 'CRITICAL' ? 'text-red-300' : rule.severity === 'HIGH' ? 'text-amber-300' : 'text-white/80';
+  return <li className="min-w-0 rounded-xl border border-white/[0.09] bg-[#1A1A1A] p-4 sm:p-5">
+    <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="min-w-0">
+        <p className="font-mono text-[9px] uppercase tracking-[.18em] text-white/40">{formatConstitutionCategory(rule.category)}</p>
+        <h3 className="mt-1 break-words font-heading text-lg font-semibold leading-7 text-white">{rule.name}</h3>
+      </div>
+      <span className={`w-fit shrink-0 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider ${rule.enabled
+        ? 'border-emerald-400/20 bg-emerald-400/[0.07] text-emerald-300'
+        : 'border-white/[0.12] bg-white/[0.03] text-white/55'}`}>
+        {rule.enabled ? 'Enabled' : 'Disabled'}
+      </span>
+    </div>
+
+    <p className="mt-2 max-w-4xl text-sm leading-6 text-white/65">{rule.description}</p>
+
+    <dl className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="min-w-0 rounded-lg border border-white/[0.06] bg-[#111111] p-3">
+        <dt className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">Condition</dt>
+        <dd className="mt-1 break-words text-sm font-medium leading-5 text-white/85">{formatConstitutionCondition(rule.constraint)}</dd>
+      </div>
+      <div className="min-w-0 rounded-lg border border-white/[0.06] bg-[#111111] p-3">
+        <dt className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">Effect</dt>
+        <dd className="mt-1 break-words text-sm font-semibold leading-5 text-[#FF5A1F]">{formatConstitutionLabel(rule.effect)}</dd>
+      </div>
+      <div className="min-w-0 rounded-lg border border-white/[0.06] bg-[#111111] p-3">
+        <dt className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">Severity</dt>
+        <dd className={`mt-1 text-sm font-medium leading-5 ${severityTone}`}>{formatConstitutionLabel(rule.severity)}</dd>
+      </div>
+      <div className="min-w-0 rounded-lg border border-white/[0.06] bg-[#111111] p-3">
+        <dt className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">Scope</dt>
+        <dd className="mt-1 break-words text-sm leading-5 text-white/75">{formatConstitutionScope(rule.scope, rule.source)}</dd>
+      </div>
+    </dl>
+
+    {rule.source === 'USER_ENTERED' && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-3">
+      <button type="button" className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]" onClick={onEdit}>Edit</button>
+      <button type="button" disabled={pending} className="inline-flex min-h-10 items-center rounded-lg border border-white/[0.08] px-3 text-sm text-white/70 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:opacity-40" onClick={onToggle}>{rule.enabled ? 'Disable' : 'Enable'}</button>
+      <button type="button" disabled={pending} className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm text-red-300/80 transition-colors hover:bg-red-400/[0.06] hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/60 disabled:opacity-40" onClick={onArchive}>Archive</button>
+    </div>}
+
+    <details className="mt-2 border-t border-white/[0.06] pt-3">
+      <summary className="w-fit cursor-pointer font-mono text-[9px] uppercase tracking-wider text-white/40 hover:text-white/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]">Rule details</summary>
+      <p className="mt-2 break-words font-mono text-[10px] leading-5 text-white/40">
+        {formatConstitutionLabel((rule.constraint as { kind?: string }).kind ?? 'custom')} · {rule.actionTypes.map(formatConstitutionLabel).join(', ')} · Priority {rule.priority} · {(rule.constraint as { kind?: string }).kind === 'CUSTOM_MANUAL' ? 'Manual review required' : 'Structured evaluation'}
+      </p>
+    </details>
+  </li>;
+}
 type Draft = { id: string; name: string; category: ConstitutionCategory; effect: ConstitutionEffect; description: string;
   kind: Kind; actionTypes: ConstitutionActionType[]; severity: ConstitutionSeverity; scope: ConstitutionScope;
   priority: number; enabled: boolean; threshold: string;
@@ -161,8 +214,9 @@ export default function ConstitutionEditor({ initial }: { initial: View }) {
       <h2 className="font-semibold">Conflicting active rules</h2><ul className="mt-2 space-y-1">{view.conflicts.map(conflict => <li key={conflict.ruleIds.join(':')}>
         {conflict.rules.map(rule => rule.name).join(' / ')} — {conflict.rules.find(rule => rule.id === conflict.winningRuleId)?.name} wins ({conflict.winningEffect.replaceAll('_', ' ')}).
       </li>)}</ul></section>}
-    <div className="flex min-w-0 flex-col gap-4"><section className="order-1 w-full rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">Rules <span className="ml-2 font-normal text-muted-foreground">{view.rules.length} loaded</span></h2>
-      {view.rules.length ? <ul className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">{view.rules.map(rule => <li key={rule.id} className="min-w-0 rounded-lg border border-border/50 p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><div className="min-w-0"><p className="text-xs uppercase text-muted-foreground">{rule.category.replaceAll('_', ' ')} · {rule.effect.replaceAll('_', ' ')} · {rule.severity} severity · {rule.scope.replaceAll('_', ' ')} scope · {rule.source.replaceAll('_', ' ')} · {rule.enabled ? 'Enabled' : 'Disabled'}</p><h3 className="mt-1 font-medium">{rule.name}</h3></div>{rule.source === 'USER_ENTERED' && <div className="flex gap-3"><button type="button" className="text-primary underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setDraft(fromRule(rule))}>Edit</button><button type="button" disabled={pending} className="text-primary underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => changeRule(rule, 'toggle')}>{rule.enabled ? 'Disable' : 'Enable'}</button><button type="button" disabled={pending} className="text-red-300 underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => changeRule(rule, 'archive')}>Archive</button></div>}</div><p className="mt-2 text-muted-foreground">{rule.description}</p><p className="mt-1 text-xs text-muted-foreground">{(rule.constraint as { kind?: string }).kind?.replaceAll('_', ' ')} · {rule.actionTypes.join(', ')} · Priority {rule.priority} · {(rule.constraint as { kind?: string }).kind === 'CUSTOM_MANUAL' ? 'Manual review required' : 'Structured evaluation'}</p></li>)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No boundaries configured. Add a rule to define what sales activity must not violate.</p>}
+    <div className="flex min-w-0 flex-col gap-4"><section className="order-1 w-full rounded-xl border border-white/[0.08] bg-[#111111] p-4 sm:p-5"><h2 className="font-heading text-base font-semibold text-white">Rules <span className="ml-2 font-mono text-[10px] font-normal uppercase tracking-wider text-white/45">{view.rules.length} loaded</span></h2>
+      {view.rules.length ? <ul className="mt-4 grid min-w-0 gap-4">{view.rules.map(rule => <RuleCard key={rule.id} rule={rule} pending={pending}
+        onEdit={() => setDraft(fromRule(rule))} onToggle={() => changeRule(rule, 'toggle')} onArchive={() => changeRule(rule, 'archive')} />)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No boundaries configured. Add a rule to define what sales activity must not violate.</p>}
       {view.nextCursor && <Button type="button" variant="outline" className="mt-4" disabled={pending} onClick={loadMore}>Load more rules</Button>}
     </section><section className="order-2 w-full rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">{draft.id ? 'Edit rule' : 'Add rule'}</h2>
       <div className="mt-4 space-y-3">

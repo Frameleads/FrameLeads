@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -10,6 +10,9 @@ import { playUISound } from '@/lib/audio';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
 import { hasFeatureAccess } from '@/lib/entitlements';
 import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/deadline';
+import { deriveIntentSignals } from '@/lib/decision/intent-signals';
+import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
+import { getDisplayedIntentConfidence } from '@/lib/decision/intent-confidence';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -77,10 +80,10 @@ function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
 
 type DecisionPacket = { id: string; status: string; primaryIntent: string | null;
   source: string;
-  secondaryIntents: string[]; confidenceScore: number | null; interpretation: string | null;
+  secondaryIntents: string[]; intentSignals?: unknown; confidenceScore: number | null; interpretation: string | null;
   recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
   reviewReasons: string[]; shadowMode: boolean; trace?: { icpState: unknown; policyResult: unknown;
-    contextReferences: unknown; memoryState: unknown } | null };
+    contextReferences: unknown; memoryState: unknown; intentOutput?: unknown } | null };
 type AutomationPacket = { decisionId: string; resolvedMode: string; state: string; reasons: string[];
   ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
 type RevenueRiskView = { status: string; score: number | null; band: string | null;
@@ -90,8 +93,9 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
   escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
   riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier }: { signalId: string;
-  onDecision: (signalId: string, status: string) => void;
+function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier }: { signalId: string;
+  reply: string;
+  onDecision: (signalId: string, status: string, packet?: DecisionPacket) => void;
   onRisk: (signalId: string, risk: RevenueRiskView) => void;
   onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
@@ -119,7 +123,7 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
         return response.json();
       })
       .then(data => { if (active) { setPacket(data.decision ?? null);
-        if (data.decision) onDecision(signalId, data.decision.status); } })
+        if (data.decision) onDecision(signalId, data.decision.status, data.decision); } })
       .catch(() => { if (active) setError('Could not load the decision packet.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -129,7 +133,7 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
     const timer = window.setInterval(() => {
       void fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`)
         .then(response => response.ok ? response.json() : null)
-        .then(data => { if (data?.decision) { setPacket(data.decision); onDecision(signalId, data.decision.status); } })
+        .then(data => { if (data?.decision) { setPacket(data.decision); onDecision(signalId, data.decision.status, data.decision); } })
         .catch(() => { /* The saved packet remains visible; polling can retry. */ });
     }, 3000);
     return () => window.clearInterval(timer);
@@ -209,110 +213,77 @@ function DecisionPacketPanel({ signalId, onDecision, onRisk, onSLA, dueSoonPerce
         body: JSON.stringify({ signalId, retryOfDecisionId: retry ? packet?.id : undefined }) });
       if (!response.ok) throw new Error('Decision analysis failed. The reply is safely stored; retry when ready.');
       const result = await response.json();
-      if (result.decision) { setPacket(result.decision); onDecision(signalId, result.decision.status); }
+      if (result.decision) { setPacket(result.decision); onDecision(signalId, result.decision.status, result.decision); }
       else setError('Prospect identity is unresolved. Review this reply manually.');
     } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
     finally { setRunning(false); }
   }
-  const label = packet?.status === 'READY' ? 'Ready' : packet?.status === 'NEEDS_REVIEW' ? 'Needs review'
-    : packet?.status === 'PENDING' ? 'Analyzing' : packet?.status === 'FAILED' ? 'Failed' : 'Not analyzed';
+  const statusPresentation = decisionStatusPresentation(packet?.status);
+  const label = packet?.status === 'PENDING' ? 'Analyzing' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
   const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
-  return <section aria-label="Decision packet" className="rounded-lg border border-[#333] bg-[#121212] p-5 sm:p-6">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-sm font-semibold uppercase tracking-wider text-white">Decision packet</h2>
-        <p className="mt-1 text-xs text-gray-400">{label} · {packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'} · Governed execution</p></div>
-      {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`}
-        className="rounded border border-[#333] px-3 py-2 text-xs text-gray-300 hover:border-[#FF5A1F] focus-visible:outline">Replay</Link>}
-      <button type="button" disabled={running || loading || packet?.status === 'PENDING'}
-        onClick={() => void run(Boolean(packet))}
-        className="rounded border border-[#FF5A1F] px-3 py-2 text-xs font-semibold text-[#FF5A1F] hover:bg-[#FF5A1F]/10 disabled:opacity-40">
-        {running ? 'Analyzing reply…' : packet ? 'Re-analyze' : 'Analyze reply'}
-      </button>
-    </div>
+  const intentLabel = packet?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent unresolved';
+  const actionLabel = packet?.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually';
+  const matchedRuleIds = [...new Set(policy.flatMap(item => item.matchedRuleIds ?? []))];
+  const isReview = packet?.status === 'NEEDS_REVIEW';
+  return <section aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 sm:p-7">
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_78%_0%,rgba(255,90,31,.075),transparent_35%)]" />
+    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+        <h2 className="font-heading text-base font-semibold uppercase tracking-wide text-white">Decision Packet</h2>
+        <span className={`rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider ${packet ? statusPresentation.badgeTone : 'border-white/[0.12] bg-white/[0.03] text-white/65'}`}>{label}</span>
+        <span className="rounded-full border border-white/[0.09] bg-black/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-white/45">{packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'}</span>
+        {automation && <span className="rounded-full border border-white/[0.09] bg-black/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-white/45">Governed execution</span>}
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`} className="inline-flex min-h-11 items-center rounded-lg border border-white/[0.1] px-3 py-2 text-xs text-white/65 transition-colors hover:border-white/25 hover:text-white focus-visible:outline">Replay</Link>}
+        <button type="button" disabled={running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
+          className="min-h-11 rounded-lg border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.06] px-3 py-2 text-xs font-semibold text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.12] disabled:opacity-40">
+          {running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
+        </button>
+      </div>
+    </header>
     {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
-    {packet && <div className="mt-5 space-y-3 text-sm text-gray-300">
-      <p><span className="text-gray-500">Primary intent:</span> {packet.primaryIntent?.replaceAll('_', ' ') ?? 'Unresolved'}
-        {packet.confidenceScore != null && <span className="ml-2 text-gray-500">{packet.confidenceScore}% confidence</span>}</p>
-      {packet.secondaryIntents?.length > 0 && <p><span className="text-gray-500">Also:</span> {packet.secondaryIntents.join(', ').replaceAll('_', ' ')}</p>}
-      {packet.interpretation && <p>{packet.interpretation}</p>}
-      <p><span className="text-gray-500">ICP:</span> {icp?.qualification ?? 'Unknown'} {icp?.fitTier ? `· ${icp.fitTier}` : ''}</p>
-      <p><span className="text-gray-500">Opportunity tier:</span> {icp?.valueBand ?? 'Unknown'}</p>
-      <p><span className="text-gray-500">Constitution:</span> {policy.length ? policy.map(item => item.decision ?? 'Review').join(', ') : 'Review required'}</p>
-      {policy.some(item => item.matchedRuleIds?.length) && <p className="break-words text-xs text-gray-500">Applicable rule IDs: {policy.flatMap(item => item.matchedRuleIds ?? []).join(', ')}</p>}
-      <p><span className="text-gray-500">Recommended next step:</span> {packet.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually'}</p>
-      {packet.reviewReasons?.length > 0 && <p className="text-amber-400">Review: {packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p>}
-      {packet.suggestedReply && <div><p className="text-gray-500">Suggested draft · review before use</p>
-        <p className="mt-1 whitespace-pre-wrap rounded border border-[#333] p-3">{packet.suggestedReply}</p></div>}
-      {packet.explanation && <p className="text-gray-400">{packet.explanation}</p>}
-      {isEnterpriseTier && risk && <div className="rounded border border-[#333] p-3" aria-label="Revenue priority">
-        <p className="text-xs uppercase tracking-wide text-gray-400">Revenue-at-Risk priority</p>
-        {risk.status === 'APPLICABLE' ? <p className="mt-1 font-semibold text-white">{risk.score} / 100 · {risk.band} <span className="text-xs font-normal text-gray-400">· {risk.confidence} confidence</span></p> :
-          <p className="mt-1 text-sm text-gray-300">{risk.status === 'NOT_APPLICABLE' ? 'Not applicable to revenue' : 'Insufficient data to rank'}</p>}
-        <ul className="mt-2 space-y-1 text-xs text-gray-400">{risk.reasons.slice(0, 4).map(reason => <li key={reason}>• {reason}</li>)}</ul>
-        <p className="mt-2 text-[11px] text-gray-500">Priority index, not a dollar-loss estimate. It does not change execution permissions.</p>
+    {packet && <div className="pt-5">
+        <div className="grid gap-5">
+          <div className="min-w-0">
+          <p className="font-mono text-[9px] uppercase tracking-[.18em] text-[#FF5A1F]">Incoming reply</p>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">“{reply}”</p>
+          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl xl:whitespace-nowrap">{packet.interpretation ?? 'Decision interpretation pending'}</h3>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <SummaryCard label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
+        <SummaryCard label="Governance" value={policy.map(item => item.decision ?? 'Review').join(' · ') || 'Review required'} detail={matchedRuleIds.length ? `${matchedRuleIds.length} matched ${matchedRuleIds.length === 1 ? 'rule' : 'rules'}` : 'No matching rule recorded'} active={matchedRuleIds.length > 0} />
+        <SummaryCard label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
+      </div>
+
+      {isReview && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#FF5A1F]" />
+          <div className="min-w-0"><p className="font-mono text-[8px] uppercase tracking-[.16em] text-[#FF5A1F]">Why human review</p>
+            <p className="mt-1 break-words text-xs leading-5 text-white/75 sm:text-sm">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p></div>
+        </div>
+        <span className="ml-5 w-fit shrink-0 rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.05] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF5A1F]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
       </div>}
-      {isEnterpriseTier && sla && <div className="rounded border border-[#333] p-3" aria-label="Response SLA">
-        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Response SLA</strong>
-          <a href="/dashboard/response-sla" className="text-xs text-[#FF5A1F] underline">SLA settings</a></div>
-        {(() => { const display = displayResponseSLA({ status: sla.status, startedAt: new Date(sla.startedAt),
-          dueAt: new Date(sla.dueAt), dueSoonPercent }, new Date(clock));
-          return <p className={`mt-1 text-sm ${display.state === 'OVERDUE' ? 'text-red-300' : display.state === 'DUE_SOON' ? 'text-amber-300' : 'text-gray-300'}`}>
-            {display.state === 'OVERDUE' ? `BREACHED · ${display.minutes}m overdue` :
-              display.state === 'DUE_SOON' ? `Due soon · ${display.minutes}m remaining` :
-                display.state === 'ACTIVE' ? `${display.minutes}m remaining` : display.state.replaceAll('_', ' ')}
-          </p>; })()}
-        <p className="mt-1 text-xs text-gray-400">Due: {new Date(sla.dueAt).toLocaleString()} · Risk at start: {sla.riskBandAtStart ?? 'UNKNOWN'}</p>
-        {sla.escalationLevel > 0 && <p className="mt-1 text-xs text-amber-300">Escalated to human review{sla.assignmentId ? ' · assignment recorded' : ''}</p>}
-        {sla.resolutionReason && <p className="mt-1 text-xs text-gray-500">{sla.resolutionReason.replaceAll('_', ' ')}</p>}
+
+      {(risk || sla) && <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[8px] uppercase tracking-wider text-white/35">
+        {risk && <span>Revenue priority · {risk.status === 'APPLICABLE' ? `${risk.score} ${risk.band}` : risk.status.replaceAll('_', ' ')}</span>}
+        {sla && <span>Response SLA · {sla.status}</span>}
       </div>}
-      {automation && <div className="space-y-2 rounded border border-[#333] p-3" aria-label="Governed execution">
-        <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-white">Governed execution</strong>
-          <a href="/dashboard/automation" className="text-xs text-[#FF5A1F] underline focus-visible:outline">Automation settings</a></div>
-        <p>Mode: {automation.resolvedMode.replaceAll('_', ' ')} · State: {automation.state.replaceAll('_', ' ')}</p>
-        {automation.reasons.length > 0 && <p className="text-xs text-amber-300">{automation.reasons.join(', ').replaceAll('_', ' ')}</p>}
-        {automation.ruleIds.length > 0 && <p className="text-xs text-gray-400">Constitution rules: {automation.ruleIds.join(', ')}</p>}
-        {automation.assignment && <p className="text-xs text-gray-400">Routed to {automation.assignment.queue.replaceAll('_', ' ')}</p>}
-        {automation.hold && <p className="text-xs text-amber-300">Prospect hold: {automation.hold.reason}</p>}
-        {['PENDING_APPROVAL', 'READY'].includes(automation.state) && <div className="space-y-2">
-          <textarea aria-label="Edited reply" value={editedReply} onChange={event => setEditedReply(event.target.value)}
-            placeholder="Edit reply before sending" maxLength={4000} rows={3}
-            className="w-full rounded border border-[#444] bg-[#181818] p-2 text-sm text-white focus-visible:outline-[#FF5A1F]" />
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={actionBusy || !packet.suggestedReply} onClick={() => void governedAction('APPROVE')} className="rounded border border-[#FF5A1F] px-3 py-2 text-xs disabled:opacity-40">Approve and send</button>
-            <button type="button" disabled={actionBusy || !editedReply.trim()} onClick={() => void governedAction('EDIT_AND_SEND')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Send edited reply</button>
-          </div></div>}
-        {!['EXECUTING', 'EXECUTED', 'REJECTED', 'FAILED_UNCERTAIN'].includes(automation.state) && <div className="flex flex-wrap gap-2">
-          <input aria-label="Action reason" value={actionReason} onChange={event => setActionReason(event.target.value)} maxLength={500} placeholder="Reason or hold note" className="min-w-0 flex-1 rounded border border-[#444] bg-[#181818] p-2 text-xs text-white" />
-          <button type="button" disabled={actionBusy} onClick={() => void governedAction('REJECT')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Reject</button>
-          <button type="button" disabled={actionBusy} onClick={() => void governedAction('ESCALATE')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Escalate</button>
-          <button type="button" disabled={actionBusy} onClick={() => void toggleHold()} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">{automation.hold ? 'Release hold' : 'Hold prospect'}</button>
-        </div>}
-        {actionBusy && <p role="status" className="text-xs text-gray-400">Updating governed action...</p>}
-        {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
-      </div>}
-      {!isEnterpriseTier && packet && <div className="space-y-3 rounded border border-[#333] p-3" aria-label="Human reply workflow">
-        <strong className="text-white">Human reply workflow</strong>
-        <p className="text-xs text-gray-400">Review the Decision and send only after you approve the reply.</p>
-        {packet.suggestedReply && <>
-          <p className="whitespace-pre-wrap rounded border border-[#333] bg-black/20 p-3 text-sm text-gray-200">{packet.suggestedReply}</p>
-          <textarea aria-label="Edited reply" value={editedReply} onChange={event => setEditedReply(event.target.value)} placeholder="Edit reply before sending" maxLength={4000} rows={3}
-            className="w-full rounded border border-[#444] bg-[#181818] p-2 text-sm text-white focus-visible:outline-[#FF5A1F]" />
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={actionBusy} onClick={() => void governedAction('APPROVE')} className="rounded border border-[#FF5A1F] px-3 py-2 text-xs disabled:opacity-40">Approve and send</button>
-            <button type="button" disabled={actionBusy || !editedReply.trim()} onClick={() => void governedAction('EDIT_AND_SEND')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Send edited reply</button>
-            <button type="button" disabled={actionBusy} onClick={() => void governedAction('REJECT')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Reject</button>
-            <button type="button" disabled={actionBusy} onClick={() => void governedAction('ESCALATE')} className="rounded border border-[#555] px-3 py-2 text-xs disabled:opacity-40">Escalate</button>
-          </div>
-          {actionBusy && <p role="status" className="text-xs text-gray-400">Updating reply...</p>}
-          {actionError && <p role="alert" className="text-xs text-red-300">{actionError}</p>}
-        </>}
-      </div>}
-      {packet.shadowMode && <p className="text-xs text-gray-500">Shadow analysis · sending follows the separate automation controls.</p>}
     </div>}
   </section>;
+}
+
+function SummaryCard({ label, value, detail, active = false }: { label: string; value: string; detail: string; active?: boolean }) {
+  return <article className={`min-w-0 rounded-xl border p-4 ${active ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.035]' : 'border-white/[0.08] bg-black/10'}`}>
+    <p className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">{label}</p>
+    <p className={`mt-2 truncate text-sm font-semibold uppercase ${active ? 'text-[#FF5A1F]' : 'text-white/85'}`} title={value}>{value}</p>
+    <p className="mt-1 line-clamp-2 break-words text-[10px] leading-4 text-white/45">{detail}</p>
+  </article>;
 }
 
 export default function TriageCommandCenter({
@@ -344,6 +315,9 @@ export default function TriageCommandCenter({
         recordStatus: s.status || 'PENDING',
         draftText: s.aiDraft || 'Awaiting Triage Draft...',
         signals: getPersistedSignals(s.signals, s.intentRisk),
+        intentRisk: s.intentRisk,
+        whyNowSignals: deriveIntentSignals({ triageSignals: getPersistedSignals(s.signals, s.intentRisk),
+          intentRisk: s.intentRisk, reply: s.rawEmail || '' }),
         strategyLogic: s.signalAnalysis || "Awaiting strategy logic...",
         decisionStatus: s.decisionStatus || null,
         decisionSource: s.decisionSource || null,
@@ -353,8 +327,14 @@ export default function TriageCommandCenter({
     : [], [initialData]);
 
   const [leads, setLeads] = useState<any[]>(dbLeads);
-  const updateDecisionStatus = useCallback((signalId: string, status: string) => {
-    setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, decisionStatus: status } : lead));
+  const updateDecisionStatus = useCallback((signalId: string, status: string, packet?: DecisionPacket) => {
+    setLeads(current => current.map(lead => {
+      if (lead.id !== signalId) return lead;
+      const whyNowSignals = packet ? deriveIntentSignals({ decision: packet,
+        triageSignals: lead.signals, intentRisk: lead.intentRisk, reply: lead.inboundSignal }) : lead.whyNowSignals;
+      return { ...lead, decisionStatus: status,
+        ...(packet ? { decisionPacket: packet, whyNowSignals } : {}) };
+    }));
   }, []);
   const updateRevenueRisk = useCallback((signalId: string, risk: RevenueRiskView) => {
     setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, revenueRisk: risk } : lead));
@@ -397,9 +377,9 @@ export default function TriageCommandCenter({
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
   const [intentScore, setIntentScore] = useState(activeLead ? activeLead.intentScore : 0);
+  const displayedIntentScore = getDisplayedIntentConfidence({ intentScore }) ?? 0;
   const [temperature, setTemperature] = useState(activeLead ? (activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD') : '');
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
-  const [strategyLogic, setStrategyLogic] = useState(activeLead ? activeLead.strategyLogic : '');
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
   const [showInboundSignalToast, setShowInboundSignalToast] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -410,6 +390,7 @@ export default function TriageCommandCenter({
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
   const [archiveToast, setArchiveToast] = useState('');
+  const selectedStateLeadId = useRef(activeLead?.id ?? null);
 
   useEffect(() => {
     setMounted(true);
@@ -495,18 +476,40 @@ export default function TriageCommandCenter({
   }, [dbLeads, queueView]);
 
   useEffect(() => {
-    if (activeLead) {
+    if (activeLead && selectedStateLeadId.current !== activeLead.id) {
+      selectedStateLeadId.current = activeLead.id;
       setInboundSignal(activeLead.inboundSignal);
       setDraftText(activeLead.draftText);
       setIntentScore(activeLead.intentScore);
       setTemperature(activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD');
       setSignals(activeLead.signals);
-      setStrategyLogic(activeLead.strategyLogic);
     }
   }, [activeLeadId, activeLead]);
 
   // Concierge slots returned by the triage AI (populated after Regenerate)
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+
+  const selectLead = useCallback((lead: any) => {
+    if (!lead) return;
+    selectedStateLeadId.current = lead.id;
+    setInboundSignal(lead.inboundSignal);
+    setDraftText(lead.draftText);
+    setIntentScore(lead.intentScore);
+    setTemperature(lead.status === 'HOT' ? 'ðŸ”¥ HOT' : lead.status === 'WARM' ? 'â˜€ï¸ WARM' : 'â„ï¸ COLD');
+    setSignals(lead.signals);
+    setIsEditing(false);
+    setRegenerateError('');
+    setBookingError('');
+    setShowBookingModal(false);
+    setAvailableSlots([]);
+    setActiveLeadId(lead.id);
+  }, []);
+
+  const selectLeadById = useCallback((id: string | null, rows: any[] = leads) => {
+    const lead = rows.find(item => item.id === id);
+    if (lead) selectLead(lead);
+    else setActiveLeadId(null);
+  }, [leads, selectLead]);
 
   const getProgressBarColor = (score: number) => {
     if (score >= 71) return 'bg-green-500';
@@ -536,7 +539,6 @@ export default function TriageCommandCenter({
           setIntentScore(data.intentScore);
           setTemperature(data.category === 'HOT' ? '🔥 HOT' : data.category === 'WARM' ? '☀️ WARM' : '❄️ COLD');
           setSignals(Array.isArray(data.signals) ? data.signals : []);
-          setStrategyLogic(typeof data.strategy === 'string' ? data.strategy : '');
           setDraftText(typeof data.draftResponse === 'string' ? data.draftResponse : 'Awaiting Triage Draft...');
           setLeads((current) => current.map((lead) => lead.id === activeLead?.id
             ? {
@@ -544,6 +546,9 @@ export default function TriageCommandCenter({
                 intentScore: data.intentScore,
                 status: data.category,
                 signals: Array.isArray(data.signals) ? data.signals : [],
+                whyNowSignals: deriveIntentSignals({ decision: lead.decisionPacket,
+                  triageSignals: Array.isArray(data.signals) ? data.signals : [],
+                  intentRisk: data.intentRisk, reply: lead.inboundSignal }),
                 strategyLogic: typeof data.strategy === 'string' ? data.strategy : '',
                 draftText: typeof data.draftResponse === 'string' ? data.draftResponse : lead.draftText,
               }
@@ -589,7 +594,7 @@ export default function TriageCommandCenter({
         // Remove from local queue
         const newLeads = leads.filter(l => l.id !== activeLead.id);
         setLeads(newLeads);
-        setActiveLeadId(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
+        selectLeadById(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, newLeads);
       } else {
         const errData = await res.json().catch(() => null);
         console.warn("Backend dispatch response non-200:", errData || res.statusText);
@@ -606,6 +611,7 @@ export default function TriageCommandCenter({
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
   const isHotLead = hasDecisionEngineAccess && intentScore >= 71;
+  const displayedSignals: string[] = activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
 
   const handleLockMeeting = async () => {
     if (!bookingSlotStart || !bookingSlotEnd) return;
@@ -633,7 +639,7 @@ export default function TriageCommandCenter({
         // Remove from local queue
         const newLeads = leads.filter(l => l.id !== activeLead?.id);
         setLeads(newLeads);
-        setActiveLeadId(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
+        selectLeadById(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, newLeads);
       } else {
         setBookingError(data.error || 'Booking failed. Check your Google credentials.');
       }
@@ -651,10 +657,10 @@ export default function TriageCommandCenter({
 
   const handleQueueViewChange = (view: 'active' | 'archived') => {
     setQueueView(view);
-    setActiveLeadId(
+    selectLeadById(
       leads.find((lead) => view === 'archived'
         ? lead.recordStatus === 'ARCHIVED'
-        : lead.recordStatus === 'PENDING')?.id || null,
+        : lead.recordStatus === 'PENDING')?.id || null, leads,
     );
   };
 
@@ -675,7 +681,7 @@ export default function TriageCommandCenter({
         lead.id === activeLead.id ? { ...lead, recordStatus: 'ARCHIVED' } : lead,
       );
       setLeads(updatedLeads);
-      setActiveLeadId(updatedLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null);
+      selectLeadById(updatedLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, updatedLeads);
       showArchiveToast('Lead archived');
       router.refresh();
     } catch (error) {
@@ -701,7 +707,7 @@ export default function TriageCommandCenter({
 
       const remainingLeads = leads.filter((lead) => lead.id !== activeLead.id);
       setLeads(remainingLeads);
-      setActiveLeadId(remainingLeads.find((lead) => lead.recordStatus === 'ARCHIVED')?.id || null);
+      selectLeadById(remainingLeads.find((lead) => lead.recordStatus === 'ARCHIVED')?.id || null, remainingLeads);
       showArchiveToast('Lead permanently deleted');
       router.refresh();
     } catch (error) {
@@ -902,35 +908,35 @@ export default function TriageCommandCenter({
   const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
-    <div className="grid w-full min-w-0 grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-      <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
-        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Sort by</p>
-        <div className="flex flex-wrap gap-1">
+    <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-1.5 xl:p-2.5">
+      <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
+        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Sort by</p>
+        <div className="flex flex-nowrap items-center gap-0.5">
           {(isEnterpriseTier ? [{ value: 'received', label: 'Received' }, { value: 'risk', label: 'Revenue priority' }, { value: 'sla', label: 'SLA due' }] : [{ value: 'received', label: 'Received' }]).map(option => <button key={option.value} type="button" aria-pressed={orderBy === option.value} onClick={() => setOrderBy(option.value as typeof orderBy)}
-            className={`min-h-10 rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
+            className={`min-h-9 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
             {option.label}
           </button>)}
         </div>
       </div>
-      {isEnterpriseTier && <div role="group" aria-label="SLA urgency" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
-        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">SLA urgency</p>
-        <div className="flex flex-wrap gap-1">
-          <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
-          <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/15 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
+      {isEnterpriseTier && <div role="group" aria-label="SLA urgency" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
+        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">SLA urgency</p>
+        <div className="flex flex-nowrap items-center gap-1">
+          <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
         </div>
       </div>}
-      <div role="group" aria-label="Review" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
-        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Review</p>
-        <div className="flex flex-wrap gap-1">
-          <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/15 text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
-          <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/15 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
+      <div role="group" aria-label="Review" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
+        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Review</p>
+        <div className="flex flex-nowrap items-center gap-1">
+          <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
         </div>
       </div>
-      <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-[#242424] bg-[#0A0A0A] p-2.5">
-        <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#888888]">Queue</p>
-        <div className="flex flex-wrap gap-1">
-          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
-          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-10 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F] text-white' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
+      <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
+        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Queue</p>
+        <div className="flex flex-nowrap items-center gap-1">
+          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
+          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
         </div>
       </div>
     </div>
@@ -976,7 +982,7 @@ export default function TriageCommandCenter({
   }
 
   const pageContent = (
-    <div className="flex min-h-dvh flex-col overflow-x-hidden overflow-y-auto pb-24 bg-[#0D0D0D] text-[#F5F1E8] font-sans">
+    <div className="box-border flex min-h-dvh w-full max-w-full min-w-0 flex-col overflow-x-hidden overflow-y-auto pb-24 bg-[#0D0D0D] text-[#F5F1E8] font-sans">
       
       {/* QUEUE HEADER */}
       <div className="space-y-3 p-4 pb-0 shrink-0">
@@ -994,16 +1000,18 @@ export default function TriageCommandCenter({
       {/* HORIZONTAL QUEUE RIBBON (Top) */}
       <div className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-mandatory [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
         {visibleLeads.map(lead => (
-          <div
+          <button
             key={lead.id}
-            onClick={() => setActiveLeadId(lead.id)}
-            className={`w-[82vw] min-w-[82vw] max-w-[300px] flex-shrink-0 snap-start p-3 border rounded-md cursor-pointer transition-colors sm:w-[300px] sm:min-w-[300px] ${
-              lead.id === activeLeadId ? 'border-[#FF5A1F] bg-[#141414]' : 'border-[#1A1A1A] hover:bg-[#1A1A1A]'
+            type="button"
+            aria-pressed={lead.id === activeLeadId}
+            onClick={() => selectLead(lead)}
+            className={`w-[82vw] min-w-[82vw] max-w-[300px] flex-shrink-0 snap-start p-3 text-left border rounded-md cursor-pointer transition-[border-color,background-color] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] sm:w-[300px] sm:min-w-[300px] ${
+              lead.id === activeLeadId ? 'border-[#FF5A1F] bg-[#242424]' : 'border-[#333333] bg-[#242424] hover:border-[#444444]'
             }`}
           >
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-semibold text-sm" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
-              <span className={`font-mono text-[10px] px-2 py-0.5 rounded-sm ${
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="min-w-0 break-words font-semibold text-sm" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
+              <span className={`shrink-0 font-mono text-[10px] px-2 py-0.5 rounded-sm ${
                 isCoreTier ? 'bg-[#242424] text-gray-400' :
                 lead.status === 'HOT' ? 'bg-[#FF5A1F]/10 text-[#FF5A1F]' : 
                 lead.status === 'WARM' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-[#242424] text-gray-400'
@@ -1011,9 +1019,10 @@ export default function TriageCommandCenter({
                 {isCoreTier ? 'REPLY' : lead.status}
               </span>
             </div>
-            <p className="text-xs text-muted-foreground truncate">{lead.inboundSignal}</p>
-            {lead.decisionStatus && <p className={`mt-2 text-[10px] font-mono uppercase ${lead.decisionStatus === 'NEEDS_REVIEW' ? 'text-amber-400' : lead.decisionStatus === 'FAILED' ? 'text-red-400' : 'text-gray-500'}`}>
-              Decision: {lead.decisionStatus.replaceAll('_', ' ')}
+            <p className="line-clamp-2 break-words text-xs text-muted-foreground" title={lead.inboundSignal}>{lead.inboundSignal}</p>
+            {lead.decisionStatus && <p className="mt-2 text-[10px] font-mono uppercase">
+              <span className="text-gray-500">Decision: </span>
+              <span className={decisionStatusPresentation(lead.decisionStatus).tone}>{decisionStatusPresentation(lead.decisionStatus).label}</span>
             </p>}
             {isEnterpriseTier && lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
             {isEnterpriseTier && lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
@@ -1022,17 +1031,18 @@ export default function TriageCommandCenter({
                 startedAt: new Date(lead.responseSLA.startedAt), dueAt: new Date(lead.responseSLA.dueAt),
                 dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state.replaceAll('_', ' ')}
             </p>}
-          </div>
+          </button>
         ))}
       </div>
 
       {/* MAIN DETAIL VIEW (The Executive Override) */}
-      <div className="flex-1 w-full overflow-y-auto p-4 md:p-8 flex flex-col">
+      <div className="box-border flex min-h-0 w-full max-w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-8">
+        <div key={activeLead?.id ?? 'empty'} className="lead-transition flex min-h-full w-full max-w-full min-w-0 flex-col">
         
         {/* Top Navigation / Status Bar */}
-        <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-12 border-b border-[#1A1A1A] pb-6 gap-4 md:gap-0 shrink-0">
+        <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-6 border-b border-[#1A1A1A] pb-5 gap-4 md:gap-0 shrink-0">
           <div>
-            <h1 className="text-2xl font-bold text-white tracking-wide" style={{ fontFamily: 'Oxanium, sans-serif' }}>
+            <h1 className="break-words text-xl font-bold tracking-wide text-white sm:text-2xl" style={{ fontFamily: 'Oxanium, sans-serif' }}>
               EXECUTIVE OVERRIDE QUEUE
             </h1>
             <p className="text-gray-500 mt-1 text-sm">
@@ -1047,10 +1057,10 @@ export default function TriageCommandCenter({
           </div>
         </div>
 
-        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus}
+        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} reply={activeLead.inboundSignal} onDecision={updateDecisionStatus}
           onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier} />
 
-        <div className="flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
+        <div className="mt-6 flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           
           {/* LEFT PANE: The Context Engine (40%) */}
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
@@ -1095,7 +1105,7 @@ export default function TriageCommandCenter({
           <div className="w-full flex flex-col gap-6 h-full">
 
             {/* TOP ROW: Intent & Strategy (Stacked on mobile, Side-by-Side on Desktop) */}
-            <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="w-full grid grid-cols-1 gap-6">
               
               {/* Intent Intelligence Widget */}
               <div className="w-full bg-[#1a1a1a] border border-gray-800 p-6 rounded-md shadow-md">
@@ -1103,41 +1113,34 @@ export default function TriageCommandCenter({
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-bold text-white">{intentScore}</span>
+                      <span className="text-4xl font-bold text-white">{displayedIntentScore}</span>
                       <span className="text-sm font-medium text-gray-400">/ 100</span>
                     </div>
                   </div>
-                  <div className={`text-sm font-bold tracking-widest uppercase ${intentScore >= 71 ? 'text-green-500' : intentScore >= 31 ? 'text-yellow-500' : 'text-red-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
+                  <div className={`text-sm font-bold tracking-widest uppercase ${displayedIntentScore >= 71 ? 'text-green-500' : displayedIntentScore >= 31 ? 'text-yellow-500' : 'text-red-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
                     {temperature}
                   </div>
                 </div>
                 <div className="w-full bg-gray-800 rounded-full h-1.5 mb-6">
-                  <div className={`h-1.5 rounded-full transition-all duration-1000 ${getProgressBarColor(intentScore)}`} style={{ width: `${intentScore}%` }}></div>
+                  <div className={`h-1.5 rounded-full transition-all duration-1000 ${getProgressBarColor(displayedIntentScore)}`} style={{ width: `${displayedIntentScore}%` }}></div>
                 </div>
                 
                 <div>
                   <h4 className="text-[10px] text-gray-500 uppercase tracking-widest mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>Why Now / Signals</h4>
                   <div className="flex flex-wrap gap-2">
-                    {signals.map((signal, index) => (
-                      <span key={index} className="px-3 py-1 text-xs border border-[#242424] rounded-full text-[#888888] bg-[#111111]">
+                    {displayedSignals.map((signal, index) => (
+                      <span key={`${activeLead?.id ?? 'lead'}-${signal}-${index}`} className={`rounded-full border px-3 py-1 text-xs ${
+                        signal.toLowerCase() === 'pricing inquiry'
+                          ? 'border-white/[0.12] bg-[#1A1A1A] text-white/80'
+                          : /discount/i.test(signal)
+                            ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] text-[#FF9A73]'
+                            : 'border-white/[0.08] bg-[#1A1A1A] text-[#888888]'
+                      }`}>
                         {signal}
                       </span>
                     ))}
                   </div>
                 </div>
-              </div>
-
-              {/* Strategy Note */}
-              <div className="w-full bg-[#1a1a1a] border border-gray-800 p-4 rounded-md transition-opacity duration-500">
-                <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-2" style={{ fontFamily: 'Oxanium, sans-serif' }}>
-                  <span className={`w-2 h-2 rounded-full inline-block ${isGenerating ? 'bg-yellow-500 animate-pulse' : 'bg-orange-600'}`}></span>
-                  Claude Strategy Logic
-                </h4>
-                <p className="text-sm text-gray-400 italic">
-                  {isGenerating 
-                    ? "Re-evaluating context vectors. Generating structural reframe..." 
-                    : strategyLogic}
-                </p>
               </div>
 
             </div>
@@ -1152,7 +1155,7 @@ export default function TriageCommandCenter({
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
                   disabled={isGenerating || isDispatching}
-                  className="px-3 py-1.5 text-xs bg-[#1A1A1A] text-white rounded hover:bg-[#222]"
+                  className="inline-flex min-h-11 items-center px-3 py-2 text-xs bg-[#1A1A1A] text-white rounded hover:bg-[#222]"
                 >
                   {isEditing ? 'Lock Draft' : 'Unlock Edit Mode'}
                 </button>
@@ -1227,6 +1230,7 @@ export default function TriageCommandCenter({
             </div>
 
           </div>
+        </div>
         </div>
       </div>
     </div>
@@ -1355,6 +1359,16 @@ return (
       {inboundSignalToast}
       {archiveToastElement}
       {pageContent}
+      <style jsx>{`
+        @keyframes leadTransitionIn {
+          from { opacity: 0.82; transform: translateY(5px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .lead-transition { animation: leadTransitionIn 200ms cubic-bezier(.2,.75,.25,1) both; }
+        @media (prefers-reduced-motion: reduce) {
+          .lead-transition { animation: none; }
+        }
+      `}</style>
     </>
   );
 }

@@ -11,10 +11,26 @@ import { archiveConstitutionRule, createConstitutionRule, detectConstitutionConf
 import { buildSalesConstitutionFacts, loadSalesConstitutionFacts,
   selectConstitutionAccountFacts } from '../src/lib/sales-constitution-facts';
 import { parseNumericConditionValue } from '../src/lib/sales-constitution-editor-validation';
+import { formatConstitutionCategory, formatConstitutionCondition, formatConstitutionLabel,
+  formatConstitutionScope } from '../src/lib/sales-constitution-presentation';
 
 const base = { name: 'Discount approval', category: C.DISCOUNT, effect: E.REQUIRE_APPROVAL,
   description: 'Discounts above twenty percent require approval.',
   constraint: { kind: 'DISCOUNT_PERCENT' as const, threshold: 20, comparison: 'GT' as const }, actionTypes: [A.DISCOUNT] };
+
+test('Constitution rule presentation formats canonical conditions and secondary labels', () => {
+  assert.equal(formatConstitutionCondition({ kind: 'DISCOUNT_PERCENT', threshold: 10, comparison: 'GT' }), 'Discount > 10%');
+  assert.equal(formatConstitutionCondition({ kind: 'DISCOUNT_PERCENT', threshold: 12.5, comparison: 'GTE' }), 'Discount ≥ 12.5%');
+  assert.equal(formatConstitutionCondition({ kind: 'MIN_CONTRACT_MONTHS', minimum: 12 }), 'Contract term below 12 months');
+  assert.equal(formatConstitutionCondition({ kind: 'FACT', field: 'FIT_TIER', operator: 'EQ', value: 'STRONG' }), 'Fit Tier is Strong');
+  assert.equal(formatConstitutionCondition({ kind: 'ALL', conditions: [
+    { kind: 'FACT', field: 'CONFIDENCE', operator: 'GTE', value: 80 },
+    { kind: 'FACT', field: 'RISK_BAND', operator: 'NEQ', value: 'HIGH' },
+  ] }), 'Confidence ≥ 80 and Risk Band is not High');
+  assert.equal(formatConstitutionLabel('REQUIRE_APPROVAL'), 'Require Approval');
+  assert.equal(formatConstitutionCategory('DISCOUNT'), 'Pricing Governance');
+  assert.equal(formatConstitutionScope('PRICING', 'USER_ENTERED'), 'Pricing · User Entered');
+});
 function fixture() {
   const roots: any[] = [], rules: any[] = [], events: any[] = [];
   let usage = 0;

@@ -8,6 +8,7 @@ import { getResponseSLAPolicy } from '../response-sla/policy';
 import { calculateResponseDeadline, responseSLAApplicability } from '../response-sla/deadline';
 import { decideReview } from './triage';
 import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput, type TriageProvider } from './provider';
+import { getDisplayedIntentConfidence } from './intent-confidence';
 
 export type SimulationOverrides = { confidence?: number; riskBand?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   requestedMode?: AutomationMode; holdActive?: boolean };
@@ -117,8 +118,12 @@ export async function simulateDecision(input: SimulationInput, deps: Dependencie
   const now = deps.now ?? new Date();
   if (!Number.isFinite(now.getTime())) throw new TypeError('Invalid simulation time');
   const source = await db.decision.findFirst({ where: { id: validated.sourceDecisionId, userId: input.userId },
-    include: { inputMessage: { select: { occurredAt: true } } } });
+    include: { inputMessage: { select: { occurredAt: true, sourceId: true, sourceType: true } } } });
   if (!source) throw new Error('Decision not found for tenant');
+  const sourceIntentScore = source.inputMessage.sourceType === 'INBOUND_SIGNAL'
+    ? await db.inboundSignal.findFirst({ where: { id: source.inputMessage.sourceId, userId: input.userId },
+      select: { intentScore: true } })
+    : null;
   let analysis = null;
   let aiUsed = false;
   if (validated.hypotheticalReply) {
@@ -150,6 +155,9 @@ export async function simulateDecision(input: SimulationInput, deps: Dependencie
       source.requiresReview || (confidence != null && confidence < 70),
     reviewReasons: !analysis && confidence != null && confidence < 70 ? [...new Set([...reviewReasons, 'LOW_CONFIDENCE'])] : reviewReasons,
     status: analysis ? (reviewReasons.length ? DecisionStatus.NEEDS_REVIEW : DecisionStatus.READY) : source.status };
+  const intentScore = analysis
+    ? analysis.intents.find(row => row.intent === analysis!.primaryIntent)?.confidence ?? null
+    : getDisplayedIntentConfidence(sourceIntentScore);
   const automation = await (deps.evaluateAutomation ?? evaluateAutomationMode)({ userId: input.userId,
     decisionId: source.id, proposedReply: analysis ? analysis.suggestedReply : undefined,
     simulation: { primaryIntent: simulatedDecision.primaryIntent, confidenceScore: confidence ?? undefined,
@@ -174,7 +182,7 @@ export async function simulateDecision(input: SimulationInput, deps: Dependencie
     sourceDecisionId: source.id, prospectId: source.prospectId, hypotheticalReply: validated.hypotheticalReply ?? null,
     intent: { primary: simulatedDecision.primaryIntent,
       secondary: analysis ? analysis.intents.filter(row => row.intent !== analysis.primaryIntent).map(row => row.intent) : source.secondaryIntents,
-      confidence },
+      confidence, intentScore },
     constitution: automation.evaluations.map(row => ({ decision: row.decision, effect: row.effectiveEffect,
       winningRule: row.winningRule, winnerReason: row.winnerReason,
       matchedRuleIds: row.matchedRules.map(rule => rule.id), unresolvedRuleIds: row.unresolvedRules.map(rule => rule.id),

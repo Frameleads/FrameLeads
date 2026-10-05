@@ -1,6 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FEATURE_KEYS, hasFeatureAccess, monthlyLeadQuotaForTier, requiredTierForFeature } from '../src/lib/entitlements';
+import { localDevelopmentTierFor } from '../src/lib/local-development-tier';
+
+test('local Enterprise tier applies only to development loopback hosts', () => {
+  for (const host of ['localhost:3000', '127.0.0.1:3000', '[::1]:3000']) {
+    assert.equal(localDevelopmentTierFor(host, 'development'), 'ENTERPRISE');
+    assert.equal(localDevelopmentTierFor(host, 'production'), null);
+  }
+  assert.equal(localDevelopmentTierFor('frameleads.com', 'development'), null);
+  assert.equal(localDevelopmentTierFor(null, 'development'), null);
+});
 
 test('MICRO_PILOT includes only the base outbound and built-in market capabilities', () => {
   assert.equal(hasFeatureAccess('MICRO_PILOT', 'BASE_OUTBOUND'), true);
