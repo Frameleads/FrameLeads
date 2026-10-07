@@ -219,5 +219,9 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
       icpState: trace.icpState as Prisma.InputJsonValue, intentOutput: trace.intentOutput as Prisma.InputJsonValue | undefined,
       policyResult: trace.policyResult as Prisma.InputJsonValue,
       contextReferences: trace.contextReferences as Prisma.InputJsonValue } } }, include: { trace: true } });
+  if(db===prisma && process.env.CUSTOMER_LIFECYCLE_BRIDGE_SECRET){
+    const {projectCustomerProgress}=await import('../customer-lifecycle');
+    await projectCustomerProgress(input.userId);
+  }
   return { status: completed.status, decision: completed, reused: false };
 }

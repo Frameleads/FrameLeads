@@ -42,6 +42,7 @@
     "@anthropic-ai/sdk": "^0.110.0",
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.22.0",
+    "@vercel/oidc": "3.8.9",
     "@whop-apps/sdk": "^0.0.1-canary.117",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
