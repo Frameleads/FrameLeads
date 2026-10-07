@@ -12,7 +12,7 @@ async function previewUser() {
   const session = await verifiedCustomerUser();
   if (!session) return null;
   // Read the paid tier directly. An admin UI override cannot grant a Micro-Pilot preview.
-  const user = await prisma.user.findUnique({ where: { id: session.id }, select: { id: true, tier: true } });
+  const user = await prisma.user.findUnique({ where: { id: session.id }, select: { id: true, tier: true, email: true } });
   return user?.tier === 'MICRO_PILOT' ? user : null;
 }
 export async function GET() {
@@ -29,7 +29,7 @@ export async function GET() {
   for (const row of rows) if (realPreviewReply(row, user.id) && await prisma.generatedLead.findFirst({
     where: { userId: user.id, prospectId: row.prospectId }, select: { id: true } }))
     signals.push({ id: row.id, receivedAt: row.createdAt });
-  return Response.json({ allowance: 1, signals }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ allowance: 1, signals, mailboxEmail: user.email }, { headers: { 'Cache-Control': 'no-store' } });
 }
 export async function POST(request: Request) {
   if (!validMutationOrigin(request)) return Response.json({ code: 'ORIGIN_REJECTED' }, { status: 403 });
