@@ -103,6 +103,9 @@ test('structured multi-label output requires exact observable evidence and valid
     'What is the price?'), /evidence is not in the reply/);
   assert.throws(() => validateTriageOutput({ ...answer, overallConfidence: 105 }, 'What is the price?'), /confidence/);
   assert.throws(() => validateTriageOutput({ ...answer, extra: true }, 'What is the price?'), /Unexpected/);
+  assert.throws(() => validateTriageOutput({ ...answer, intents: [] }, 'What is the price?'), /Invalid intent list/);
+  assert.throws(() => validateTriageOutput({ ...answer, intents: Array(6).fill(answer.intents[0]) }, 'What is the price?'), /Invalid intent list/);
+  assert.throws(() => validateTriageOutput({ ...answer, intents: [{...answer.intents[0],intent:'COMMITMENT'}] }, 'What is the price?'), /Invalid intent/);
 });
 
 test('canonical schema enumerates the server taxonomy and prevents invented COMMITMENT intent',()=>{
