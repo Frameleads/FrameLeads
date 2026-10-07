@@ -8,6 +8,7 @@ import { evaluateSalesConstitution } from '../sales-constitution';
 import { buildSalesConstitutionFacts } from '../sales-constitution-facts';
 import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
+import { realPreviewReply, reserveTriageDecision } from './activation-preview';
 import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput,
   type TriageAnalysis, type TriageProvider } from './provider';
 
@@ -73,12 +74,17 @@ function policySnapshot(result: Awaited<ReturnType<typeof evaluateSalesConstitut
 }
 
 export async function triageInboundSignal(input: { userId: string; signalId: string;
-  retryOfDecisionId?: string }, deps: TriageDependencies = {}) {
+  retryOfDecisionId?: string; activationPreview?: boolean }, deps: TriageDependencies = {}) {
   const db = deps.db ?? prisma;
   if (!input.userId?.trim() || !input.signalId?.trim()) throw new TypeError('Tenant and signal required');
   const linked = await getInboundConversationMessage(input, db);
   if (!linked.conversation || !linked.message || !linked.signal.prospectId)
     return { status: Status.NEEDS_REVIEW, decision: null, reason: 'PROSPECT_IDENTITY_UNRESOLVED' };
+  if (input.activationPreview) {
+    if (input.retryOfDecisionId || !realPreviewReply(linked.signal, input.userId)) throw new Error('REAL_PROVIDER_REPLY_REQUIRED');
+    const lead = await db.generatedLead.findFirst({ where: { userId: input.userId, prospectId: linked.signal.prospectId }, select: { id: true } });
+    if (!lead) throw new Error('CONTROLLED_WORKFLOW_PROSPECT_REQUIRED');
+  }
   const context = await (deps.buildContext ?? buildReplyDecisionContext)({ userId: input.userId,
     prospectId: linked.signal.prospectId, conversationId: linked.conversation.id, messageId: linked.message.id }, db);
   let fingerprint = context.contextFingerprint;
@@ -101,9 +107,9 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
   }
   let pending;
   try {
-    pending = await db.decision.create({ data: { userId: input.userId, prospectId: linked.signal.prospectId,
+    pending = await reserveTriageDecision(db, { userId: input.userId, prospectId: linked.signal.prospectId,
       conversationId: linked.conversation.id, inputMessageId: linked.message.id, contextFingerprint: fingerprint,
-      decisionType: DecisionType.INBOUND_TRIAGE, shadowMode: true, supersedesDecisionId } });
+      decisionType: DecisionType.INBOUND_TRIAGE, shadowMode: true, supersedesDecisionId }, input.activationPreview === true);
   } catch (error) {
     if ((error as { code?: string }).code !== 'P2002') throw error;
     const existing = await db.decision.findUnique({ where: { userId_inputMessageId_decisionType_contextFingerprint: key }, include: { trace: true } });

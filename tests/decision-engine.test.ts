@@ -28,6 +28,7 @@ function fixture(variation: { answer?: unknown; policy?: 'allow' | 'review' | 'b
     occurredAt: signal.createdAt };
   const conversation = { id: 'conversation-1', userId: 'tenant-a', prospectId: 'prospect-a', lastMessageAt: signal.createdAt };
   const db: any = {
+    user: { findUnique: async () => ({ tier: 'CORE' }) },
     $transaction: async (work: any) => work(db),
     prospect: { findUnique: async ({ where }: any) => where.userId_id.userId === 'tenant-a' ? { id: 'prospect-a' } : null },
     inboundSignal: {
