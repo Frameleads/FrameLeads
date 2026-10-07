@@ -1,5 +1,29 @@
 # B6 controlled activation acceptance (operator only)
 
+## Resume existing verified signal
+
+The fixed production signal `f819e17e-afff-4995-8754-9a5dc0897414` can be inspected
+through the existing authenticated operator relay GET with `?mode=diagnostic`.
+This checks eleven canonical pre-provider stages independently and returns only
+stage, pass/fail, allowlisted error class, Prisma code and model identifiers.
+Canonical lazy conversation/memory/context initialization is permitted; no
+Decision is reserved and no mailbox/model/send is invoked.
+
+After every stage passes, the same authenticated relay accepts exactly
+`{"mode":"RESUME_PERSISTED_SIGNAL","signalId":"f819e17e-afff-4995-8754-9a5dc0897414"}`.
+Both routes preserve existing operator authentication, shared Bearer and signed
+Brand Brain production OIDC. The relay checks authentic purchase, unchanged
+history and the exact false nudge gate. The product verifies the fixed tenant,
+provider-backed evidence, controlled lead, configured policy, enabled analysis
+and zero Decisions, then invokes canonical TRIAGE exactly once. The existing
+tenant mutex remains authoritative. There is no Gmail read, receipt/import,
+new signal, automatic retry or outbound execution in this mode.
+
+Canonical TRIAGE evaluates TOPIC_RESPONSE, CLAIM (when a draft exists), and
+OUTREACH (when appropriate). It does not generate a COMMITMENT action. The
+controlled COMMITMENT rule is not represented as a matched/evaluated commitment;
+the actual policy actions and Constitution revision remain recorded in the trace.
+
 The customer Onboarding page has no B6 acceptance controls. The canonical lifecycle,
 purchase enrollment, tenant-owned Decision/DecisionTrace, one-decision mutex and
 product milestone projection remain unchanged.

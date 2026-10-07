@@ -42,6 +42,23 @@ test('lazy baseline is repeatable and retrieves bounded, purpose-selected events
   assert.ok(second.contextText.length <= 3000);
 });
 
+test('reply context options never leak into Prisma baseline identity filters', async () => {
+  const f = fixture();
+  const original = f.db.prospectMemoryEvent.findFirst;
+  let baselineChecks = 0;
+  f.db.prospectMemoryEvent.findFirst = (async (args: any) => {
+    const allowed = ['userId', 'prospectId', 'eventType', 'sourceType', 'sourceId'];
+    assert.ok(Object.keys(args.where).every(key => allowed.includes(key)), 'Prisma rejects retrieval options in memory identity');
+    baselineChecks++;
+    return original(args);
+  }) as any;
+  const result = await getProspectMemoryContext({ userId: 'a', prospectId: 'p1', purpose: 'INBOX',
+    maxEvents: 6, since: new Date('2026-01-01'), eventTypes: [MEMORY_EVENT.INBOUND_RECEIVED] }, f.db);
+  assert.ok(baselineChecks > 0);
+  assert.equal(result.eventCount, 4);
+  assert.ok(result.events.every(event => event.eventType === MEMORY_EVENT.INBOUND_RECEIVED));
+});
+
 test('large event descriptions and retrieved context are bounded without model usage', async () => {
   const f = fixture(); const scope = { userId: 'a', prospectId: 'p1' };
   for (let i = 0; i < 30; i++) await recordProspectMemoryEvent({ ...scope, eventType: MEMORY_EVENT.RESEARCH_COMPLETED,

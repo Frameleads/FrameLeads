@@ -83,8 +83,9 @@ const relevant: Record<MemoryPurpose, MemoryEventType[]> = {
 };
 
 export async function getProspectMemoryContext(input: Scope & { purpose?: MemoryPurpose; maxEvents?: number; since?: Date; eventTypes?: MemoryEventType[] }, db: PrismaClient = prisma) {
-  await ensureProspectMemory(input, db);
   const scope = { userId: input.userId, prospectId: input.prospectId };
+  // Retrieval options are not database identity fields. Keep them out of lazy initialization.
+  await ensureProspectMemory(scope, db);
   const maxEvents = Math.min(20, Math.max(1, input.maxEvents ?? 8));
   const types = input.eventTypes?.length ? input.eventTypes : relevant[input.purpose ?? 'GENERAL'];
   const where = { ...scope, eventType: { in: types }, ...(input.since ? { occurredAt: { gte: input.since } } : {}) };
