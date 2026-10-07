@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TriageIntent } from '@prisma/client';
-import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure } from '../src/lib/decision/provider';
+import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic } from '../src/lib/decision/provider';
 import { decideReview, deterministicTriageSignal, triageInboundSignal,analyzeAndFinalizeReservedTriage } from '../src/lib/decision/triage';
 import { materializeMessageInTransaction } from '../src/lib/decision/conversation';
 import { canAutomaticallyTriage, canManuallyAnalyze, getDecisionRolloutMode } from '../src/lib/decision/rollout';
@@ -14,6 +14,18 @@ const answer = { primaryIntent: TriageIntent.PRICING_INQUIRY,
   overallConfidence: 84, conciseInterpretation: 'Asks for pricing.',
   recommendedNextAction: 'ASK_CLARIFYING_QUESTION', suggestedReply: null,
   explanation: 'The reply asks about pricing.' };
+
+test('Google diagnostics expose fixed vocabulary only, never raw messages or arbitrary metadata',()=>{
+ const secret='sentinel-secret';
+ const result=safeGoogleDiagnostic({status:400,statusText:'Bad Request',message:`response_schema rejected ${secret}`,
+  errorDetails:[{reason:secret,domain:secret,metadata:{service:secret}}],headers:{authorization:secret},body:secret});
+ assert.equal(result.reason,'SCHEMA_REJECTED');assert.equal(result.status,400);assert.ok(!JSON.stringify(result).includes(secret));
+ assert.equal(safeGoogleDiagnostic({status:400,errorDetails:[{reason:'API_KEY_INVALID',domain:'googleapis.com',metadata:{service:'generativelanguage.googleapis.com'}}]}).reason,'API_KEY_INVALID');
+ assert.equal(safeGoogleDiagnostic({status:429}).reason,'RATE_LIMIT');
+ assert.equal(safeGoogleDiagnostic({status:403}).reason,'PERMISSION_DENIED');
+ assert.equal(safeGoogleDiagnostic({status:400,message:'API key not valid'}).reason,'API_KEY_INVALID');
+ assert.equal(safeGoogleDiagnostic({status:400,statusText:secret}).statusText,null);
+});
 
 function fixture(variation: { answer?: unknown; policy?: 'allow' | 'review' | 'block';
   providerError?: boolean; tenant?: string; sourceType?: string; signalType?: string } = {}) {

@@ -43,6 +43,29 @@ export const TRIAGE_RESPONSE_SCHEMA: ResponseSchema = {
 export const TRIAGE_FAILURE_CLASSES=['MISSING_API_KEY','PROVIDER_4XX','PROVIDER_5XX','PROVIDER_TIMEOUT','PROVIDER_NETWORK',
   'JSON_PARSE_FAILED','OUTPUT_VALIDATION_FAILED','USAGE_RECORDING_FAILED','UNKNOWN_PROVIDER_FAILURE'] as const;
 export type TriageFailureClass=typeof TRIAGE_FAILURE_CLASSES[number];
+// Provider error messages can contain request URLs, keys and arbitrary upstream text.
+// Return only fixed vocabulary; never serialize the SDK error itself.
+export function safeGoogleDiagnostic(error:unknown) {
+  const e=error as {status?:unknown;statusText?:unknown;errorDetails?:unknown;message?:unknown};
+  const status=typeof e?.status==='number'&&Number.isInteger(e.status)&&e.status>=400&&e.status<600?e.status:null;
+  const reasons=['API_KEY_INVALID','API_KEY_SERVICE_BLOCKED','API_KEY_HTTP_REFERRER_BLOCKED','API_KEY_IP_ADDRESS_BLOCKED',
+    'PERMISSION_DENIED','INVALID_ARGUMENT','MODEL_NOT_FOUND','SCHEMA_REJECTED','UNSUPPORTED_LOCATION','RATE_LIMIT'];
+  const details=Array.isArray(e?.errorDetails)?e.errorDetails:[];
+  const detail=details.find(d=>d&&typeof d==='object'&&reasons.includes(d.reason));
+  let reason=detail?.reason??(status===429?'RATE_LIMIT':status===403?'PERMISSION_DENIED':status===404?'MODEL_NOT_FOUND':'UNKNOWN_4XX');
+  // Inspect text only to map known Google contract failures to fixed codes.
+  const message=typeof e?.message==='string'?e.message:'';
+  if(reason==='UNKNOWN_4XX'&&status===400){
+    if(/API key not valid|API_KEY_INVALID/i.test(message))reason='API_KEY_INVALID';
+    else if(/unsupported.*location|location.*not supported/i.test(message))reason='UNSUPPORTED_LOCATION';
+    else if(/response_schema|responseSchema|schema/i.test(message))reason='SCHEMA_REJECTED';
+    else reason='INVALID_ARGUMENT';
+  }
+  const statusTexts=['Bad Request','Unauthorized','Forbidden','Not Found','Too Many Requests','Internal Server Error','Service Unavailable'];
+  return {status,statusText:typeof e?.statusText==='string'&&statusTexts.includes(e.statusText)?e.statusText:null,
+    reason,domain:detail?.domain==='googleapis.com'?'googleapis.com':null,
+    service:detail?.metadata?.service==='generativelanguage.googleapis.com'?'generativelanguage.googleapis.com':null};
+}
 export class TriageProviderFailure extends Error {
   constructor(public readonly failureClass:TriageFailureClass){super(failureClass);}
 }
