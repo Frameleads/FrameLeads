@@ -9,6 +9,7 @@ export async function POST(request: Request) {
     if (!body || Object.keys(body).length !== 1 || typeof body.email !== 'string' || body.email.length > 254 ||
       body.email !== body.email.trim().toLowerCase() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(body.email))
       return Response.json({ code: 'INVALID_REQUEST' }, { status: 400 });
-    return Response.json(await syncCustomerLifecycle(body.email), { headers: { 'Cache-Control': 'no-store' } });
-  } catch { return Response.json({ code: 'LIFECYCLE_SYNC_UNAVAILABLE' }, { status: 503 }); }
+    return Response.json(await syncCustomerLifecycle(body.email,true), { headers: { 'Cache-Control': 'no-store' } });
+  } catch(error) { return Response.json({ code: error instanceof Error && error.message==='LIFECYCLE_OIDC_UNAVAILABLE' ? error.message : 'LIFECYCLE_SYNC_UNAVAILABLE',
+    ...(error instanceof Error && error.message==='LIFECYCLE_SYNC_UNAVAILABLE' && error.cause ? {diagnostic:error.cause} : {}) }, { status: 503, headers:{'Cache-Control':'no-store'} }); }
 }

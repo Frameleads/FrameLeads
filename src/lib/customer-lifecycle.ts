@@ -66,17 +66,30 @@ export async function readCustomerMilestones(email: string, since: Date, db = pr
   return {status:'VERIFIED',email,productUserId:user.id,tier:user.tier,milestones};
 }
 
-export async function syncCustomerLifecycle(email: string) {
+export async function syncCustomerLifecycle(email: string, diagnostic = false) {
   const url=process.env.BRAND_BRAIN_CUSTOMER_MILESTONE_URL, secret=process.env.CUSTOMER_LIFECYCLE_BRIDGE_SECRET;
   if(!url || !secret) return {status:'BRIDGE_NOT_CONFIGURED'};
   const target=new URL(url);
   if(target.protocol!=='https:' || target.pathname!=='/api/customer-lifecycle/milestone') throw new Error('INVALID_LIFECYCLE_DESTINATION');
-  const oidc=process.env.VERCEL ? await getVercelOidcToken() : null;
+  let oidc:string|null=null;
+  try{oidc=process.env.VERCEL ? await getVercelOidcToken() : null;}catch{throw new Error('LIFECYCLE_OIDC_UNAVAILABLE');}
   const response=await fetch(target,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+secret,
     ...(oidc ? {'x-vercel-trusted-oidc-idp-token':oidc} : {}),
     ...(process.env.BRAND_BRAIN_CUSTOMER_PROTECTION_BYPASS ? {'x-vercel-protection-bypass':process.env.BRAND_BRAIN_CUSTOMER_PROTECTION_BYPASS} : {})},
     body:JSON.stringify({email}),signal:AbortSignal.timeout(15000),cache:'no-store'});
-  if(!response.ok) throw new Error('LIFECYCLE_SYNC_UNAVAILABLE');
+  if(!response.ok){
+    // Only this authenticated operator path receives safe claim fields, never the JWT or response body.
+    let identity:Record<string,unknown>|null=null;
+    if(diagnostic && oidc)try{const claims=JSON.parse(Buffer.from(oidc.split('.')[1],'base64url').toString());
+      identity=Object.fromEntries(['iss','aud','sub','owner','owner_id','project','project_id','environment'].map(k=>[k,claims[k]]));
+    }catch{}
+    let applicationCode:string|null=null;
+    if(diagnostic && response.headers.get('content-type')?.includes('application/json'))try{
+      const body=await response.text();if(body.length<1024){const code=JSON.parse(body).code;
+        if(['UNAUTHORIZED','CUSTOMER_MILESTONE_UNAVAILABLE','INVALID_REQUEST'].includes(code))applicationCode=code;}
+    }catch{}
+    throw new Error('LIFECYCLE_SYNC_UNAVAILABLE',{cause:diagnostic?{upstreamStatus:response.status,applicationCode,identity}:undefined});
+  }
   const text=await response.text();if(text.length>16000) throw new Error('LIFECYCLE_RESPONSE_TOO_LARGE');
   return JSON.parse(text);
 }
