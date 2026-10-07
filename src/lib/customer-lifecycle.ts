@@ -99,5 +99,5 @@ export async function projectCustomerProgress(userId:string){
  if(!process.env.CUSTOMER_LIFECYCLE_BRIDGE_SECRET || !process.env.BRAND_BRAIN_CUSTOMER_MILESTONE_URL) return;
  try{const user=await prisma.user.findUnique({where:{id:userId},select:{email:true}});
   if(user) await syncCustomerLifecycle(user.email.trim().toLowerCase());
- }catch{console.error('[CUSTOMER_LIFECYCLE] Projection unavailable; saved product evidence can be refreshed from Onboarding.');}
+ }catch{console.error('[CUSTOMER_LIFECYCLE] Projection unavailable; saved product evidence can be refreshed by the operator.');}
 }

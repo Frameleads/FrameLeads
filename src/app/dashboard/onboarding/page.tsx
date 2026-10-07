@@ -19,7 +19,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { writeCampaignContext } from "@/lib/campaign-session";
-import ActivationProgress from './ActivationProgress';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -183,7 +182,6 @@ export default function OnboardingPage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-0 py-8 md:py-12">
-        <ActivationProgress />
 
         {/* ── Header ────────────────────────────────────────────────── */}
         <div className="text-center mb-10 md:mb-14">
