@@ -1,5 +1,23 @@
 # B6 controlled activation acceptance (operator only)
 
+## One reserved-Decision recovery
+
+The one-off authenticated recovery mode is `RECOVER_PENDING_DECISION`, fixed to
+Decision `cmuyn5uii001y12uq4lk5oebf` and signal
+`f819e17e-afff-4995-8754-9a5dc0897414`. GET `?mode=recovery-preflight` checks
+the existing PENDING row, absent trace, exact provider-backed message ownership,
+one Decision, zero execution attempts, Constitution revision 1 and exactly one
+historical TRIAGE usage row. The relay also checks READY_FOR_DECISION and the
+disabled nudge gate. No credentials or email content can be supplied in the body.
+
+The product rebuilds canonical context and requires the original fingerprint.
+A User-row lock serializes recovery; canonical analysis, Constitution evaluation
+and trace finalization are shared with normal TRIAGE. No reservation function is
+called. A failed provider/validation attempt commits bounded usage only, leaves
+the existing PENDING row intact, and is not retried. Recorded recovery usage
+blocks replay. Successful recovery creates the same row's one immutable trace
+and projects activation canonically. Disable this one-off mode after acceptance.
+
 ## Resume existing verified signal
 
 The fixed production signal `f819e17e-afff-4995-8754-9a5dc0897414` can be inspected

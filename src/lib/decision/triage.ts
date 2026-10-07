@@ -10,7 +10,7 @@ import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
 import { realPreviewReply, reserveTriageDecision } from './activation-preview';
 import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput,
-  type TriageAnalysis, type TriageProvider } from './provider';
+  classifyTriageFailure, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
 
 export type TriageDependencies = { db?: PrismaClient; provider?: TriageProvider; recordUsage?: typeof recordAIUsage;
   buildContext?: typeof buildReplyDecisionContext; evaluatePolicy?: typeof evaluateSalesConstitution };
@@ -117,10 +117,24 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     return { status: existing.status, decision: existing, reused: true };
   }
 
-  const fast = deterministicTriageSignal(linked.signal);
+  return analyzeAndFinalizeReservedTriage({userId:input.userId,linked,context,pending,fingerprint},deps);
+}
+
+/** Shared canonical C/D/E. Recovery supplies an existing reservation; this function never reserves.
+ * Strict recovery leaves PENDING intact if provider/validation/usage recording fails. */
+export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
+  linked:Awaited<ReturnType<typeof getInboundConversationMessage>>;
+  context:Awaited<ReturnType<typeof buildReplyDecisionContext>>;
+  pending:{id:string};fingerprint:string;strictRecovery?:boolean},deps:TriageDependencies={}) {
+  const db=deps.db??prisma;
+  const {linked,context,pending,fingerprint}=input;
+  if(!linked.message||!linked.conversation||!linked.signal.prospectId)throw new Error('RESERVED_DECISION_INPUT_REQUIRED');
+  const fast = input.strictRecovery ? null : deterministicTriageSignal(linked.signal);
   let analysis: TriageAnalysis | null = null;
   let source: Source = fast ? Source.DETERMINISTIC : Source.UNAVAILABLE;
   let failure: string | null = null;
+  let failureClass:TriageFailureClass|null=null;
+  let providerPhase:'PROVIDER'|'VALIDATION'='PROVIDER';
   let providerStarted = false;
   let usage: AIUsageTokens | null = null;
   let latencyMs = 0;
@@ -133,9 +147,12 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     try {
       const raw = await (deps.provider ?? geminiTriageProvider).analyze({ contextText: context.contextText }, {
         onRequestStart: () => { providerStarted = true; }, onResponse: tokens => { usage = tokens; } });
+      providerPhase='VALIDATION';
       analysis = validateTriageOutput(raw, context.currentReply);
       source = Source.GEMINI;
     } catch (error) {
+      failureClass=classifyTriageFailure(error,providerPhase);
+      console.error('[TRIAGE_FAILURE]',JSON.stringify({failureClass}));
       failure = error instanceof TypeError || error instanceof SyntaxError ? 'INVALID_MODEL_OUTPUT' : 'MODEL_UNAVAILABLE';
     } finally {
       latencyMs = Math.max(0, Date.now() - start);
@@ -146,9 +163,11 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
         latencyMs }, db); } catch {
         console.error('Inbox triage usage recording failed');
         failure = 'USAGE_RECORDING_FAILED';
+        failureClass='USAGE_RECORDING_FAILED';
       }
     }
   }
+  if(input.strictRecovery && failureClass)return {status:'STOPPED' as const,decision:null,failureClass,reused:false};
 
   const policyResults: Awaited<ReturnType<typeof evaluateSalesConstitution>>[] = [];
   const policyActions: string[] = [];
@@ -194,6 +213,8 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     policyActions.length = 0;
   }
   if (!policyResults.length) failure = failure ?? 'POLICY_EVALUATION_FAILED';
+  if(input.strictRecovery && (failure || policyResults.some(p=>p.authority!=='SALES_CONSTITUTION'||p.revision!==context.constitution.revision||p.configurationMissing)))
+    throw new Error('RECOVERY_POLICY_VERIFICATION_FAILED');
   const reasons = decideReview({ analysis, policy: policyResults, failure });
   const blocked = !policyResults.length || policyResults.some(p => p.blockingRules.length);
   const policyConstrained = blocked || policyResults.some(p => !p.allowed);
@@ -221,7 +242,7 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     brainEntryIds: context.references.brainEntryIds, contextReferences: context.references,
     engineVersion: DECISION_ENGINE_VERSION, explanation };
   // Only a PENDING claim is finalized. Completed decisions are never rewritten.
-  const completed = await db.decision.update({ where: { id: pending.id, userId: input.userId }, data: {
+  const completed = await db.decision.update({ where: { id: pending.id, userId: input.userId, status:Status.PENDING, trace:{is:null} }, data: {
     ...packet, intentSignals: packet.intentSignals ?? undefined,
     trace: { create: { ...trace, memoryState: trace.memoryState as Prisma.InputJsonValue,
       icpState: trace.icpState as Prisma.InputJsonValue, intentOutput: trace.intentOutput ?? undefined,

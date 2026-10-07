@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TriageIntent } from '@prisma/client';
-import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT } from '../src/lib/decision/provider';
-import { decideReview, deterministicTriageSignal, triageInboundSignal } from '../src/lib/decision/triage';
+import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure } from '../src/lib/decision/provider';
+import { decideReview, deterministicTriageSignal, triageInboundSignal,analyzeAndFinalizeReservedTriage } from '../src/lib/decision/triage';
 import { materializeMessageInTransaction } from '../src/lib/decision/conversation';
 import { canAutomaticallyTriage, canManuallyAnalyze, getDecisionRolloutMode } from '../src/lib/decision/rollout';
 import { scheduleInboundDecisions } from '../src/lib/decision/schedule';
@@ -90,6 +90,44 @@ test('structured multi-label output requires exact observable evidence and valid
     'What is the price?'), /evidence is not in the reply/);
   assert.throws(() => validateTriageOutput({ ...answer, overallConfidence: 105 }, 'What is the price?'), /confidence/);
   assert.throws(() => validateTriageOutput({ ...answer, extra: true }, 'What is the price?'), /Unexpected/);
+});
+
+test('canonical schema enumerates the server taxonomy and prevents invented COMMITMENT intent',()=>{
+ assert.deepEqual(TRIAGE_INTENTS,Object.values(TriageIntent));
+ const schema:any=TRIAGE_RESPONSE_SCHEMA;
+ assert.deepEqual(schema.properties.primaryIntent.enum,Object.values(TriageIntent));
+ assert.deepEqual(schema.properties.intents.items.properties.intent.enum,Object.values(TriageIntent));
+ for(const intent of Object.values(TriageIntent))assert.ok(TRIAGE_SYSTEM_PROMPT.includes(intent));
+ assert.throws(()=>validateTriageOutput({...answer,primaryIntent:'COMMITMENT'},'What is the price?'),/Invalid primary intent/);
+ assert.throws(()=>validateTriageOutput({...answer,intents:[{...answer.intents[0],evidence:'what is the price?'}]},'What is the price?'),/evidence/);
+});
+test('safe failure classification contains no raw provider/customer data',()=>{
+ assert.equal(classifyTriageFailure(new TriageProviderFailure('MISSING_API_KEY'),'PROVIDER'),'MISSING_API_KEY');
+ assert.equal(classifyTriageFailure({status:403,message:'private'},'PROVIDER'),'PROVIDER_4XX');
+ assert.equal(classifyTriageFailure({status:503},'PROVIDER'),'PROVIDER_5XX');
+ assert.equal(classifyTriageFailure({name:'AbortError'},'PROVIDER'),'PROVIDER_TIMEOUT');
+ assert.equal(classifyTriageFailure(new TypeError('private'),'PROVIDER'),'PROVIDER_NETWORK');
+ assert.equal(classifyTriageFailure(new SyntaxError('private'),'PROVIDER'),'JSON_PARSE_FAILED');
+ assert.equal(classifyTriageFailure(new TypeError('private'),'VALIDATION'),'OUTPUT_VALIDATION_FAILED');
+ assert.equal(classifyTriageFailure(new Error('private'),'PROVIDER'),'UNKNOWN_PROVIDER_FAILURE');
+});
+test('shared C/D/E finalizes the existing PENDING row and creates one trace without reservation',async()=>{
+ const f=fixture();f.context.constitution.revision=1;
+ const pending:any={id:'existing',userId:'tenant-a',status:'PENDING'};f.rows.push(pending);
+ const policy=f.deps.evaluatePolicy;f.deps.evaluatePolicy=async()=>({...await policy(),authority:'SALES_CONSTITUTION',revision:1});
+ f.db.decision.create=async()=>{throw Error('Recovery cannot reserve');};
+ const linked:any={signal:{userId:'tenant-a',prospectId:'prospect-a',sourceType:'IMAP_NATIVE',signalType:'EMAIL_REPLY'},message:{id:'message-1'},conversation:{id:'conversation-1'}};
+ const result=await analyzeAndFinalizeReservedTriage({userId:'tenant-a',linked,context:f.context,pending,fingerprint:'same-context',strictRecovery:true},f.deps);
+ assert.equal(result.status,'READY');assert.equal(result.decision!.id,'existing');assert.equal(f.rows.length,1);assert.equal(f.calls(),1);
+ assert.equal(result.decision!.trace!.constitutionRevision,1);assert.equal(f.usage.length,1);
+});
+test('strict recovery provider/validation failure preserves the same PENDING row without trace or retry',async()=>{
+ for(const variation of [{providerError:true},{answer:{invalid:'label'}}]){
+  const f=fixture(variation);const pending:any={id:'existing',userId:'tenant-a',status:'PENDING',trace:null};f.rows.push(pending);
+  const linked:any={signal:{prospectId:'prospect-a'},message:{id:'message-1'},conversation:{id:'conversation-1'}};
+  const result=await analyzeAndFinalizeReservedTriage({userId:'tenant-a',linked,context:f.context,pending,fingerprint:'same-context',strictRecovery:true},f.deps);
+  assert.equal(result.status,'STOPPED');assert.equal(pending.status,'PENDING');assert.equal(pending.trace,null);assert.equal(f.calls(),1);assert.equal(f.rows.length,1);assert.equal(f.usage.length,1);
+ }
 });
 
 test('untrusted message commands are denied authority by the Gemini instruction boundary', () => {
