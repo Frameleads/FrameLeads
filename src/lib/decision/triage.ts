@@ -10,7 +10,7 @@ import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
 import { realPreviewReply, reserveTriageDecision } from './activation-preview';
 import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput,
-  classifyTriageFailure, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
+  classifyTriageFailure, safeGoogleDiagnostic, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
 
 export type TriageDependencies = { db?: PrismaClient; provider?: TriageProvider; recordUsage?: typeof recordAIUsage;
   buildContext?: typeof buildReplyDecisionContext; evaluatePolicy?: typeof evaluateSalesConstitution };
@@ -152,7 +152,8 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
       source = Source.GEMINI;
     } catch (error) {
       failureClass=classifyTriageFailure(error,providerPhase);
-      console.error('[TRIAGE_FAILURE]',JSON.stringify({failureClass}));
+      console.error('[TRIAGE_FAILURE]',JSON.stringify({failureClass,
+        ...(failureClass==='PROVIDER_4XX'||failureClass==='PROVIDER_5XX'?{providerDiagnostic:safeGoogleDiagnostic(error)}:{})}));
       failure = error instanceof TypeError || error instanceof SyntaxError ? 'INVALID_MODEL_OUTPUT' : 'MODEL_UNAVAILABLE';
     } finally {
       latencyMs = Math.max(0, Date.now() - start);

@@ -22,6 +22,7 @@ test('Google diagnostics expose fixed vocabulary only, never raw messages or arb
  assert.equal(result.reason,'SCHEMA_REJECTED');assert.equal(result.status,400);assert.ok(!JSON.stringify(result).includes(secret));
  assert.equal(safeGoogleDiagnostic({status:400,errorDetails:[{reason:'API_KEY_INVALID',domain:'googleapis.com',metadata:{service:'generativelanguage.googleapis.com'}}]}).reason,'API_KEY_INVALID');
  assert.equal(safeGoogleDiagnostic({status:429}).reason,'RATE_LIMIT');
+ assert.equal(safeGoogleDiagnostic({status:402}).reason,'PAYMENT_REQUIRED');
  assert.equal(safeGoogleDiagnostic({status:403}).reason,'PERMISSION_DENIED');
  assert.equal(safeGoogleDiagnostic({status:400,message:'API key not valid'}).reason,'API_KEY_INVALID');
  assert.equal(safeGoogleDiagnostic({status:400,statusText:secret}).statusText,null);
