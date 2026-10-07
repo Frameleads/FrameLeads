@@ -49,7 +49,11 @@ function fixture(variation: { answer?: unknown; policy?: 'allow' | 'review' | 'b
       create: async ({ data }: any) => { const row = { id: `decision-${rows.length + 1}`, status: 'PENDING',
         createdAt: new Date(), ...data }; rows.push(row); return row; },
       update: async ({ where, data }: any) => { const row = rows.find(value => value.id === where.id);
-        Object.assign(row, data, { trace: data.trace.create }); return row; },
+        // Match generated Prisma DecisionTraceCreateWithoutDecision input, including failed-provider packets.
+        assert.equal('userId' in data.trace.create, false, 'Nested trace inherits tenant through the parent Decision');
+        assert.notEqual(data.intentSignals, null, 'Nullable Prisma JSON must use omission or an explicit null sentinel');
+        assert.notEqual(data.trace.create.intentOutput, null);
+        Object.assign(row, data, { trace: { userId: row.userId, decisionId: row.id, ...data.trace.create } }); return row; },
     },
   };
   const context: any = { contextFingerprint: 'same-context', currentReply: signal.rawEmail,

@@ -209,7 +209,9 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     interpretation: analysis?.conciseInterpretation ?? null, recommendedNextAction: finalRecommendation,
     suggestedReply, requiresReview: status !== Status.READY, reviewReasons: reasons, explanation,
     provider: source === Source.GEMINI ? AIProvider.GEMINI : null, model: source === Source.GEMINI ? TRIAGE_MODEL : null };
-  const trace = { userId: input.userId, inputMessageId: linked.message.id, contextFingerprint: fingerprint,
+  // The nested Decision relation supplies its composite userId/decisionId keys.
+  // Prisma's CreateWithoutDecision input rejects an explicit userId here.
+  const trace = { inputMessageId: linked.message.id, contextFingerprint: fingerprint,
     memoryState: { eventCount: context.memory.eventCount, lastEventAt: context.memory.lastEventAt?.toISOString() ?? null,
       eventIds: context.references.memoryEventIds }, icpState: context.icp,
     brainRevision: context.brain.revision, playbookRevision: context.playbook.revision,
@@ -220,9 +222,9 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
     engineVersion: DECISION_ENGINE_VERSION, explanation };
   // Only a PENDING claim is finalized. Completed decisions are never rewritten.
   const completed = await db.decision.update({ where: { id: pending.id, userId: input.userId }, data: {
-    ...packet, intentSignals: packet.intentSignals as Prisma.InputJsonValue | undefined,
+    ...packet, intentSignals: packet.intentSignals ?? undefined,
     trace: { create: { ...trace, memoryState: trace.memoryState as Prisma.InputJsonValue,
-      icpState: trace.icpState as Prisma.InputJsonValue, intentOutput: trace.intentOutput as Prisma.InputJsonValue | undefined,
+      icpState: trace.icpState as Prisma.InputJsonValue, intentOutput: trace.intentOutput ?? undefined,
       policyResult: trace.policyResult as Prisma.InputJsonValue,
       contextReferences: trace.contextReferences as Prisma.InputJsonValue } } }, include: { trace: true } });
   if(db===prisma && process.env.CUSTOMER_LIFECYCLE_BRIDGE_SECRET){
