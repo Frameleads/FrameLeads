@@ -50,6 +50,15 @@ There is no automatic retry. Any timeout, unknown outcome or failed/invalid save
 Decision requires operator read-back before further action. The durable allowance
 stays reserved; the harness does not clear evidence or create another Decision.
 
+The CLI uses the repository's CommonJS package mode, avoiding the Node ESM-reparse
+warning that strict Windows PowerShell can promote to NativeCommandError. Failure
+output is bounded JSON: status, allowlisted stage/code, HTTP status when known and
+the no-retry outcome. Relay/product diagnostics distinguish transport, Bearer,
+OIDC, preflight, provider, persistence, decision and read-back stages. They never
+include raw exception messages, upstream bodies, tokens or credentials. An operator
+wrapper must capture stdout and the native exit code without treating harmless
+native stderr warnings as proof of an acceptance outcome.
+
 Customer action is only a real email from 628 to akram@frameleads.io and a direct
 reply back. Obtain the reply Message-ID via Gmail **More → Show original**. Enter a
 Gmail app password only in the local operator terminal, never FrameLeads or chat.

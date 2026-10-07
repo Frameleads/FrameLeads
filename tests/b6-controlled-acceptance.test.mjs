@@ -36,3 +36,27 @@ test('Onboarding contains no acceptance card, credentials or replacement control
  const page=fs.readFileSync(new URL('../src/app/dashboard/onboarding/page.tsx',import.meta.url),'utf8');assert.equal(/ActivationProgress|B6_GMAIL|Reply Message-ID|Check saved progress|Refresh status|Capture one real reply/.test(page),false);
  for(const file of ['src/app/dashboard/onboarding/ActivationProgress.tsx','src/app/api/onboarding/activation-preview/route.ts','src/app/api/onboarding/activation-preview/prospect/route.ts','src/app/api/onboarding/activation-preview/reply/route.ts'])assert.equal(fs.existsSync(new URL('../'+file,import.meta.url)),false);
 });
+test('CLI reports allowlisted HTTP stage, strips arbitrary upstream text and never retries',async()=>{
+ const module={exports:{}},messages=[];let calls=0;
+ const source=fs.readFileSync(new URL('../scripts/b6-controlled-activation-acceptance.ts',import.meta.url),'utf8');
+ const context={module,require:{main:null},process:{env:{}},AbortSignal,console:{log:value=>messages.push(value)},fetch:async()=>{
+  calls++;return {ok:false,status:401,text:async()=>JSON.stringify({code:'PRODUCT_OIDC_REJECTED',password:'never-output',jwt:'never-output'})};
+ }};
+ vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,context);
+ const env={...input,OUTBOUND_DISPATCH_SECRET:'isolated-secret',BRANDBRAIN_VERCEL_BYPASS:'isolated-bypass'};
+ await assert.rejects(module.exports.runAcceptance(env),error=>error.message==='PRODUCT_OIDC_REJECTED'&&error.httpStatus===401);
+ assert.equal(calls,1);assert.deepEqual(messages,[]);assert.equal(env.B6_GMAIL_APP_PASSWORD,undefined);assert.equal(env.B6_ACCEPTANCE_RUN,undefined);
+ context.fetch=async()=>{calls++;return {ok:false,status:403,text:async()=>JSON.stringify({code:'raw-private-message-never-output'})};};
+ await assert.rejects(module.exports.runAcceptance({...input,OUTBOUND_DISPATCH_SECRET:'isolated-secret',BRANDBRAIN_VERCEL_BYPASS:'isolated-bypass'}),error=>error.message==='ACCEPTANCE_STOPPED_DO_NOT_RETRY'&&error.httpStatus===403);
+ assert.equal(calls,2);
+});
+test('read-only product auth distinguishes Bearer and OIDC rejection without echoing tokens',async()=>{
+ let bearer=false;const route=load('../src/app/api/internal/onboarding/acceptance/route.ts',name=>{
+  if(name==='@vercel/oidc')return {verifyVercelOidcToken:async()=>{throw Error('raw-private-token-must-not-escape');}};
+  if(name==='@/lib/customer-lifecycle')return {lifecycleAuthorized:()=>bearer};
+  return {readAcceptancePreflight:blocked};
+ },{Response});
+ const request={headers:{get:()=> 'isolated-token'}};
+ let response=await route.GET(request);assert.equal(response.status,401);assert.equal((await response.json()).code,'PRODUCT_BEARER_REJECTED');
+ bearer=true;response=await route.GET(request);assert.equal(response.status,401);assert.equal((await response.json()).code,'PRODUCT_OIDC_REJECTED');
+});
