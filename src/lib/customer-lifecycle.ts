@@ -74,7 +74,7 @@ export async function syncCustomerLifecycle(email: string, diagnostic = false) {
   let oidc:string|null=null;
   try{oidc=process.env.VERCEL ? await getVercelOidcToken() : null;}catch{throw new Error('LIFECYCLE_OIDC_UNAVAILABLE');}
   const response=await fetch(target,{method:'POST',redirect:'error',headers:{'content-type':'application/json',authorization:'Bearer '+secret,
-    ...(oidc ? {'x-vercel-trusted-oidc-idp-token':oidc} : {}),
+    ...(oidc ? {'x-vercel-trusted-oidc-idp-token':oidc,'x-frameleads-lifecycle-oidc-token':oidc} : {}),
     ...(process.env.BRAND_BRAIN_CUSTOMER_PROTECTION_BYPASS ? {'x-vercel-protection-bypass':process.env.BRAND_BRAIN_CUSTOMER_PROTECTION_BYPASS} : {})},
     body:JSON.stringify({email}),signal:AbortSignal.timeout(15000),cache:'no-store'});
   if(!response.ok){

@@ -1,11 +1,11 @@
-import { getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 import { prisma } from '@/lib/prisma';
 import { syncCustomerLifecycle,boundedLifecycleBody } from '@/lib/customer-lifecycle';
 import { validMutationOrigin } from '@/lib/automation/auth';
 export const runtime='nodejs';
 export async function POST(request:Request){
  if(!validMutationOrigin(request)) return Response.json({code:'ORIGIN_REJECTED'},{status:403});
- const user=await getAuthenticatedEntitlementUser();
+ const user=await verifiedCustomerUser();
  if(!user) return Response.json({code:'UNAUTHORIZED'},{status:401});
  try{
   const raw=await boundedLifecycleBody(request);if(raw.trim()!=='{}') return Response.json({code:'INVALID_REQUEST'},{status:400});

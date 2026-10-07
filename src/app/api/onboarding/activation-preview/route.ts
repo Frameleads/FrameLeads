@@ -1,4 +1,4 @@
-import { getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 import { validMutationOrigin } from '@/lib/automation/auth';
 import { boundedLifecycleBody } from '@/lib/customer-lifecycle';
 import { prisma } from '@/lib/prisma';
@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 async function previewUser() {
-  const session = await getAuthenticatedEntitlementUser();
+  const session = await verifiedCustomerUser();
   if (!session) return null;
   // Read the paid tier directly. An admin UI override cannot grant a Micro-Pilot preview.
   const user = await prisma.user.findUnique({ where: { id: session.id }, select: { id: true, tier: true } });
