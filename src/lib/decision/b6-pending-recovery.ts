@@ -6,6 +6,8 @@ import {analyzeAndFinalizeReservedTriage,type TriageDependencies} from './triage
 import {readAcceptancePreflight,B6_CUSTOMER,B6_PROSPECT} from './b6-controlled-acceptance';
 import {B6_SIGNAL} from './b6-persisted-signal';
 import {qualifiesGovernedDecision,syncCustomerLifecycle} from '../customer-lifecycle';
+import {B6_CLAUDE_SMOKE} from './b6-anthropic-smoke';
+import {selectTriageProvider} from './provider';
 
 export const B6_PENDING_DECISION='cmuyn5uii001y12uq4lk5oebf';
 const TENANT='cmsz65snq00016585j70is9qj';
@@ -18,15 +20,16 @@ export function validatePendingRecoveryInput(input:{mode?:string;signalId?:strin
 export async function pendingRecoveryState(db=prisma){
  const p=await readAcceptancePreflight(db);
  if(p.userId!==TENANT||!p.policyReady||!p.analysisEnabled||p.decisionCount!==1)throw new Error('RECOVERY_PREFLIGHT_FAILED');
- const [decision,signal,constitution,attempts,usageCount]=await Promise.all([
+ const [decision,signal,constitution,attempts,usageCount,smoke]=await Promise.all([
   db.decision.findFirst({where:{id:B6_PENDING_DECISION,userId:TENANT},include:{trace:true,inputMessage:true}}),
   db.inboundSignal.findFirst({where:{id:B6_SIGNAL,userId:TENANT}}),
   db.salesConstitution.findUnique({where:{userId:TENANT},select:{revision:true}}),
   db.decisionExecutionAttempt.count({where:{userId:TENANT}}),
-  db.aIUsageEvent.count({where:{userId:TENANT,feature:'INBOX_TRIAGE',operation:'TRIAGE_ANALYSIS'}}),
+  db.aIUsageEvent.count({where:{userId:TENANT,feature:'INBOX_TRIAGE',operation:'TRIAGE_ANALYSIS',OR:[{requestId:null},{requestId:{not:B6_CLAUDE_SMOKE}}]}}),
+  db.aIUsageEvent.findFirst({where:{userId:TENANT,requestId:B6_CLAUDE_SMOKE,provider:'ANTHROPIC',status:'SUCCESS'}}),
  ]);
  if(!decision||decision.status!=='PENDING'||decision.trace!==null||!signal||!realPreviewReply(signal,TENANT)||
-  constitution?.revision!==1||attempts!==0||usageCount!==1||decision.supersedesDecisionId||!decision.shadowMode||decision.decisionType!=='INBOUND_TRIAGE'||
+  constitution?.revision!==1||attempts!==0||usageCount!==2||!smoke||decision.supersedesDecisionId||!decision.shadowMode||decision.decisionType!=='INBOUND_TRIAGE'||
   decision.inputMessage.id!==decision.inputMessageId||
   decision.prospectId!==signal.prospectId||decision.inputMessage.userId!==TENANT||decision.inputMessage.prospectId!==signal.prospectId||
   decision.inputMessage.sourceType!=='INBOUND_SIGNAL'||decision.inputMessage.sourceId!==B6_SIGNAL||
@@ -51,6 +54,8 @@ export async function readPendingRecoveryPreflight(db=prisma){
 export async function recoverPendingDecision(input:{mode?:string;signalId?:string;decisionId?:string},deps:TriageDependencies={},
  lifecycle=syncCustomerLifecycle){
  validatePendingRecoveryInput(input);
+ const provider=deps.provider??selectTriageProvider();
+ if(provider.provider!=='ANTHROPIC')throw new Error('RECOVERY_PROVIDER_REQUIRED');
  const db=deps.db??prisma;
  const initial=await pendingRecoveryState(db);
  const before=await lifecycle(B6_CUSTOMER);
@@ -64,12 +69,12 @@ export async function recoverPendingDecision(input:{mode?:string;signalId?:strin
   const txDb=tx as unknown as PrismaClient;
   const state=await pendingRecoveryState(txDb);
   return analyzeAndFinalizeReservedTriage({userId:TENANT,linked:state.linked,context,pending:state.decision,
-   fingerprint:state.decision.contextFingerprint,strictRecovery:true},{...deps,db:txDb});
+   fingerprint:state.decision.contextFingerprint,strictRecovery:true},{...deps,provider,db:txDb});
  },{isolationLevel:'ReadCommitted',maxWait:10_000,timeout:120_000});
  if(result.status==='STOPPED')return {status:'STOPPED',code:result.failureClass,decisionId:B6_PENDING_DECISION,signalId:B6_SIGNAL,outcome:'NO_RETRY'};
  const decision=await db.decision.findFirst({where:{id:B6_PENDING_DECISION,userId:TENANT},include:{trace:true,inputMessage:true}});
  const signal=await db.inboundSignal.findFirst({where:{id:B6_SIGNAL,userId:TENANT}});
- if(!qualifiesGovernedDecision(decision,signal)||decision?.source!=='GEMINI'||decision.trace?.constitutionRevision!==1||
+ if(!qualifiesGovernedDecision(decision,signal)||decision?.source!=='ANTHROPIC'||decision.provider!=='ANTHROPIC'||decision.trace?.constitutionRevision!==1||
   !Array.isArray(decision.trace?.policyResult)||!(decision.trace!.policyResult as any[]).every(p=>p.revision===1)||await db.decision.count({where:{userId:TENANT}})!==1||
   await db.decisionExecutionAttempt.count({where:{userId:TENANT}})!==0)throw new Error('RECOVERY_TRACE_VERIFICATION_FAILED');
  const after=await lifecycle(B6_CUSTOMER),repeat=await lifecycle(B6_CUSTOMER);

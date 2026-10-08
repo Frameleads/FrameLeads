@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TriageIntent } from '@prisma/client';
-import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic } from '../src/lib/decision/provider';
+import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic,selectTriageProvider,createAnthropicTriageProvider } from '../src/lib/decision/provider';
 import { decideReview, deterministicTriageSignal, triageInboundSignal,analyzeAndFinalizeReservedTriage } from '../src/lib/decision/triage';
 import { materializeMessageInTransaction } from '../src/lib/decision/conversation';
 import { canAutomaticallyTriage, canManuallyAnalyze, getDecisionRolloutMode } from '../src/lib/decision/rollout';
@@ -119,13 +119,34 @@ test('canonical schema enumerates the server taxonomy and prevents invented COMM
 });
 test('safe failure classification contains no raw provider/customer data',()=>{
  assert.equal(classifyTriageFailure(new TriageProviderFailure('MISSING_API_KEY'),'PROVIDER'),'MISSING_API_KEY');
- assert.equal(classifyTriageFailure({status:403,message:'private'},'PROVIDER'),'PROVIDER_4XX');
+ assert.equal(classifyTriageFailure({status:403,message:'private'},'PROVIDER'),'AUTH_FAILED');
  assert.equal(classifyTriageFailure({status:503},'PROVIDER'),'PROVIDER_5XX');
  assert.equal(classifyTriageFailure({name:'AbortError'},'PROVIDER'),'PROVIDER_TIMEOUT');
  assert.equal(classifyTriageFailure(new TypeError('private'),'PROVIDER'),'PROVIDER_NETWORK');
  assert.equal(classifyTriageFailure(new SyntaxError('private'),'PROVIDER'),'JSON_PARSE_FAILED');
  assert.equal(classifyTriageFailure(new TypeError('private'),'VALIDATION'),'OUTPUT_VALIDATION_FAILED');
  assert.equal(classifyTriageFailure(new Error('private'),'PROVIDER'),'UNKNOWN_PROVIDER_FAILURE');
+});
+test('explicit Anthropic selection and bounded provider failures preserve inactive Gemini support',()=>{
+ const previous=process.env.TRIAGE_AI_PROVIDER;
+ try{process.env.TRIAGE_AI_PROVIDER='ANTHROPIC';assert.equal(selectTriageProvider().provider,'ANTHROPIC');
+  process.env.TRIAGE_AI_PROVIDER='GEMINI';assert.equal(selectTriageProvider().provider,'GEMINI');
+  assert.equal(createAnthropicTriageProvider('claude-haiku-4-5').model,'claude-haiku-4-5');
+  assert.equal(classifyTriageFailure({status:402},'PROVIDER'),'CREDIT_OR_BILLING_REQUIRED');
+  assert.equal(classifyTriageFailure({status:400,message:'Your credit balance is too low: secret'},'PROVIDER'),'CREDIT_OR_BILLING_REQUIRED');
+  assert.equal(classifyTriageFailure({status:429},'PROVIDER'),'RATE_LIMIT');
+ }finally{if(previous===undefined)delete process.env.TRIAGE_AI_PROVIDER;else process.env.TRIAGE_AI_PROVIDER=previous;}
+});
+test('Claude finalizes the existing reservation with Anthropic source and actual usage metadata',async()=>{
+ const f=fixture();f.context.constitution.revision=1;
+ Object.assign(f.deps.provider,{provider:'ANTHROPIC',model:'claude-haiku-4-5'});
+ const pending:any={id:'existing',userId:'tenant-a',status:'PENDING'};f.rows.push(pending);
+ const policy=f.deps.evaluatePolicy;f.deps.evaluatePolicy=async()=>({...await policy(),authority:'SALES_CONSTITUTION',revision:1});
+ f.db.decision.create=async()=>{throw Error('Cannot reserve another Decision');};
+ const linked:any={signal:{prospectId:'prospect-a',sourceType:'IMAP_NATIVE',signalType:'EMAIL_REPLY'},message:{id:'message-1'},conversation:{id:'conversation-1'}};
+ const result=await analyzeAndFinalizeReservedTriage({userId:'tenant-a',linked,context:f.context,pending,fingerprint:'same',strictRecovery:true},f.deps);
+ assert.equal(result.decision!.source,'ANTHROPIC');assert.equal(result.decision!.provider,'ANTHROPIC');assert.equal(result.decision!.model,'claude-haiku-4-5');
+ assert.equal(f.usage[0].provider,'ANTHROPIC');assert.equal(f.usage[0].model,'claude-haiku-4-5');assert.equal(f.usage[0].status,'SUCCESS');assert.equal(f.rows.length,1);
 });
 test('shared C/D/E finalizes the existing PENDING row and creates one trace without reservation',async()=>{
  const f=fixture();f.context.constitution.revision=1;

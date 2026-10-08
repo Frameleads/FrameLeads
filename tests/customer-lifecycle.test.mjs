@@ -13,6 +13,9 @@ const d={id:'canonical-decision',userId:'tenant',prospectId:'prospect',inputMess
  inputMessage:{userId:'tenant',direction:'INBOUND',sourceType:'INBOUND_SIGNAL',sourceId:'signal'}};
 const signal={id:'signal',userId:'tenant',prospectId:'prospect',sourceType:'IMAP_NATIVE',sourceMessageId:'<actual-provider-message@customer.io>'};
 test('canonical policy-governed decision qualifies without sending',()=>{assert.equal(exports.qualifiesGovernedDecision(d,signal),true);});
+test('Anthropic and historical Gemini both qualify only through the same canonical trace criteria',()=>{
+ for(const source of ['ANTHROPIC','GEMINI'])assert.equal(exports.qualifiesGovernedDecision({...d,source},signal),true);
+});
 test('demo, simulation, unconfigured, failed and cross-tenant records never activate',()=>{
  for(const invalid of [{...d,trace:null},{...d,status:'PENDING'},{...d,source:'UNAVAILABLE'},{...d,trace:{...d.trace,contextFingerprint:'other'}},
   {...d,reviewReasons:['PROVIDER_UNAVAILABLE']},{...d,trace:{...d.trace,policyResult:[{configurationMissing:true}]}},

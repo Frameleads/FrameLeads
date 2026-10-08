@@ -3,7 +3,7 @@ import {lifecycleAuthorized,boundedLifecycleBody} from '@/lib/customer-lifecycle
 import {readAcceptancePreflight,runControlledAcceptance,B6_ACCEPTANCE_CODES} from '@/lib/decision/b6-controlled-acceptance';
 import {diagnosePersistedSignal,resumePersistedSignal,B6_SIGNAL} from '@/lib/decision/b6-persisted-signal';
 import {readPendingRecoveryPreflight,recoverPendingDecision} from '@/lib/decision/b6-pending-recovery';
-import {runSyntheticProviderProbe} from '@/lib/decision/b6-provider-probe';
+import {runAnthropicSmoke} from '@/lib/decision/b6-anthropic-smoke';
 export const runtime='nodejs';
 export const maxDuration=300;
 async function authorized(request:Request){
@@ -20,7 +20,7 @@ export async function POST(request:Request){
  let input:any;
  try{
   input=JSON.parse(await boundedLifecycleBody(request));
-  if(input?.mode==='SYNTHETIC_PROVIDER_PROBE'&&Object.keys(input).length===2)return Response.json(await runSyntheticProviderProbe(input.probe),{headers:{'Cache-Control':'no-store'}});
+  if(input?.mode==='ANTHROPIC_SMOKE'&&Object.keys(input).length===1)return Response.json(await runAnthropicSmoke(),{headers:{'Cache-Control':'no-store'}});
   if(input?.mode==='RECOVER_PENDING_DECISION')return Response.json(await recoverPendingDecision(input),{headers:{'Cache-Control':'no-store'}});
   if(input?.mode==='RESUME_PERSISTED_SIGNAL'){
    if(Object.keys(input).length!==2||input.signalId!==B6_SIGNAL)return Response.json({code:'INVALID_REQUEST'},{status:400});
@@ -31,7 +31,7 @@ export async function POST(request:Request){
   return Response.json(await runControlledAcceptance(input),{headers:{'Cache-Control':'no-store'}});
  }catch(error){const code=error instanceof Error&&[...B6_ACCEPTANCE_CODES,'PERSISTED_SIGNAL_PREFLIGHT_FAILED','FIXED_PENDING_RECOVERY_REQUIRED',
   'RECOVERY_PREFLIGHT_FAILED','RECOVERY_EVIDENCE_REQUIRED','RECOVERY_OWNERSHIP_REQUIRED','RECOVERY_ONBOARDING_REQUIRED','RECOVERY_CONTEXT_CHANGED',
-  'RECOVERY_TRACE_VERIFICATION_FAILED','RECOVERY_ACTIVATION_FAILED','RECOVERY_POLICY_VERIFICATION_FAILED'].includes(error.message)?error.message:'PRODUCT_PREFLIGHT_FAILED';
+  'RECOVERY_TRACE_VERIFICATION_FAILED','RECOVERY_ACTIVATION_FAILED','RECOVERY_POLICY_VERIFICATION_FAILED','RECOVERY_PROVIDER_REQUIRED'].includes(error.message)?error.message:'PRODUCT_PREFLIGHT_FAILED';
   return Response.json({code,outcome:'VERIFY_DURABLE_STATE_NO_RETRY'},{status:409,headers:{'Cache-Control':'no-store'}});}
  finally{if(input)input.B6_GMAIL_APP_PASSWORD='';}
 }

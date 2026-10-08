@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType, type ResponseSchema } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 import { TriageIntent as Intent } from '@prisma/client';
 import { geminiUsageTokens } from '../prospects/research-provider';
 import type { AIUsageTokens } from '../ai/usage';
@@ -40,7 +41,7 @@ export const TRIAGE_RESPONSE_SCHEMA: ResponseSchema = {
     explanation: {type: SchemaType.STRING},
   },
 };
-export const TRIAGE_FAILURE_CLASSES=['MISSING_API_KEY','PROVIDER_4XX','PROVIDER_5XX','PROVIDER_TIMEOUT','PROVIDER_NETWORK',
+export const TRIAGE_FAILURE_CLASSES=['MISSING_API_KEY','AUTH_FAILED','CREDIT_OR_BILLING_REQUIRED','RATE_LIMIT','PROVIDER_4XX','PROVIDER_5XX','PROVIDER_TIMEOUT','PROVIDER_NETWORK',
   'JSON_PARSE_FAILED','OUTPUT_VALIDATION_FAILED','USAGE_RECORDING_FAILED','UNKNOWN_PROVIDER_FAILURE'] as const;
 export type TriageFailureClass=typeof TRIAGE_FAILURE_CLASSES[number];
 // Provider error messages can contain request URLs, keys and arbitrary upstream text.
@@ -74,9 +75,14 @@ export function classifyTriageFailure(error:unknown,phase:'PROVIDER'|'VALIDATION
   if(phase==='VALIDATION')return 'OUTPUT_VALIDATION_FAILED';
   if(error instanceof SyntaxError)return 'JSON_PARSE_FAILED';
   const e=error as {status?:number;name?:string;cause?:{code?:string}};
+  if(e?.status===400&&/credit balance|billing|purchase credits/i.test(String((error as {message?:unknown})?.message??'')))return 'CREDIT_OR_BILLING_REQUIRED';
+  if(e?.status===401||e?.status===403)return 'AUTH_FAILED';
+  if(e?.status===402)return 'CREDIT_OR_BILLING_REQUIRED';
+  if(e?.status===429)return 'RATE_LIMIT';
   if(e?.status && e.status>=400 && e.status<500)return 'PROVIDER_4XX';
   if(e?.status && e.status>=500 && e.status<600)return 'PROVIDER_5XX';
-  if(['AbortError','TimeoutError'].includes(e?.name??''))return 'PROVIDER_TIMEOUT';
+  if(['AbortError','TimeoutError','APIConnectionTimeoutError'].includes(e?.name??''))return 'PROVIDER_TIMEOUT';
+  if(e?.name==='APIConnectionError')return 'PROVIDER_NETWORK';
   if(error instanceof TypeError || ['ECONNRESET','ENOTFOUND','ECONNREFUSED','ETIMEDOUT'].includes(e?.cause?.code??''))return 'PROVIDER_NETWORK';
   return 'UNKNOWN_PROVIDER_FAILURE';
 }
@@ -117,10 +123,13 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
 }
 
 export interface TriageProvider {
+  readonly provider?:'GEMINI'|'ANTHROPIC';
+  readonly model?:string;
   analyze(request: { contextText: string }, observer?: { onRequestStart(): void;
     onResponse(usage: AIUsageTokens | null): void }): Promise<unknown>;
 }
 export const geminiTriageProvider: TriageProvider = {
+  provider:'GEMINI',model:TRIAGE_MODEL,
   async analyze(request, observer) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new TriageProviderFailure('MISSING_API_KEY');
@@ -136,3 +145,36 @@ export const geminiTriageProvider: TriageProvider = {
     return JSON.parse(text) as unknown;
   },
 };
+
+export const ANTHROPIC_TRIAGE_SCHEMA={type:'object',additionalProperties:false,
+ required:['primaryIntent','intents','overallConfidence','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'],
+ properties:{primaryIntent:{type:'string',enum:TRIAGE_INTENTS},
+  intents:{type:'array',items:{type:'object',additionalProperties:false,required:['intent','confidence','evidence'],
+   properties:{intent:{type:'string',enum:TRIAGE_INTENTS},confidence:{type:'integer'},evidence:{type:'string'}}}},
+  overallConfidence:{type:'integer'},conciseInterpretation:{type:'string'},recommendedNextAction:{type:'string',enum:actions},
+  suggestedReply:{type:['string','null']},explanation:{type:'string'}}};
+export function createAnthropicTriageProvider(model=process.env.TRIAGE_ANTHROPIC_MODEL||'claude-haiku-4-5'):TriageProvider {
+ let resolvedModel=model;
+ return {provider:'ANTHROPIC',get model(){return resolvedModel;},async analyze(request,observer){
+  const apiKey=process.env.ANTHROPIC_API_KEY;if(!apiKey)throw new TriageProviderFailure('MISSING_API_KEY');
+  const client=new Anthropic({apiKey,maxRetries:0,timeout:60000});
+  observer?.onRequestStart();
+  const response=await client.messages.create({model,max_tokens:1600,temperature:0.1,system:TRIAGE_SYSTEM_PROMPT,
+   messages:[{role:'user',content:JSON.stringify({task:'Interpret this reply and return structured JSON only.',untrustedContext:request.contextText.slice(0,12000)})}],
+   output_config:{format:{type:'json_schema',schema:ANTHROPIC_TRIAGE_SCHEMA}}});
+  if(typeof response.model==='string'&&/^claude-[a-zA-Z0-9._-]{1,100}$/.test(response.model))resolvedModel=response.model;
+  const input=response.usage.input_tokens+(response.usage.cache_creation_input_tokens??0)+(response.usage.cache_read_input_tokens??0);
+  observer?.onResponse({inputTokens:input,outputTokens:response.usage.output_tokens,totalTokens:input+response.usage.output_tokens,
+   cachedInputTokens:response.usage.cache_read_input_tokens??null});
+  if(response.stop_reason!=='end_turn')throw new TriageProviderFailure('OUTPUT_VALIDATION_FAILED');
+  const text=response.content.filter(block=>block.type==='text').map(block=>block.text).join('');
+  if(!text||text.length>12000)throw new TriageProviderFailure('OUTPUT_VALIDATION_FAILED');
+  return JSON.parse(text) as unknown;
+ }};
+}
+export function selectTriageProvider():TriageProvider {
+ const selected=process.env.TRIAGE_AI_PROVIDER??'GEMINI';
+ if(selected==='ANTHROPIC')return createAnthropicTriageProvider();
+ if(selected==='GEMINI')return geminiTriageProvider;
+ throw new TriageProviderFailure('UNKNOWN_PROVIDER_FAILURE');
+}

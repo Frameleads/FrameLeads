@@ -9,7 +9,7 @@ import { buildSalesConstitutionFacts } from '../sales-constitution-facts';
 import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
 import { realPreviewReply, reserveTriageDecision } from './activation-preview';
-import { geminiTriageProvider, TRIAGE_MODEL, validateTriageOutput,
+import { selectTriageProvider, TRIAGE_MODEL, validateTriageOutput,
   classifyTriageFailure, safeGoogleDiagnostic, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
 
 export type TriageDependencies = { db?: PrismaClient; provider?: TriageProvider; recordUsage?: typeof recordAIUsage;
@@ -127,6 +127,8 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   context:Awaited<ReturnType<typeof buildReplyDecisionContext>>;
   pending:{id:string};fingerprint:string;strictRecovery?:boolean},deps:TriageDependencies={}) {
   const db=deps.db??prisma;
+  const provider=deps.provider??selectTriageProvider();
+  const providerName=provider.provider??'GEMINI';let model=provider.model??TRIAGE_MODEL;
   const {linked,context,pending,fingerprint}=input;
   if(!linked.message||!linked.conversation||!linked.signal.prospectId)throw new Error('RESERVED_DECISION_INPUT_REQUIRED');
   const fast = input.strictRecovery ? null : deterministicTriageSignal(linked.signal);
@@ -145,22 +147,23 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   } else {
     const start = Date.now();
     try {
-      const raw = await (deps.provider ?? geminiTriageProvider).analyze({ contextText: context.contextText }, {
+      const raw = await provider.analyze({ contextText: context.contextText }, {
         onRequestStart: () => { providerStarted = true; }, onResponse: tokens => { usage = tokens; } });
       providerPhase='VALIDATION';
       analysis = validateTriageOutput(raw, context.currentReply);
-      source = Source.GEMINI;
+      source = providerName==='ANTHROPIC'?Source.ANTHROPIC:Source.GEMINI;
     } catch (error) {
       failureClass=classifyTriageFailure(error,providerPhase);
       console.error('[TRIAGE_FAILURE]',JSON.stringify({failureClass,
         ...(failureClass==='PROVIDER_4XX'||failureClass==='PROVIDER_5XX'?{providerDiagnostic:safeGoogleDiagnostic(error)}:{})}));
       failure = error instanceof TypeError || error instanceof SyntaxError ? 'INVALID_MODEL_OUTPUT' : 'MODEL_UNAVAILABLE';
     } finally {
+      model=provider.model??model;
       latencyMs = Math.max(0, Date.now() - start);
       if (providerStarted) try { await (deps.recordUsage ?? recordAIUsage)({ userId: input.userId,
         prospectId: linked.signal.prospectId, companyKey: context.companyKey,
         feature: AIFeature.INBOX_TRIAGE, operation: AIOperation.TRIAGE_ANALYSIS,
-        provider: AIProvider.GEMINI, model: TRIAGE_MODEL, usage, status: failure ? AIUsageStatus.FAILED : AIUsageStatus.SUCCESS,
+        provider: providerName==='ANTHROPIC'?AIProvider.ANTHROPIC:AIProvider.GEMINI, model, usage, status: failure ? AIUsageStatus.FAILED : AIUsageStatus.SUCCESS,
         latencyMs }, db); } catch {
         console.error('Inbox triage usage recording failed');
         failure = 'USAGE_RECORDING_FAILED';
@@ -230,7 +233,8 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
     intentSignals: analysis?.intents ?? null, confidenceScore: analysis?.overallConfidence ?? null,
     interpretation: analysis?.conciseInterpretation ?? null, recommendedNextAction: finalRecommendation,
     suggestedReply, requiresReview: status !== Status.READY, reviewReasons: reasons, explanation,
-    provider: source === Source.GEMINI ? AIProvider.GEMINI : null, model: source === Source.GEMINI ? TRIAGE_MODEL : null };
+    provider: source === Source.ANTHROPIC ? AIProvider.ANTHROPIC : source === Source.GEMINI ? AIProvider.GEMINI : null,
+    model: source === Source.GEMINI || source === Source.ANTHROPIC ? model : null };
   // The nested Decision relation supplies its composite userId/decisionId keys.
   // Prisma's CreateWithoutDecision input rejects an explicit userId here.
   const trace = { inputMessageId: linked.message.id, contextFingerprint: fingerprint,

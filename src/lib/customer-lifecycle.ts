@@ -19,7 +19,7 @@ export async function boundedLifecycleBody(request:Request){
 
 /** Sandbox simulation never writes these records. Only authenticated provider replies qualify. */
 export function qualifiesGovernedDecision(d: any, signal: any) {
-  return Boolean(d && ['READY','NEEDS_REVIEW'].includes(d.status) && ['DETERMINISTIC','GEMINI'].includes(d.source) &&
+  return Boolean(d && ['READY','NEEDS_REVIEW'].includes(d.status) && ['DETERMINISTIC','GEMINI','ANTHROPIC'].includes(d.source) &&
     d.trace && d.trace.userId === d.userId && d.trace.decisionId === d.id &&
     d.trace.inputMessageId === d.inputMessageId && d.trace.contextFingerprint === d.contextFingerprint &&
     d.inputMessage?.userId === d.userId && d.inputMessage?.direction === 'INBOUND' &&
