@@ -103,10 +103,13 @@ const navItems: Array<{ label: string; href: string; icon: React.ElementType; ch
 
 function DashboardLayoutContent({
   children,
+  previewReviewOnly = false,
 }: {
   children: React.ReactNode;
+  previewReviewOnly?: boolean;
 }) {
   const pathname = usePathname();
+  const navigationPathname = previewReviewOnly ? "/dashboard/how-it-works" : pathname;
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isOpen, setIsOpen] = useState(false);
@@ -158,10 +161,11 @@ function DashboardLayoutContent({
   }, []);
 
   useEffect(() => {
+    if (previewReviewOnly) return;
     loadLists();
     window.addEventListener("frameleads:lists-changed", loadLists);
     return () => window.removeEventListener("frameleads:lists-changed", loadLists);
-  }, [loadLists]);
+  }, [loadLists, previewReviewOnly]);
 
   const handleDeleteList = async (list: LeadListSummary) => {
     if (!window.confirm(`Delete the list “${list.name}”? Its leads will remain in the Sandbox.`)) return;
@@ -234,8 +238,8 @@ function DashboardLayoutContent({
         {navItems.map((item) => {
           const isSandbox = item.href === "/dashboard/sandbox";
           const childPaths = item.children?.map(child => child.href.split("#")[0]) ?? [];
-          const isWithinGroup = childPaths.some(path => pathname === path || pathname.startsWith(`${path}/`));
-          const isActive = (pathname === item.href || pathname.startsWith(`${item.href}/`) || isWithinGroup) && (!isSandbox || !selectedListId);
+          const isWithinGroup = childPaths.some(path => navigationPathname === path || navigationPathname.startsWith(`${path}/`));
+          const isActive = (navigationPathname === item.href || navigationPathname.startsWith(`${item.href}/`) || isWithinGroup) && (!isSandbox || !selectedListId);
           const pendingPath = pendingHref?.split("?")[0];
           const isPending = pendingHref === item.href || pendingPath === item.href || (pendingPath ? childPaths.includes(pendingPath) : false);
           const childrenOpen = item.children?.length
@@ -272,7 +276,7 @@ function DashboardLayoutContent({
               {item.children?.length && childrenOpen ? <div id={`nav-children-${item.label.toLowerCase()}`} className="ml-7 mt-1 space-y-1 border-l border-border/50 pl-3">
                 {item.children.map(child => {
                   const childPath = child.href.split("#")[0];
-                  const childActive = pathname === childPath;
+                  const childActive = navigationPathname === childPath;
                   const childPending = pendingHref === child.href;
                   return <Link key={child.href} href={child.href} onClick={() => { beginNavigation(child.href); setIsOpen(false); setExpandedGroups(current => ({ ...current, [item.href]: true })); }}
                     onMouseEnter={() => prefetchRoute(child.href)} onFocus={() => prefetchRoute(child.href)}
@@ -286,7 +290,7 @@ function DashboardLayoutContent({
                   </Link>;
                 })}
               </div> : null}
-              {isSandbox && pathname.startsWith("/dashboard/sandbox") && (
+              {isSandbox && navigationPathname.startsWith("/dashboard/sandbox") && (
                 <div className="ml-7 mt-1 space-y-1 border-l border-border/50 pl-3">
                   {lists.map((list) => (
                     <div key={list.id} className="group flex items-center gap-1">
@@ -298,7 +302,7 @@ function DashboardLayoutContent({
                         className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                           pendingHref === `/dashboard/sandbox?list=${encodeURIComponent(list.id)}`
                             ? "bg-[#FF5A1F]/10 text-white"
-                            : pathname === "/dashboard/sandbox" && selectedListId === list.id
+                            : navigationPathname === "/dashboard/sandbox" && selectedListId === list.id
                             ? "bg-primary/10 text-primary"
                             : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                         }`}
@@ -412,7 +416,7 @@ function DashboardLayoutContent({
         {/* Desktop page title bar */}
         <div className="hidden md:flex h-16 border-b border-border/50 bg-card/30 backdrop-blur-xl items-center px-8">
           <h2 className="text-sm font-medium text-muted-foreground">
-            {navItems.find((i) => pathname.startsWith(i.href))?.label ||
+            {navItems.find((i) => navigationPathname.startsWith(i.href))?.label ||
               "Dashboard"}
           </h2>
         </div>
@@ -459,10 +463,13 @@ function DashboardLayoutFallback({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({ children, previewReviewOnly = false }: {
+  children: React.ReactNode;
+  previewReviewOnly?: boolean;
+}) {
   return (
     <Suspense fallback={<DashboardLayoutFallback>{children}</DashboardLayoutFallback>}>
-      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+      <DashboardLayoutContent previewReviewOnly={previewReviewOnly}>{children}</DashboardLayoutContent>
     </Suspense>
   );
 }
