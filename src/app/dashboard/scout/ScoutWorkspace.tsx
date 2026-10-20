@@ -4,8 +4,9 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowRight, ArrowUpRight, BrainCircuit, Globe2, Radar, Search, Target } from 'lucide-react';
 import { Input } from '@/components/ui/input';
+import SetupNotice from '@/components/SetupNotice';
 import type { ScoutProspectRow } from '@/lib/scout-data';
-import { qualificationLabel, scoutPrimaryAction, scoutStatus, whyNowSummary } from '@/lib/scout-view';
+import { fitSummary, qualificationStatus, researchStatusDetail, scoutPrimaryAction, scoutStatus, valueSummary, whyNowSummary } from '@/lib/scout-view';
 import ResearchButton from './ResearchButton';
 import QualifyButton from './QualifyButton';
 
@@ -15,10 +16,30 @@ const filters: { id: Filter; label: string }[] = [
   { id: 'review', label: 'Needs Review' }, { id: 'unresearched', label: 'Not Researched' },
 ];
 
-function StatusPill({ status }: { status: ScoutProspectRow['researchStatus'] }) {
-  const view = scoutStatus(status);
-  return <span className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${view.tone}`}>
-    {view.busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />}{view.label}
+function StatusPill({ prospect }: { prospect: ScoutProspectRow }) {
+  const view = scoutStatus(prospect.researchStatus);
+  const detail = researchStatusDetail(prospect.researchStatus, prospect.qualificationStatus);
+  return <span className="block min-w-0">
+    <span title={detail || undefined} className={`inline-flex max-w-full items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium ${view.tone}`}>
+      {view.busy && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden="true" />}{view.label}
+    </span>
+    {detail && <span className="mt-1 block truncate text-[10px] leading-4 text-muted-foreground">{detail}</span>}
+  </span>;
+}
+
+function QualificationPill({ prospect }: { prospect: ScoutProspectRow }) {
+  const view = qualificationStatus(prospect.qualificationStatus, prospect.qualificationReasonCode, prospect.qualificationOverride, prospect.qualificationPolicyVersion);
+  return <span className="block min-w-0">
+    <span title={view.detail || undefined} className={`inline-flex max-w-full items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${view.tone}`}><span className="truncate">{view.label}</span></span>
+    {view.detail && <span className="mt-1 block truncate text-[10px] leading-4 text-muted-foreground">{view.detail}</span>}
+  </span>;
+}
+
+function FitDisplay({ prospect }: { prospect: ScoutProspectRow }) {
+  const view = fitSummary(prospect.fitScore, prospect.fitTier, prospect.researchStatus);
+  return <span className={`block font-semibold tabular-nums ${view.tone}`}>
+    {view.label}
+    {view.detail && prospect.fitScore !== null && <span className="mt-0.5 block text-[10px] font-normal capitalize text-muted-foreground">{view.detail}</span>}
   </span>;
 }
 
@@ -39,7 +60,7 @@ function ProspectAction({ prospect, compact = false }: { prospect: ScoutProspect
   return <ResearchButton prospectId={prospect.id} status={prospect.researchStatus} compact={compact} />;
 }
 
-export default function ScoutWorkspace({ prospects }: { prospects: ScoutProspectRow[] }) {
+export default function ScoutWorkspace({ prospects, profileState = 'ready' }: { prospects: ScoutProspectRow[]; profileState?: 'missing' | 'inactive' | 'incomplete' | 'ready' }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const visible = useMemo(() => {
@@ -51,20 +72,23 @@ export default function ScoutWorkspace({ prospects }: { prospects: ScoutProspect
       return !search || item.name.toLocaleLowerCase().includes(search) || item.companyName.toLocaleLowerCase().includes(search);
     });
   }, [prospects, query, filter]);
+  const unassessed = prospects.filter(item => item.qualificationStatus === 'UNASSESSED').length;
+  const awaitingResearch = prospects.filter(item => item.qualificationStatus === 'QUALIFIED' && item.researchStatus === 'NOT_RESEARCHED').length;
+  const evidenceReview = prospects.filter(item => item.researchStatus === 'NEEDS_REVIEW' || item.researchStatus === 'FAILED').length;
 
-  return <div className="mx-auto w-full max-w-[1680px] space-y-6">
+  return <div className="mx-auto w-full min-w-0 max-w-[1680px] space-y-6">
     <header className="flex flex-wrap items-start justify-between gap-4">
-      <div>
+      <div className="min-w-0 max-w-full">
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary"><Radar className="h-4 w-4" aria-hidden="true" /> Decision intelligence</div>
         <h1 className="text-2xl font-semibold text-foreground sm:text-3xl">Scout</h1>
-        <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">Review prospect fit, timing, risks, and the evidence behind each assessment.</p>
+        <p className="mt-1 max-w-2xl break-words text-sm leading-5 text-muted-foreground">Review prospect fit, timing, risks, and the evidence behind each assessment.</p>
       </div>
       <div className="flex w-[180px] shrink-0 flex-col items-stretch gap-3">
         <div className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2 text-left">
           <div className="text-xl font-semibold tabular-nums">{prospects.length}</div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground">Prospects</div>
         </div>
-        <div className="w-full [&>span]:w-full [&_button]:w-full"><QualifyButton /></div>
+        <div id="scout-qualification" className="w-full [&>span]:w-full [&_button]:w-full"><QualifyButton /></div>
       </div>
     </header>
 
@@ -79,6 +103,16 @@ export default function ScoutWorkspace({ prospects }: { prospects: ScoutProspect
         <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-[#FF5A1F]" aria-hidden="true" />
       </Link>)}
     </nav>
+
+    {profileState !== 'ready' ? <SetupNotice level="REQUIRED" title={profileState === 'missing' ? 'No ICP Profile yet' : profileState === 'inactive' ? 'ICP Profile is inactive' : 'ICP criteria are incomplete'} href="/dashboard/scout/settings" linkLabel="Set up ICP Profile" tone="warning">
+      {profileState === 'missing' ? 'Scout cannot assess fit until you create an ICP Profile. This is separate from missing prospect details.' : profileState === 'inactive' ? 'Your saved ICP Profile is turned off, so it cannot qualify prospects. Activate it to assess fit.' : 'The active profile has no qualification rules. Add at least one target or exclusion criterion before qualification.'}
+    </SetupNotice> : unassessed > 0 ? <SetupNotice level="RECOMMENDED" title={`${unassessed} prospect${unassessed === 1 ? '' : 's'} not qualified yet`} href="#scout-qualification" linkLabel="Go to qualification">
+      Qualification has not been run for these prospects. Fit and value are not assessed until the deterministic ICP check runs; missing prospect metadata may still leave a result for review.
+    </SetupNotice> : awaitingResearch > 0 ? <SetupNotice level="RECOMMENDED" title={`${awaitingResearch} qualified prospect${awaitingResearch === 1 ? '' : 's'} awaiting research`} href="#scout-prospects" linkLabel="Review eligible prospects">
+      Qualification alone does not provide verified timing, fit evidence, or potential value. Run research on eligible prospects to generate those signals.
+    </SetupNotice> : evidenceReview > 0 ? <SetupNotice level="RECOMMENDED" title={`${evidenceReview} prospect${evidenceReview === 1 ? '' : 's'} need evidence review`} href="#scout-prospects" linkLabel="Review evidence">
+      These assessments have insufficient verified evidence or a research failure. Their status remains under review; no score or timing signal is inferred.
+    </SetupNotice> : null}
 
     {prospects.length === 0 ? <div className="grid gap-6 rounded-2xl border border-dashed border-border bg-card/30 p-6 sm:p-8 lg:grid-cols-5 lg:items-center">
       <div className="lg:col-span-2"><div className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-[#1A1A1A] text-[#FF5A1F]"><Radar className="h-5 w-5" aria-hidden="true" /></div>
@@ -103,30 +137,31 @@ export default function ScoutWorkspace({ prospects }: { prospects: ScoutProspect
           </button>)}
         </div>
       </div>
-      <p className="text-xs text-muted-foreground" aria-live="polite">Showing {visible.length} of {prospects.length} prospects</p>
+      <p id="scout-prospects" className="text-xs text-muted-foreground" aria-live="polite">Showing {visible.length} of {prospects.length} prospects</p>
       {visible.length === 0 ? <div className="rounded-2xl border border-border/60 bg-card/40 px-6 py-12 text-center text-sm text-muted-foreground">No prospects match this search or filter.</div> : <>
         <div className="hidden overflow-hidden w-full min-w-0 rounded-2xl border border-border/60 bg-card/40 xl:block">
-          <div className="grid grid-cols-[minmax(130px,1.3fr)_minmax(110px,1fr)_72px_85px_minmax(120px,1.2fr)_115px_215px] gap-3 border-b border-border/60 bg-muted/20 px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="grid grid-cols-[minmax(130px,1.2fr)_minmax(150px,1.25fr)_96px_110px_minmax(150px,1.4fr)_125px_215px] gap-4 border-b border-border/60 bg-muted/20 px-6 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span>Prospect</span><span>Company</span><span>Fit</span><span>Value</span><span>Why now</span><span>Research</span><span>Action</span>
           </div>
-          {visible.map(item => <div key={item.id} className="grid grid-cols-[minmax(130px,1.3fr)_minmax(110px,1fr)_72px_85px_minmax(120px,1.2fr)_115px_215px] items-center gap-3 border-b border-border/40 px-5 py-4 text-sm last:border-b-0 hover:bg-muted/20">
+          {visible.map(item => <div key={item.id} className="grid grid-cols-[minmax(130px,1.2fr)_minmax(150px,1.25fr)_96px_110px_minmax(150px,1.4fr)_125px_215px] items-center gap-4 border-b border-border/40 px-6 py-4 text-sm last:border-b-0 hover:bg-muted/20">
             <Link href={`/dashboard/scout/${encodeURIComponent(item.id)}`} className="min-w-0 truncate font-medium text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.name}</Link>
-            <span className="min-w-0 truncate text-muted-foreground">{item.companyName}<span className="block text-[11px] text-muted-foreground/80">{qualificationLabel(item.qualificationStatus, item.qualificationReasonCode, item.qualificationOverride, item.qualificationPolicyVersion)}</span></span>
-            <span className="font-semibold tabular-nums">{item.fitScore === null ? '—' : item.fitScore}</span>
-            <span className="text-xs text-muted-foreground">{item.potentialValueBand || '—'}</span>
+            <span className="min-w-0 text-muted-foreground"><span className="block truncate">{item.companyName}</span><span className="mt-1 block"><QualificationPill prospect={item} /></span></span>
+            <FitDisplay prospect={item} />
+            <span className="text-xs text-muted-foreground">{valueSummary(item.potentialValueBand, item.qualificationStatus, item.researchStatus)}</span>
             <span className="line-clamp-2 text-xs leading-5 text-muted-foreground">{whyNowSummary(item.whyNow)}</span>
-            <StatusPill status={item.researchStatus} />
+            <StatusPill prospect={item} />
             <ProspectAction prospect={item} />
           </div>)}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:hidden">
           {visible.map(item => <article key={item.id} className="min-w-0 rounded-2xl border border-border/60 bg-card/50 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><Link href={`/dashboard/scout/${encodeURIComponent(item.id)}`} className="text-base font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.name}</Link><p className="mt-1 truncate text-sm text-muted-foreground">{item.companyName}</p><p className="mt-1 text-xs text-muted-foreground">{qualificationLabel(item.qualificationStatus, item.qualificationReasonCode, item.qualificationOverride, item.qualificationPolicyVersion)}</p></div>
-              <span className="shrink-0 text-lg font-semibold tabular-nums">{item.fitScore === null ? '—' : item.fitScore}<span className="ml-0.5 text-xs font-normal text-muted-foreground">{item.fitScore === null ? '' : '/100'}</span></span>
+              <div className="min-w-0"><Link href={`/dashboard/scout/${encodeURIComponent(item.id)}`} className="text-base font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{item.name}</Link><p className="mt-1 truncate text-sm text-muted-foreground">{item.companyName}</p><div className="mt-2"><QualificationPill prospect={item} /></div></div>
+              <div className="shrink-0 text-right"><FitDisplay prospect={item} /></div>
             </div>
-            <div className="mt-4"><StatusPill status={item.researchStatus} /></div>
+            <div className="mt-4"><StatusPill prospect={item} /></div>
             <p className="mt-4 min-h-10 text-sm leading-5 text-muted-foreground">{whyNowSummary(item.whyNow)}</p>
+            <p className="mt-2 text-xs text-muted-foreground">Potential value: {valueSummary(item.potentialValueBand, item.qualificationStatus, item.researchStatus)}</p>
             <div className="mt-4 border-t border-border/50 pt-4"><ProspectAction prospect={item} compact /></div>
           </article>)}
         </div>

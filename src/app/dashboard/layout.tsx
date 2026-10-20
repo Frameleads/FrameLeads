@@ -19,6 +19,7 @@ import {
   Folder,
   MoreHorizontal,
   ChevronDown,
+  Workflow,
 } from "lucide-react";
 import { clearCampaignContext } from "@/lib/campaign-session";
 
@@ -30,6 +31,11 @@ interface LeadListSummary {
 
 type NavChild = { label: string; href: string };
 const navItems: Array<{ label: string; href: string; icon: React.ElementType; children?: NavChild[] }> = [
+  {
+    label: "How it works",
+    href: "/dashboard/how-it-works",
+    icon: Workflow,
+  },
   {
     label: "Onboarding",
     href: "/dashboard/onboarding",

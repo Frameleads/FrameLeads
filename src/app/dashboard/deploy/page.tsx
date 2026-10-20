@@ -12,6 +12,7 @@ import {
   Inbox
 } from "lucide-react";
 import { useCorePaywallLocked } from "@/components/CorePaywall";
+import SetupNotice from "@/components/SetupNotice";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000";
 
@@ -200,6 +201,10 @@ export default function DeployPage() {
             You can find the Campaign ID in the URL of your {platform === 'instantly' ? 'Instantly' : 'Smartlead'} campaign.
           </p>
         </div>
+
+        {!isCoreLocked && (!apiKey.trim() || !campaignId.trim()) && <SetupNotice level="REQUIRED" title={`Complete ${platform === 'instantly' ? 'Instantly' : 'Smartlead'} setup to deploy`}>
+          Enter the selected provider’s API key and campaign ID to enable this external deployment. This is needed only for the external provider you selected; native Sandbox email uses its connected mailbox and does not require Smartlead or Instantly.
+        </SetupNotice>}
 
         <div className="pt-6">
           <button

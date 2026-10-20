@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TriageIntent } from '@prisma/client';
-import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic,selectTriageProvider,createAnthropicTriageProvider } from '../src/lib/decision/provider';
+import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic,safeTriageOutputDiagnostic,selectTriageProvider,createAnthropicTriageProvider } from '../src/lib/decision/provider';
 import { decideReview, deterministicTriageSignal, triageInboundSignal,analyzeAndFinalizeReservedTriage } from '../src/lib/decision/triage';
 import { materializeMessageInTransaction } from '../src/lib/decision/conversation';
 import { canAutomaticallyTriage, canManuallyAnalyze, getDecisionRolloutMode } from '../src/lib/decision/rollout';
 import { scheduleInboundDecisions } from '../src/lib/decision/schedule';
+import { markStalledDecisionForReview, STALLED_DECISION_AFTER_MS, UNCERTAIN_ANALYSIS_REASON } from '../src/lib/decision/pending-recovery';
 
 const answer = { primaryIntent: TriageIntent.PRICING_INQUIRY,
   intents: [{ intent: TriageIntent.PRICING_INQUIRY, confidence: 88, evidence: 'What is the price?' }],
@@ -28,12 +29,21 @@ test('Google diagnostics expose fixed vocabulary only, never raw messages or arb
  assert.equal(safeGoogleDiagnostic({status:400,statusText:secret}).statusText,null);
 });
 
+test('triage output diagnostics expose fixed validation codes and never customer text', () => {
+  const secret = 'pricing reply secret';
+  assert.equal(safeTriageOutputDiagnostic(new TypeError(`Intent evidence is not in the reply: ${secret}`)), 'OUTPUT_VALIDATION_FAILED');
+  assert.equal(safeTriageOutputDiagnostic(new TypeError('Intent evidence is not in the reply')), 'EVIDENCE_NOT_IN_CURRENT_REPLY');
+  assert.equal(safeTriageOutputDiagnostic(new SyntaxError(secret)), 'JSON_PARSE_FAILED');
+  assert.equal(safeTriageOutputDiagnostic(new TriageProviderFailure('OUTPUT_TRUNCATED')), 'OUTPUT_VALIDATION_FAILED');
+  assert.ok(!JSON.stringify([safeTriageOutputDiagnostic(new TypeError(secret))]).includes(secret));
+});
+
 function fixture(variation: { answer?: unknown; policy?: 'allow' | 'review' | 'block';
-  providerError?: boolean; tenant?: string; sourceType?: string; signalType?: string } = {}) {
+  providerError?: boolean; tenant?: string; sourceType?: string; signalType?: string; reply?: string } = {}) {
   const rows: any[] = [];
   const usage: any[] = [];
   let calls = 0;
-  const signal = { id: 'signal-1', userId: 'tenant-a', prospectId: 'prospect-a', rawEmail: 'What is the price?',
+  const signal = { id: 'signal-1', userId: 'tenant-a', prospectId: 'prospect-a', rawEmail: variation.reply ?? 'What is the price?',
     sourceMessageId: 'source-1', sourceType: variation.sourceType ?? 'WEBHOOK',
     signalType: variation.signalType ?? 'EMAIL_REPLY', createdAt: new Date('2026-01-01') };
   const message = { id: 'message-1', userId: 'tenant-a', conversationId: 'conversation-1',
@@ -155,7 +165,8 @@ test('shared C/D/E finalizes the existing PENDING row and creates one trace with
  f.db.decision.create=async()=>{throw Error('Recovery cannot reserve');};
  const linked:any={signal:{userId:'tenant-a',prospectId:'prospect-a',sourceType:'IMAP_NATIVE',signalType:'EMAIL_REPLY'},message:{id:'message-1'},conversation:{id:'conversation-1'}};
  const result=await analyzeAndFinalizeReservedTriage({userId:'tenant-a',linked,context:f.context,pending,fingerprint:'same-context',strictRecovery:true},f.deps);
- assert.equal(result.status,'READY');assert.equal(result.decision!.id,'existing');assert.equal(f.rows.length,1);assert.equal(f.calls(),1);
+ assert.equal(result.status,'NEEDS_REVIEW');assert.equal(result.decision!.id,'existing');assert.equal(f.rows.length,1);assert.equal(f.calls(),1);
+ assert.equal(result.decision!.suggestedReply,null);assert.ok(result.decision!.reviewReasons.includes('COMMERCIAL_AUTHORITY_UNVERIFIED'));
  assert.equal(result.decision!.trace!.constitutionRevision,1);assert.equal(f.usage.length,1);
 });
 test('strict recovery provider/validation failure preserves the same PENDING row without trace or retry',async()=>{
@@ -200,7 +211,8 @@ test('conversation projection uses a tenant-scoped source key and rejects cross-
 });
 
 test('low confidence and policy uncertainty require review', () => {
-  assert.deepEqual(decideReview({ analysis: { ...answer, overallConfidence: 40 } as any, policy: [] }), ['LOW_CONFIDENCE']);
+  assert.deepEqual(decideReview({ analysis: { ...answer, overallConfidence: 40 } as any, policy: [] }),
+    ['LOW_CONFIDENCE', 'COMMERCIAL_AUTHORITY_UNVERIFIED']);
   assert.ok(decideReview({ analysis: answer as any, policy: [{ decision: 'REQUIRES_REVIEW',
     unresolvedRules: [{}], blockingRules: [], approvalRequirements: [], humanReviewRequirements: [],
     safeResponseRequirements: [] }] }).includes('POLICY_UNRESOLVED'));
@@ -224,7 +236,9 @@ test('trusted auto-reply marker bypasses Gemini and usage telemetry', async () =
 test('one provider call, persisted trace, cache reuse, and explicit new version', async () => {
   const f = fixture();
   const first = await triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps);
-  assert.equal(first.status, 'READY');
+  assert.equal(first.status, 'NEEDS_REVIEW');
+  assert.equal(first.decision?.suggestedReply, null);
+  assert.ok(first.decision?.reviewReasons.includes('COMMERCIAL_AUTHORITY_UNVERIFIED'));
   assert.equal(first.decision?.trace?.engineVersion, 'reply-decision-v1');
   assert.equal(first.decision?.shadowMode, true);
   assert.equal(f.calls(), 1); assert.equal(f.usage.length, 1);
@@ -234,8 +248,73 @@ test('one provider call, persisted trace, cache reuse, and explicit new version'
     retryOfDecisionId: first.decision!.id }, f.deps);
   assert.equal(retried.decision?.supersedesDecisionId, first.decision?.id);
   assert.equal(f.rows.length, 2); assert.equal(f.calls(), 2);
-  assert.equal(f.rows[0].status, 'READY');
+  assert.equal(f.rows[0].status, 'NEEDS_REVIEW');
   assert.equal(f.rows[0].contextFingerprint, 'same-context');
+});
+
+test('commercial pricing and negotiation drafts require human review and cannot enter Autopilot', async () => {
+  const reply = 'What is the price?';
+  const f = fixture({ answer: { ...answer, intents: [
+    ...answer.intents,
+    { intent: TriageIntent.POSITIVE_INTEREST, confidence: 82, evidence: 'price?' },
+    { intent: TriageIntent.NEGOTIATION, confidence: 78, evidence: 'price' },
+  ], recommendedNextAction: 'REPLY_WITH_FACTS',
+  suggestedReply: 'Our sales team can walk you through our pricing packages.' } });
+  const result = await triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps);
+  assert.equal(result.status, 'NEEDS_REVIEW');
+  assert.equal(result.decision?.status, 'NEEDS_REVIEW');
+  assert.equal(result.decision?.suggestedReply, null);
+  assert.equal(result.decision?.recommendedNextAction, 'ESCALATE_TO_HUMAN');
+  assert.ok(result.decision?.reviewReasons.includes('COMMERCIAL_AUTHORITY_UNVERIFIED'));
+  assert.equal(f.calls(), 1);
+});
+
+test('duplicate inbound processing reserves one Decision and makes one provider request', async () => {
+  const f = fixture();
+  const create = f.db.decision.create;
+  f.db.decision.create = async ({ data }: any) => {
+    if (f.rows.length) throw Object.assign(new Error('unique decision reservation'), { code: 'P2002' });
+    return create({ data });
+  };
+  const results = await Promise.all([
+    triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps),
+    triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps),
+  ]);
+  assert.equal(f.rows.length, 1);
+  assert.equal(f.calls(), 1);
+  assert.ok(results.every(result => result.decision?.id === f.rows[0].id));
+});
+
+test('ten controlled inbound scenarios validate through canonical analysis and retain review policy', async () => {
+  const commercialIntents: TriageIntent[] = [TriageIntent.PRICING_INQUIRY, TriageIntent.PRICING_OBJECTION,
+    TriageIntent.BUDGET_OBJECTION, TriageIntent.NEGOTIATION];
+  const scenarios: Array<[string, TriageIntent, string]> = [
+    ['What is the price for the annual plan?', TriageIntent.PRICING_INQUIRY, 'What is the price'],
+    ['Can we meet Tuesday afternoon?', TriageIntent.MEETING_REQUEST, 'meet Tuesday afternoon'],
+    ['Please send your security and SOC 2 information.', TriageIntent.SECURITY, 'security and SOC 2'],
+    ['We need to negotiate the renewal terms.', TriageIntent.NEGOTIATION, 'negotiate the renewal terms'],
+    ['We are not interested. Please close this out.', TriageIntent.NOT_INTERESTED, 'not interested'],
+    ['Maybe. I am not sure what you mean.', TriageIntent.CONFUSED, 'not sure what you mean'],
+    ['Unsubscribe me from all messages.', TriageIntent.UNSUBSCRIBE, 'Unsubscribe me'],
+    ['This may be a better fit next quarter.', TriageIntent.TIMING_OBJECTION, 'next quarter'],
+    ['I am not the right person for this.', TriageIntent.WRONG_PERSON, 'not the right person'],
+    ['We already use a different integration provider.', TriageIntent.INTEGRATION_QUESTION, 'different integration provider'],
+  ];
+  for (const [reply, intent, evidence] of scenarios) {
+    const f = fixture({ reply, answer: { ...answer, primaryIntent: intent,
+      intents: [{ intent, confidence: 80, evidence }], conciseInterpretation: `Scenario: ${intent}` } });
+    const result = await triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps);
+    assert.equal(result.decision?.primaryIntent, intent, reply);
+    assert.equal(f.rows.length, 1, reply);
+    assert.equal(f.calls(), 1, reply);
+    assert.ok(result.decision?.trace, reply);
+    const requiresCommercialReview = commercialIntents.includes(intent);
+    assert.equal(result.decision?.status, requiresCommercialReview ? 'NEEDS_REVIEW' : 'READY', reply);
+    if (requiresCommercialReview) {
+      assert.equal(result.decision?.suggestedReply, null, reply);
+      assert.ok(result.decision?.reviewReasons.includes('COMMERCIAL_AUTHORITY_UNVERIFIED'), reply);
+    }
+  }
 });
 
 test('changed context revision is captured by explicit re-triage without rewriting history', async () => {
@@ -340,6 +419,49 @@ test('MANUAL and DISABLED schedule no automatic triage or usage; SHADOW_AUTO sch
     if (original === undefined) delete process.env.DECISION_ENGINE_ROLLOUT_MODE;
     else process.env.DECISION_ENGINE_ROLLOUT_MODE = original;
   }
+});
+
+test('ANALYSIS_AUTO is explicit and automatic scheduler never evaluates execution', async () => {
+  assert.equal(getDecisionRolloutMode('ANALYSIS_AUTO'), 'ANALYSIS_AUTO');
+  assert.equal(canAutomaticallyTriage('ANALYSIS_AUTO'), true);
+  const schedule = readFileSync(join(process.cwd(), 'src/lib/decision/schedule.ts'), 'utf8');
+  assert.doesNotMatch(schedule, /runAutopilot|sendNativeEmail|bookMeeting|automation\/actions/);
+});
+
+test('stalled PENDING recovery is tenant-scoped, atomic, preserves the reservation and never calls a provider', async () => {
+  const now = new Date('2026-10-20T10:00:00.000Z');
+  const row: any = { id: 'd1', status: 'PENDING', createdAt: new Date(now.getTime() - STALLED_DECISION_AFTER_MS - 1),
+    updatedAt: new Date(now.getTime() - STALLED_DECISION_AFTER_MS - 1), reviewReasons: [], trace: null };
+  const calls: any[] = [];
+  const db: any = {
+    decision: {
+      findFirst: async ({ where }: any) => { calls.push({ find: where }); return where.userId === 'tenant-a' && where.id === 'd1' ? row : null; },
+      updateMany: async ({ where, data }: any) => { calls.push({ where, data });
+        if (row.status !== 'PENDING' || where.userId !== 'tenant-a' || where.updatedAt !== row.updatedAt || where.trace.is !== null) return { count: 0 };
+        Object.assign(row, data); return { count: 1 }; },
+    },
+  };
+  assert.equal((await markStalledDecisionForReview({ userId: 'tenant-a', decisionId: 'd1', now }, db)).status, 'MARKED_UNCERTAIN');
+  assert.equal(row.status, 'NEEDS_REVIEW');
+  assert.ok(row.reviewReasons.includes(UNCERTAIN_ANALYSIS_REASON));
+  assert.equal((await markStalledDecisionForReview({ userId: 'tenant-a', decisionId: 'd1', now }, db)).status, 'NOT_PENDING');
+  assert.equal(calls.filter(call => call.where).length, 1);
+  assert.equal(calls[1].where.userId, 'tenant-a');
+  assert.equal(calls[1].data.status, 'NEEDS_REVIEW');
+  assert.equal(calls[1].data.recommendedNextAction, 'REVIEW_MANUALLY');
+  assert.equal(calls[1].where.trace.is, null);
+  assert.equal(readFileSync(join(process.cwd(), 'src/lib/decision/pending-recovery.ts'), 'utf8').includes('provider.analyze'), false);
+});
+
+test('stalled recovery refuses recent and cross-tenant Decision records', async () => {
+  const now = new Date('2026-10-20T10:00:00.000Z');
+  let updates = 0;
+  const row: any = { id: 'd2', status: 'PENDING', createdAt: now, updatedAt: now, reviewReasons: [], trace: null };
+  const db: any = { decision: { findFirst: async ({ where }: any) => where.userId === 'tenant-a' ? row : null,
+    updateMany: async () => { updates++; return { count: 1 }; } } };
+  assert.equal((await markStalledDecisionForReview({ userId: 'tenant-a', decisionId: 'd2', now }, db)).status, 'TOO_RECENT');
+  assert.equal((await markStalledDecisionForReview({ userId: 'tenant-b', decisionId: 'd2', now }, db)).status, 'NOT_FOUND');
+  assert.equal(updates, 0);
 });
 
 test('Micro tier inbound scheduling persists normally but skips Decision Engine work', async () => {

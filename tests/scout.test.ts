@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { getScoutProspect, listScoutProspects, resolveScoutUser, runScoutResearch } from '../src/lib/scout-data';
-import { safeEvidenceUrl, scoutPrimaryAction, scoutStatus, whyNowSummary } from '../src/lib/scout-view';
+import { fitSummary, qualificationStatus, researchStatusDetail, safeEvidenceUrl, scoutPrimaryAction, scoutStatus, valueSummary, whyNowSummary } from '../src/lib/scout-view';
 
 const root = join(__dirname, '..');
 const source = (path: string) => readFileSync(join(root, path), 'utf8');
@@ -41,6 +41,27 @@ test('status actions distinguish unresearched, ready, failed, and review', () =>
   assert.equal(scoutPrimaryAction('RESEARCHING'), 'busy');
   assert.notEqual(scoutStatus('NEEDS_REVIEW').tone, scoutStatus('FAILED').tone);
   assert.equal(whyNowSummary(null), 'No verified timing signal');
+  assert.equal(scoutStatus('NOT_RESEARCHED').label, 'Not researched');
+  assert.match(researchStatusDetail('NOT_RESEARCHED', 'UNASSESSED'), /Qualify first/);
+  assert.match(researchStatusDetail('NOT_RESEARCHED', 'QUALIFIED'), /Run research/);
+  assert.equal(scoutStatus('RESEARCHING').tone.includes('sky'), true);
+  assert.equal(scoutStatus('NEEDS_REVIEW').tone.includes('amber'), true);
+  assert.equal(scoutStatus('FAILED').tone.includes('red'), true);
+  assert.equal(scoutStatus('READY').tone.includes('emerald'), true);
+});
+
+test('Scout distinguishes qualification from researched fit and keeps missing or invalid scores unassessed', () => {
+  assert.deepEqual(fitSummary(null, null, 'NOT_RESEARCHED'), { label: 'Not assessed yet', tone: 'text-muted-foreground', detail: '' });
+  assert.equal(fitSummary(101, 'STRONG', 'READY').label, 'Not assessed yet');
+  assert.equal(fitSummary(82, 'STRONG', 'READY').tone, 'text-emerald-300');
+  assert.equal(fitSummary(42, 'WEAK', 'READY').tone, 'text-red-300');
+  assert.equal(valueSummary(null, 'UNASSESSED', 'NOT_RESEARCHED'), 'Awaiting qualification');
+  assert.equal(valueSummary(null, 'QUALIFIED', 'NOT_RESEARCHED'), 'Awaiting research');
+  assert.match(qualificationStatus('UNASSESSED', 'NONE', 'AUTO').detail, /Run qualification/);
+  assert.equal(qualificationStatus('NEEDS_REVIEW', 'NO_RULES', 'AUTO').detail, 'ICP profile needs setup');
+  assert.equal(qualificationStatus('NEEDS_REVIEW', 'MISSING_DATA', 'AUTO').detail, 'More prospect information needed');
+  assert.equal(qualificationStatus('REJECTED', 'EXCLUDED', 'AUTO').tone.includes('red'), true);
+  assert.equal(qualificationStatus('UNASSESSED', 'NONE', 'AUTO').tone.includes('red'), false);
 });
 
 test('research bridge passes only authenticated user and forceRefresh to the service', async () => {

@@ -27,11 +27,13 @@ import {
 import { playUISound } from "@/lib/audio";
 import { CORE_CHECKOUT_URL, ENTERPRISE_CHECKOUT_URL } from "@/lib/checkout";
 import MarketProfilePicker from '@/components/MarketProfilePicker';
+import SetupNotice from '@/components/SetupNotice';
 
 // ── Types ───────────────────────────────────────────────────────────────
 
 type GeneratedChannel = string | { subject?: string; body?: string } | null;
 type SandboxTab = "email" | "linkedin" | "script" | "whatsapp" | "intelligence";
+type MailboxStatus = 'checking' | 'connected' | 'disconnected' | 'unavailable';
 
 interface Lead {
   id: string;
@@ -219,6 +221,7 @@ interface SandboxClientProps {
   totalPages: number;
   totalCount: number;
   initialQuery: string;
+  verifiedSandboxContextCount?: number | null;
 }
 
 export default function SandboxClient({
@@ -230,6 +233,7 @@ export default function SandboxClient({
   totalPages,
   totalCount,
   initialQuery,
+  verifiedSandboxContextCount = null,
 }: SandboxClientProps) {
 
   const router = useRouter();
@@ -254,6 +258,7 @@ export default function SandboxClient({
   const [isSending, setIsSending] = useState(false);
   const [emailSendSuccess, setEmailSendSuccess] = useState(false);
   const [emailSendError, setEmailSendError] = useState("");
+  const [mailboxStatus, setMailboxStatus] = useState<MailboxStatus>('checking');
   const [sentLeads, setSentLeads] = useState<Set<string>>(() => new Set());
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detailPanelRef = useRef<HTMLDivElement | null>(null);
@@ -267,6 +272,22 @@ export default function SandboxClient({
       profileId: null, profileName: profile.name, summary: profile.summary })), ...(data?.profiles ?? []).filter((profile: any) => profile.enabled)
       .map((profile: any) => ({ profileKey: profile.id, profileId: profile.id, profileName: profile.name, summary: 'Custom market communication profile.' }))]))
     .catch(() => setMarketChoices([])); }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (userTier !== 'CORE' && userTier !== 'ENTERPRISE') {
+      setMailboxStatus('unavailable');
+      return () => { active = false; };
+    }
+    fetch('/api/inbox/credentials', { cache: 'no-store' })
+      .then(async response => {
+        if (!response.ok) throw new Error('Mailbox status unavailable');
+        const result = await response.json();
+        if (active) setMailboxStatus(result?.mailbox?.connected === true ? 'connected' : 'disconnected');
+      })
+      .catch(() => { if (active) setMailboxStatus('unavailable'); });
+    return () => { active = false; };
+  }, [userTier]);
 
   useEffect(() => {
     setLeads(initialLeads);
@@ -988,6 +1009,9 @@ useEffect(() => {
 
       {/* Right Panel — AI Copy Editor */}
       <div ref={detailPanelRef} className="flex min-h-[400px] w-full scroll-mt-20 flex-col overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm xl:h-full xl:min-h-0 xl:w-1/2">
+        {verifiedSandboxContextCount !== null && verifiedSandboxContextCount < 3 && <div className="px-4 pt-4 sm:px-6"><SetupNotice level="RECOMMENDED" title={verifiedSandboxContextCount === 0 ? 'No verified Brain context available for drafting' : `Limited verified Brain context (${verifiedSandboxContextCount} entr${verifiedSandboxContextCount === 1 ? 'y' : 'ies'})`} href="/dashboard/brain" linkLabel="Review FrameLeads Brain">
+          Sandbox can use verified offer, value proposition, ICP, product and proof facts. Add or confirm relevant company facts there, then review each draft for accuracy before use. This does not block drafting.
+        </SetupNotice></div>}
         <div className="flex w-full items-center justify-between gap-2 border-b border-border/50 px-4 py-4 sm:px-6">
           <div className="flex items-center gap-3 truncate">
             <Sparkles className="w-4 h-4 text-primary shrink-0" />
@@ -1138,6 +1162,15 @@ useEffect(() => {
                           {parsedEmailDraft.body || "No email generated."}
                         </div>
                       </div>
+                      {mailboxStatus !== 'checking' && mailboxStatus !== 'connected' && (
+                        <SetupNotice level="REQUIRED" title={mailboxStatus === 'disconnected' ? 'Connect your mailbox to send' : 'Mailbox status needs checking'} href="/dashboard/inbox-triage" linkLabel="Open Inbox Triage" tone="warning">
+                          {mailboxStatus === 'disconnected'
+                            ? 'Native Sandbox email requires a connected supported mailbox and a valid recipient. You do not need to sync Inbox Triage before sending.'
+                            : userTier !== 'CORE' && userTier !== 'ENTERPRISE'
+                              ? 'Native mailbox access is available on Core and Enterprise. See Inbox Triage for the account’s available options.'
+                              : 'The mailbox connection could not be confirmed. Check it in Inbox Triage before sending.'}
+                        </SetupNotice>
+                      )}
                       <button
                         type="button"
                         onClick={handleSendNativeEmail}

@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles,
   resolveMarketProfile, saveMarketProfile, validateMarketProfileInput } from '../src/lib/market-messaging';
 import { extractProspectMetadata } from '../src/lib/prospects/metadata';
+import { normalizeOutboundCopy } from '../src/lib/outbound-copy';
 
 const custom = (overrides: any = {}) => ({ id: 'custom-a', userId: 'tenant-a', name: 'German custom', countries: ['Germany'],
   formality: 'HIGH', directness: 'MEDIUM', warmth: 'MEDIUM', openerStyle: 'CONTEXT_FIRST', ctaStyle: 'EXPLORATORY',
@@ -89,6 +90,8 @@ test('generation context preserves governance, facts and sales objective above p
   assert.doesNotMatch(prompt, /legal permission|GDPR compliant/i);
   assert.match(prompt, /LINKEDIN \/ COLD CALL \/ WHATSAPP: Retain each channel's existing channel-specific structure and CTA objective\/style behavior/i);
   assert.match(prompt, /cold-call permission check, and WhatsApp permission request/i);
+  assert.match(prompt, /thoughtful professional writing directly to one person/i);
+  assert.match(prompt, /Avoid em or en dashes, formulaic contrast lines/i);
 });
 
 test('ingestion built-in and custom profile mapping provides display names', () => {
@@ -104,6 +107,7 @@ test('generation prompts bind incident safety, non-email CTA behavior, JSON, wor
       profileName: BUILT_IN_MARKET_PROFILES[0].name, detectedCountry: null }, prospect: { incident: null },
     preferredCtaStyle: 'Schedule a demo', seed: 'test', wordLimit: 100 });
   assert.match(route, /derived only from the incident field in TRUSTED PROSPECT INPUT/);
+  assert.match(route, /Do not use em dashes, en dashes, formulaic contrast patterns/);
   assert.match(prompt, /EMAIL ONLY: Adapt/);
   assert.match(prompt, /LINKEDIN \/ COLD CALL \/ WHATSAPP/);
   assert.match(route, /validateGeneratedChannels\(generated, pipelineContext\)/);
@@ -129,4 +133,11 @@ test('existing JSON and word gate stay in place; market resolution adds no model
   assert.equal((route.match(/anthropic\.messages\.create\(/g) ?? []).length, 1);
   assert.doesNotMatch(market, /anthropic|messages\.create|generateContent|openai/i);
   assert.doesNotMatch(route, /INVENT A SPECIFIC NUMERICAL METRIC|\$15k|\$67k|No Fabricated Math/i);
+});
+
+test('outbound copy normalization removes long dash artifacts and keeps clean sentence formatting', () => {
+  const result = normalizeOutboundCopy('We saw the issue \u2014 it slows the team.\u00a0Here is one option \u00e2\u20ac\u201d to review.');
+  assert.equal(result, 'We saw the issue. It slows the team. Here is one option. To review.');
+  assert.doesNotMatch(result, /[\u2012-\u2015\u2212]|\u00e2\u20ac[\u201c\u201d]/u);
+  assert.doesNotMatch(result, /\s{2,}/u);
 });

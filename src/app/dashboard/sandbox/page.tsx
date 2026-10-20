@@ -34,6 +34,10 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
   if (!user) {
     return <div>User not found</div>;
   }
+  const verifiedSandboxContextCount = user.tier === 'CORE' || user.tier === 'ENTERPRISE'
+    ? await prisma.brainKnowledgeEntry.count({ where: { userId: user.id, archivedAt: null, verification: 'VERIFIED',
+        category: { in: ['OFFER', 'VALUE_PROPOSITION', 'ICP', 'PRODUCT', 'PROOF'] } } })
+    : null;
 
   const params = await searchParams;
   const rawPage = Array.isArray(params.page) ? params.page[0] : params.page;
@@ -123,6 +127,7 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
       totalPages={totalPages}
       totalCount={totalCount}
       initialQuery={query}
+      verifiedSandboxContextCount={verifiedSandboxContextCount}
     />
   );
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decisionStatusPresentation } from '../src/lib/decision/status-presentation';
+import { formatIntentTemperature, intentTemperature, isHighPriorityIntent, resolveIntentTemperature } from '../src/lib/intent-temperature';
 
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
@@ -12,6 +13,33 @@ test('Inbox Triage maps canonical decision statuses to semantic tones', () => {
   assert.match(decisionStatusPresentation('FAILED').tone, /text-red-300/);
   assert.match(decisionStatusPresentation('PENDING').tone, /text-white\/45/);
   assert.match(decisionStatusPresentation('UNRECOGNIZED').tone, /text-white\/45/);
+});
+
+test('prospect interest thresholds and rendered temperature labels are centralized and unresolved stays unassessed', () => {
+  assert.equal(intentTemperature(59), 'COLD');
+  assert.equal(intentTemperature(52), 'COLD');
+  assert.equal(intentTemperature(60), 'WARM');
+  assert.equal(intentTemperature(79), 'WARM');
+  assert.equal(intentTemperature(80), 'HOT');
+  assert.equal(intentTemperature(null), null);
+  assert.equal(intentTemperature(Number.NaN), null);
+  assert.equal(isHighPriorityIntent(80), true);
+  assert.equal(isHighPriorityIntent(79), false);
+  assert.equal(isHighPriorityIntent(null), false);
+  assert.equal(resolveIntentTemperature(null, 'WARM'), 'WARM');
+  assert.equal(resolveIntentTemperature(101, 'HOT'), null);
+  assert.equal(formatIntentTemperature(80), '🔥 HOT');
+  assert.equal(formatIntentTemperature(60), '☀️ WARM');
+  assert.equal(formatIntentTemperature(52), '❄️ COLD');
+  assert.equal(formatIntentTemperature(null), 'UNASSESSED');
+});
+
+test('UI polling loads a decision after an initially empty GET without starting another analysis', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /packet\?\.status !== 'PENDING' && !awaitingDecision/);
+  assert.match(panel, /fetch\(`\/api\/decisions\?signalId=/);
+  assert.match(panel, /if \(!packet && Date\.now\(\) - autoWaitStartedAt\.current >= 60_000\)/);
+  assert.doesNotMatch(panel.slice(panel.indexOf('useEffect(() => {\n    if (packet?.status'), panel.indexOf('useEffect(() => {\n    if (!isEnterpriseTier')), /decisions\/triage/);
 });
 
 test('Replay link resolves to the authenticated historical product read model', () => {

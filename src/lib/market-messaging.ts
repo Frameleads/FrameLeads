@@ -168,6 +168,7 @@ CTA AUTHORITY: Sales Constitution > verified factual knowledge > Revenue Playboo
 Requested CTA objective/style (guidance/fallback): ${cap(input.preferredCtaStyle, 120)}
 Unique variation seed: ${cap(input.seed, 80)}
 EMAIL ONLY: Adapt formality, warmth, directness, opening, salutation, length, structure and phrasing to the profile. Do not change the Playbook sales objective or invent facts. Email structure may use a profile-appropriate number of paragraphs. A person's job title is not an honorific; use first name or a neutral salutation unless trusted input explicitly provides a form of address.
+COPY STYLE: Sound like a thoughtful professional writing directly to one person. Use plain, specific sentences with natural variation in length. Avoid em or en dashes, formulaic contrast lines (for example, "the problem is not X, it is Y"), generic SaaS-marketing filler, and markdown formatting. Keep the tone professional, direct, and human.
 LINKEDIN / COLD CALL / WHATSAPP: Retain each channel's existing channel-specific structure and CTA objective/style behavior; do not apply market-profile tone, language, salutation, or structural adaptations. Preserve the concise LinkedIn note, cold-call permission check, and WhatsApp permission request for the diagnostic link.
 WORD LIMIT: Each channel body MUST be under ${input.wordLimit} words. This is a hard constraint.`;
 }

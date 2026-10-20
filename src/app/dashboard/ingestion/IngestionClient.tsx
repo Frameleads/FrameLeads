@@ -8,6 +8,7 @@ import Papa from "papaparse";
 import { extractProspectMetadata } from '@/lib/prospects/metadata';
 import { readCampaignContext } from '@/lib/campaign-session';
 import MarketProfilePicker from '@/components/MarketProfilePicker';
+import SetupNotice from '@/components/SetupNotice';
 import FrameSelect from '@/components/ui/FrameSelect';
 import {
   Upload,
@@ -566,19 +567,9 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
 
       {/* Campaign Context Warning */}
       {!campaignContext && (
-        <div className="flex items-start gap-3 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 text-amber-400 text-sm">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          <p>
-            You must define your Campaign Context before processing leads.{" "}
-            <Link
-              href="/dashboard/campaign"
-              prefetch={true}
-              className="underline hover:text-amber-300"
-            >
-              Go to Campaign Settings
-            </Link>
-          </p>
-        </div>
+        <SetupNotice level="REQUIRED" title="Campaign context is required before ingestion" href="/dashboard/campaign" linkLabel="Configure Campaign" tone="warning">
+          Ingestion uses the campaign’s positioning and audience when preparing prospects. Without that context, the current workflow cannot process leads.
+        </SetupNotice>
       )}
 
       {/* Drop Zone */}
