@@ -7,6 +7,41 @@ import { calculateResponseDeadline, displayResponseSLA, responseSLAApplicability
 import { DEFAULT_RESPONSE_SLA_POLICY, getResponseSLAPolicy, saveResponseSLAPolicy,
   validateResponseSLAPolicy } from '../src/lib/response-sla/policy';
 import { evaluateResponseSLA, syncResponseSLAForDecision } from '../src/lib/response-sla/service';
+import { responseSLASavePayload } from '../src/lib/response-sla/save-payload';
+
+
+test('SLA settings save projects only editable policy fields from GET response', () => {
+  const fromGET = {
+    id: 'policy-test-id',
+    userId: 'tenant-a',
+    revision: 4,
+    createdAt: '2026-10-21T00:00:00.000Z',
+    updatedAt: '2026-10-21T00:00:00.000Z',
+    enabled: true,
+    criticalMinutes: 15,
+    highMinutes: 45,
+    mediumMinutes: 120,
+    lowMinutes: 480,
+    unknownMinutes: 240,
+    dueSoonPercent: 75,
+    breachEscalationEnabled: true,
+  };
+  assert.throws(() => validateResponseSLAPolicy(fromGET), /Unknown SLA policy field/);
+  const payload = responseSLASavePayload(fromGET);
+  assert.equal(Object.keys(payload).length, 8);
+  assert.deepEqual(validateResponseSLAPolicy(payload), payload);
+  assert.deepEqual(payload, {
+    enabled: true,
+    criticalMinutes: 15,
+    highMinutes: 45,
+    mediumMinutes: 120,
+    lowMinutes: 480,
+    unknownMinutes: 240,
+    dueSoonPercent: 75,
+    breachEscalationEnabled: true,
+  });
+  assert.ok(!('id' in payload) && !('revision' in payload) && !('userId' in payload));
+});
 
 const startedAt = new Date('2026-09-28T12:00:00.000Z');
 const later = (minutes: number) => new Date(startedAt.getTime() + minutes * 60_000);
