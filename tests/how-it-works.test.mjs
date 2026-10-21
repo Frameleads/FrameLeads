@@ -107,3 +107,23 @@ test('setup notices reflect real Scout, Brain, and external deployment state', (
   assert.match(deploy, /only for the external provider you selected/);
   assert.match(automation, /Campaign and list controls, the server rollout setting, Sales Constitution boundaries, and human approval gates still apply/);
 });
+
+test('notice status, headline, guidance, and CTA remain in the intended order', () => {
+  const source = read('src/components/SetupNotice.tsx');
+  const status = source.indexOf('>{level}</span>');
+  const headline = source.indexOf('<h2 className=', status);
+  const guidance = source.indexOf('>{children}</div>', headline);
+  const cta = source.indexOf('<Link href={href}', guidance);
+  assert.ok(status > 0 && headline > status && guidance > headline && cta > guidance);
+  assert.match(source, /<Icon[^>]*aria-hidden="true"\s*\/>\s*<span[^>]*>\{level\}<\/span>/);
+});
+
+test('Scout desktop table has aligned columns, breathing room and horizontal overflow', () => {
+  const source = read('src/app/dashboard/scout/ScoutWorkspace.tsx');
+  const columns = 'grid-cols-[minmax(170px,1.15fr)_minmax(195px,1.25fr)_minmax(118px,0.8fr)_minmax(132px,0.9fr)_minmax(190px,1.25fr)_minmax(152px,1fr)_minmax(182px,1fr)]';
+  assert.equal(source.split(columns).length - 1, 2, 'Header and rows use identical columns');
+  assert.match(source, /overflow-x-auto[\s\S]*?min-w-\[1320px\]/);
+  assert.match(source, /min-h-\[112px\].*px-6 py-5/);
+  assert.match(source, /line-clamp-2 break-words text-\[11px\] leading-4/);
+  assert.match(source, /xl:hidden/);
+});
