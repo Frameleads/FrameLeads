@@ -8,13 +8,22 @@ import { fitSummary, qualificationStatus, researchStatusDetail, safeEvidenceUrl,
 const root = join(__dirname, '..');
 const source = (path: string) => readFileSync(join(root, path), 'utf8');
 
-test('Scout authentication requires the existing session and email cookies', async () => {
+test('Scout authentication derives the tenant from verified Whop identity', async () => {
   let lookups = 0;
-  const db = { user: { findUnique: async () => { lookups++; return { id: 'tenant-a' }; } } };
-  assert.equal(await resolveScoutUser(db as never, undefined, 'a@example.com'), null);
-  assert.equal(await resolveScoutUser(db as never, 'session', undefined), null);
-  assert.equal(lookups, 0);
-  assert.deepEqual(await resolveScoutUser(db as never, 'session', ' A@EXAMPLE.COM '), { id: 'tenant-a' });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(JSON.stringify({ sub: 'whop-tenant-a', email: 'a@example.com' }), { status: 200 })) as typeof fetch;
+  const db = { user: { findUnique: async ({ where }: { where: { whopId: string } }) => {
+    lookups++;
+    assert.deepEqual(where, { whopId: 'whop-tenant-a' });
+    return { id: 'tenant-a', email: 'a@example.com', tier: 'CORE', whopId: 'whop-tenant-a' };
+  } } };
+  try {
+    assert.equal(await resolveScoutUser(db as never, undefined), null);
+    assert.equal(lookups, 0);
+    assert.deepEqual(await resolveScoutUser(db as never, 'verified-whop-token'), { id: 'tenant-a', email: 'a@example.com', tier: 'CORE', whopId: 'whop-tenant-a' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
   assert.match(source('src/app/dashboard/scout/page.tsx'), /if \(!user\) redirect\('\/login'\)/);
 });
 

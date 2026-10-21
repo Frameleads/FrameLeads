@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const entitlementError = await requireFeatureAccess('PLAYBOOK');
   if (entitlementError) return entitlementError;
   const jar = await cookies();
-  const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
+  const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id;
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const cursor = new URL(request.url).searchParams.get('cursor') || undefined;

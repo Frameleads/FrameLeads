@@ -19,9 +19,7 @@ interface SandboxPageProps {
 
 export default async function SandboxPage({ searchParams }: SandboxPageProps) {
   const cookieStore = await cookies();
-  const email = cookieStore.get('user_email')?.value;
-  
-  const authenticated = await resolveScoutUser(prisma, cookieStore.get('frameleads_session')?.value, email);
+  const authenticated = await resolveScoutUser(prisma, cookieStore.get('frameleads_session')?.value);
   if (!authenticated) {
     return <div>Unauthorized</div>;
   }

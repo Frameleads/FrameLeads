@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 async function userId() {
   const jar = await cookies();
-  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
+  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id;
 }
 
 export async function GET() {

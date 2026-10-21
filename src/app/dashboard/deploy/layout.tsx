@@ -1,6 +1,5 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export const dynamic = "force-dynamic";
 
@@ -9,19 +8,7 @@ export default async function DeployAccessLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
-  const session = cookieStore.get("frameleads_session")?.value;
-  const email = cookieStore.get("user_email")?.value;
-
-  if (!session || !email) {
-    redirect("/login");
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email: email.trim().toLowerCase() },
-    select: { tier: true },
-  });
-
+  const user = await verifiedCustomerUser();
   if (!user) {
     redirect("/login");
   }

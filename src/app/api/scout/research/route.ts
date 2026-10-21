@@ -16,7 +16,6 @@ export async function POST(request: Request) {
     const user = await resolveScoutUser(
       prisma,
       cookieStore.get('frameleads_session')?.value,
-      cookieStore.get('user_email')?.value,
     );
     if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await request.json().catch(() => null);

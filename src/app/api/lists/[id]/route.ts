@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 interface ListRouteContext {
   params: Promise<{ id: string }>;
@@ -8,14 +8,7 @@ interface ListRouteContext {
 
 export async function PATCH(request: Request, { params }: ListRouteContext) {
   try {
-    const cookieStore = await cookies();
-    const email = cookieStore.get("user_email")?.value;
-    const user = email
-      ? await prisma.user.findUnique({
-          where: { email: email.trim().toLowerCase() },
-          select: { id: true },
-        })
-      : null;
+    const user = await verifiedCustomerUser();
 
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
@@ -51,14 +44,7 @@ export async function PATCH(request: Request, { params }: ListRouteContext) {
 
 export async function DELETE(_request: Request, { params }: ListRouteContext) {
   try {
-    const cookieStore = await cookies();
-    const email = cookieStore.get("user_email")?.value;
-    const user = email
-      ? await prisma.user.findUnique({
-          where: { email: email.trim().toLowerCase() },
-          select: { id: true },
-        })
-      : null;
+    const user = await verifiedCustomerUser();
 
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });

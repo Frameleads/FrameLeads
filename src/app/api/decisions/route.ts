@@ -9,7 +9,7 @@ export async function GET(request: Request) {
   const entitlementError = await requireFeatureAccess('DECISION_ENGINE');
   if (entitlementError) return entitlementError;
   const jar = await cookies();
-  const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
+  const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id;
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const signalId = new URL(request.url).searchParams.get('signalId');
   if (!signalId || signalId.length > 100) return NextResponse.json({ error: 'Signal ID required.' }, { status: 400 });

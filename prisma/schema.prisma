@@ -143,6 +143,12 @@ model User {
   marketMessagingProfiles MarketMessagingProfile[]
 }
 
+model WhopWebhookReceipt {
+  webhookId  String   @id
+  eventType  String
+  receivedAt DateTime @default(now())
+}
+
 model MarketMessagingProfile {
   id                 String   @id @default(cuid())
   userId             String

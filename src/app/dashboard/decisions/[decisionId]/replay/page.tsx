@@ -17,7 +17,7 @@ const card = 'rounded-lg border border-gray-800 bg-[#121212] p-5';
 
 export default async function DecisionReplayPage({ params }: { params: Promise<{ decisionId: string }> }) {
   const jar = await cookies();
-  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
+  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value);
   if (!user) redirect('/login');
   const tier = await getUserEntitlementTier(user.id);
   if (!hasFeatureAccess(tier, 'DECISION_REPLAY')) {

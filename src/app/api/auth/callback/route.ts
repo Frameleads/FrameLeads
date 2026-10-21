@@ -236,9 +236,15 @@ export async function GET(request: NextRequest) {
 
   // 5. Mint Session with Dynamic Tier -> REDIRECTS TO WELCOME PORTAL
   const response = NextResponse.redirect(new URL("/welcome", request.url));
-  response.cookies.set("frameleads_session", accessToken, { httpOnly: true, path: "/" });
+  const sessionCookieOptions = {
+    httpOnly: true,
+    secure: new URL(request.url).protocol === 'https:',
+    sameSite: 'lax' as const,
+    path: '/',
+  };
+  response.cookies.set("frameleads_session", accessToken, sessionCookieOptions);
   response.cookies.set("tier", effectiveTier, { path: "/" }); 
-  response.cookies.set("user_email", email, { httpOnly: true, path: "/" });
+  response.cookies.set("user_email", "", { ...sessionCookieOptions, maxAge: 0 });
   
   return clearOAuthCookies(response);
 }

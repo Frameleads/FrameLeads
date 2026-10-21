@@ -30,18 +30,26 @@ import {
 export const dynamic = "force-dynamic";
 
 import { requireFeatureAccess } from '@/lib/auth-guard';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export async function POST(req: Request) {
   try {
     const authError = await requireFeatureAccess('BASE_OUTBOUND');
     if (authError) return authError;
+    const principal = await verifiedCustomerUser();
+    if (!principal) return NextResponse.json({ success: false, error: 'Unauthorized.' }, { status: 401 });
 
     const {
-      userId,
+      userId: requestedUserId,
       inboxId,
       batchId,
       leadIds,
     } = await req.json();
+
+    if (requestedUserId && requestedUserId !== principal.id) {
+      return NextResponse.json({ success: false, error: 'Tenant mismatch.' }, { status: 403 });
+    }
+    const userId = principal.id;
 
     // ── Input validation ───────────────────────────────────────────
     if (!userId || !inboxId || !batchId) {

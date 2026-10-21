@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { enrichExistingLeadProspect, saveGeneratedLead } from '@/lib/prospects/persistence';
 import { extractProspectMetadata } from '@/lib/prospects/metadata';
@@ -13,7 +12,7 @@ import { getSalesConstitutionContext } from '@/lib/sales-constitution';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
-import { resolveScoutUser } from '@/lib/scout-data';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 import { normalizeOutboundCopy } from '@/lib/outbound-copy';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -107,9 +106,6 @@ function sanitizeLeadingEmailSubject(body: unknown, subject: string): string {
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = await cookies();
-    const userEmail = cookieStore.get('user_email')?.value;
-
     let {
       leads, 
       batch_id, 
@@ -132,7 +128,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
-    const authenticatedUser = await resolveScoutUser(prisma, cookieStore.get('frameleads_session')?.value, userEmail);
+    const authenticatedUser = await verifiedCustomerUser();
     const currentUser = authenticatedUser ? await prisma.user.findUnique({
       where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true },
     }) : null;
@@ -461,9 +457,9 @@ export async function POST(req: Request) {
 
     processedLeads = [...processedLeads, ...ghostLeads];
 
-    if (userEmail && allowedLeads.length > 0) {
+    if (allowedLeads.length > 0) {
       await prisma.user.update({
-        where: { email: userEmail },
+        where: { id: currentUserId },
         data: { leadsProcessed: { increment: allowedLeads.length } }
       });
     }

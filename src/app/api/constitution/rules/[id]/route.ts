@@ -8,7 +8,7 @@ import { archiveConstitutionRule, updateConstitutionRule, type ConstitutionRuleI
 export const dynamic = 'force-dynamic';
 async function owner() {
   const jar = await cookies();
-  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value))?.id;
+  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id;
 }
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const entitlementError = await requireFeatureAccess('CONSTITUTION_MANAGEMENT');

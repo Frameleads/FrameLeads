@@ -1,10 +1,10 @@
 import { ImapFlow } from "imapflow";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
 import { encrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,11 +14,10 @@ function normalizeEmail(value: string) {
 }
 
 async function getCurrentUser() {
-  const cookieStore = await cookies();
-  const email = cookieStore.get("user_email")?.value;
-  return email
+  const principal = await verifiedCustomerUser();
+  return principal
     ? prisma.user.findUnique({
-        where: { email: normalizeEmail(email) },
+        where: { id: principal.id },
         select: {
           id: true,
           imapEmail: true,

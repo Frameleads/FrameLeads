@@ -1,8 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { requireFeatureAccess } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 import { formatIntentTemperature, intentTemperature, isHighPriorityIntent } from '@/lib/intent-temperature';
 
 export const dynamic = 'force-dynamic';
@@ -129,14 +129,7 @@ export async function POST(request: Request) {
     let persistedSignal: { id: string; userId: string } | null = null;
 
     if (typeof payload?.signalId === 'string' && payload.signalId.trim()) {
-      const cookieStore = await cookies();
-      const userEmail = cookieStore.get('user_email')?.value;
-      const user = userEmail
-        ? await prisma.user.findUnique({
-            where: { email: userEmail.trim().toLowerCase() },
-            select: { id: true },
-          })
-        : null;
+      const user = await verifiedCustomerUser();
 
       if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized.' }, { status: 401 });

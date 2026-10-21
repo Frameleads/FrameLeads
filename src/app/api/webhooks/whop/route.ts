@@ -1,102 +1,90 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { resolveWhopSubscription } from "@/lib/whop-subscription";
-import { mergeWhopUser } from "@/lib/whop-user";
+import { unwrapWebhook, WebhookVerificationError } from '@whop/sdk/helpers';
+import { Prisma } from '@prisma/client';
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { applyVerifiedWhopEvent, type VerifiedWhopPayload } from '@/lib/whop-webhook-processing';
 
-type WhopUser = {
-  id?: string;
-  email?: string;
-};
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
-type WhopPayload = {
+type WhopPayload = VerifiedWhopPayload & {
   type?: string;
   event?: string;
   action?: string;
   data?: {
     id?: string;
-    email?: string;
-    user_id?: string;
-    user?: WhopUser;
-    member?: { user?: WhopUser };
-    product?: { id?: string; title?: string; route?: string; metadata?: unknown };
-    plan?: { id?: string; title?: string; metadata?: unknown };
     membership?: {
-      user?: WhopUser;
-      product?: { id?: string; title?: string; route?: string; metadata?: unknown };
-      plan?: { id?: string; title?: string; metadata?: unknown };
+      user?: { id?: string; email?: string };
+      product?: { id?: string; title?: string; name?: string };
+      plan?: { id?: string; title?: string; name?: string };
     };
+    user?: { id?: string; email?: string };
+    member?: { user?: { id?: string; email?: string } };
+    user_id?: string;
+    email?: string;
+    product?: { id?: string; title?: string; name?: string };
+    plan?: { id?: string; title?: string; name?: string };
   };
 };
 
-const ACTIVE_EVENTS = new Set([
-  "membership.activated",
-  "payment.succeeded",
-  "membership_activated",
-  "payment_succeeded",
-  "membership_updated",
-  "membership.went_valid",
-]);
-
-const INACTIVE_EVENTS = new Set([
-  "membership.deactivated",
-  "membership_cancelled",
-  "membership.went_invalid",
-]);
-
-function getIdentity(payload: WhopPayload) {
-  const user =
-    payload.data?.user ||
-    payload.data?.member?.user ||
-    payload.data?.membership?.user;
-
-  return {
-    email: user?.email || payload.data?.email,
-    whopUserId: user?.id || payload.data?.user_id,
-  };
+function isUniqueViolation(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
 }
 
-export async function POST(req: Request) {
-  try {
-    const payload = (await req.json()) as WhopPayload;
-    const eventType = payload.type || payload.event || payload.action || "unknown";
-    const { email, whopUserId } = getIdentity(payload);
-
-    if (!email || !whopUserId) {
-      console.warn(
-        `[WHOP WEBHOOK] Ignored ${eventType}: missing user email or Whop user ID.`,
-      );
-      return NextResponse.json({ received: true, ignored: true });
-    }
-
-    if (ACTIVE_EVENTS.has(eventType)) {
-      const subscription = resolveWhopSubscription(payload);
-      await mergeWhopUser({ whopId: whopUserId, email, subscription });
-
-      console.log(
-        `[WHOP WEBHOOK] Synced ${email} as ${subscription.tier} from ${eventType}.`,
-      );
-      return NextResponse.json({ received: true, success: true });
-    }
-
-    if (INACTIVE_EVENTS.has(eventType)) {
-      await prisma.user.updateMany({
-        where: { OR: [{ whopId: whopUserId }, { email }] },
-        data: { tier: "INACTIVE", monthlyQuota: 0 },
-      });
-      console.log(`[WHOP WEBHOOK] Downgraded ${email} from ${eventType}.`);
-      return NextResponse.json({ received: true, success: true });
-    }
-
-    console.log(
-      `[WHOP WEBHOOK] Unhandled event "${eventType}" - acknowledged without mutation.`,
-    );
-    return NextResponse.json({ received: true });
-  } catch (error) {
-    console.error("[WHOP WEBHOOK] Error:", error);
-    // A non-2xx response lets Whop retry transient database failures.
-    return NextResponse.json(
-      { received: false, error: "Webhook processing failed" },
-      { status: 500 },
-    );
+export async function POST(request: Request) {
+  const secret = process.env.WHOP_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error('[WHOP WEBHOOK] Verification secret is not configured.');
+    return NextResponse.json({ received: false, error: 'Webhook verification unavailable.' }, { status: 503 });
   }
+
+  const contentLength = Number(request.headers.get('content-length') || 0);
+  if (contentLength > 1_000_000) {
+    return NextResponse.json({ received: false, error: 'Webhook body too large.' }, { status: 413 });
+  }
+
+  const rawBody = await request.text();
+  if (Buffer.byteLength(rawBody, 'utf8') > 1_000_000) {
+    return NextResponse.json({ received: false, error: 'Webhook body too large.' }, { status: 413 });
+  }
+
+  let payload: WhopPayload;
+  try {
+    // Whop's helper verifies the untouched body, Standard Webhooks HMAC, and
+    // the ±5 minute timestamp window before returning any parsed event.
+    payload = unwrapWebhook<WhopPayload>(rawBody, {
+      headers: Object.fromEntries(request.headers),
+      key: secret,
+    });
+  } catch (error) {
+    if (error instanceof WebhookVerificationError) {
+      return NextResponse.json({ received: false, error: 'Invalid or expired webhook signature.' }, { status: 401 });
+    }
+    console.error('[WHOP WEBHOOK] Verification failed.');
+    return NextResponse.json({ received: false, error: 'Webhook verification unavailable.' }, { status: 503 });
+  }
+
+  const webhookId = request.headers.get('webhook-id');
+  const eventType = payload.type || payload.event || payload.action;
+  if (!webhookId || !eventType) {
+    return NextResponse.json({ received: false, error: 'Invalid webhook envelope.' }, { status: 400 });
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await applyVerifiedWhopEvent(tx, webhookId, eventType, payload);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      const previousDelivery = await prisma.whopWebhookReceipt.findUnique({
+        where: { webhookId }, select: { webhookId: true },
+      });
+      if (previousDelivery) return NextResponse.json({ received: true, duplicate: true });
+    }
+    // A non-2xx response lets Whop retry transient database failures.
+    console.error('[WHOP WEBHOOK] Verified event processing failed.', { eventType, webhookId });
+    return NextResponse.json({ received: false, error: 'Webhook processing failed.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ received: true, success: true });
 }

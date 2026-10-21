@@ -1,11 +1,16 @@
+import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { mergeWhopUser } from '@/lib/whop-user';
 
 export async function POST(req: Request) {
   try {
     // 1. Basic Admin Key Authentication
     const authHeader = req.headers.get('x-admin-key');
-    if (authHeader !== process.env.ADMIN_SECRET_KEY) {
+    const expectedAdminKey = process.env.ADMIN_SECRET_KEY;
+    const suppliedKey = authHeader ? Buffer.from(authHeader) : Buffer.alloc(0);
+    const expectedKey = expectedAdminKey ? Buffer.from(expectedAdminKey) : Buffer.alloc(0);
+    if (!expectedKey.length || suppliedKey.length !== expectedKey.length || !timingSafeEqual(suppliedKey, expectedKey)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -58,12 +63,12 @@ export async function POST(req: Request) {
         
         const stringified = JSON.stringify(membership).toLowerCase();
 
-        if (!whopUserId && !email) {
+        if (!whopUserId || !email) {
           skipped++;
           continue;
         }
 
-        const where = email ? { email } : { whopId: whopUserId };
+        const where = { whopId: whopUserId };
 
         if (status === 'active' || status === 'trialing' || status === 'completed' || status === 'valid') {
           let assignedTier: 'MICRO_PILOT' | 'CORE' | 'ENTERPRISE' | null = null;
@@ -86,27 +91,16 @@ export async function POST(req: Request) {
             continue;
           }
 
-          const existingUser = await prisma.user.findFirst({ where });
-          
-          await prisma.user.upsert({
-            where: where,
-            update: { tier: assignedTier, monthlyQuota: assignedQuota }, // Do not reset leadsProcessed
-            create: {
-              whopId: whopUserId || `missing_${Date.now()}`,
-              email: email || `missing_${whopUserId || Date.now()}@whop.local`, 
-              tier: assignedTier, 
-              monthlyQuota: assignedQuota, 
-              leadsProcessed: 0 
-            }
-          });
+          const existingUser = await prisma.user.findUnique({ where, select: { id: true } });
+          await mergeWhopUser({ whopId: whopUserId, email, subscription: { tier: assignedTier, monthlyQuota: assignedQuota } });
 
           if (existingUser) updated++; else created++;
           
         } else {
-          const existingUser = await prisma.user.findFirst({ where });
+          const existingUser = await prisma.user.findUnique({ where });
           if (existingUser && existingUser.tier !== 'INACTIVE') {
             await prisma.user.updateMany({
-              where: where,
+              where: { whopId: whopUserId },
               data: { tier: 'INACTIVE', monthlyQuota: 0 }
             });
             updated++;
