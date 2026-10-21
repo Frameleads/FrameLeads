@@ -2,9 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-
-type Policy = { enabled: boolean; criticalMinutes: number; highMinutes: number; mediumMinutes: number;
-  lowMinutes: number; unknownMinutes: number; dueSoonPercent: number; breachEscalationEnabled: boolean };
+import { responseSLASavePayload, type EditableResponseSLAPolicy as Policy } from '@/lib/response-sla/save-payload';
 const durations = [
   { key: 'criticalMinutes', label: 'Critical' }, { key: 'highMinutes', label: 'High' },
   { key: 'mediumMinutes', label: 'Medium' }, { key: 'lowMinutes', label: 'Low' },
@@ -26,10 +24,15 @@ export default function ResponseSLASettings() {
     setSaving(true); setMessage('');
     try {
       const response = await fetch('/api/response-sla/settings', { method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(policy) });
-      if (!response.ok) throw new Error();
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(responseSLASavePayload(policy)) });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
+        throw new Error(typeof result?.error === 'string' ? result.error : 'Response SLA settings could not be saved.');
+      }
       setMessage('Response SLA settings saved. Existing deadlines remain unchanged.');
-    } catch { setMessage('SLA settings could not be saved. Check the minute limits.'); }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Response SLA settings could not be saved.');
+    }
     finally { setSaving(false); }
   }
   return <main className="min-h-screen bg-[#0D0D0D] text-[#F5F1E8]">
