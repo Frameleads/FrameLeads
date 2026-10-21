@@ -13,7 +13,7 @@ async function localDevelopmentTier(): Promise<FrameLeadsTier | null> {
 
 export async function getAuthenticatedEntitlementUser() {
   const jar = await cookies();
-  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
+  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value);
   if (!user) return null;
   const row = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true, email: true } });
   if (!row) return null;

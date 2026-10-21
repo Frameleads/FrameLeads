@@ -7,8 +7,9 @@ import { extractApiKey, verifyApiKey } from '@/lib/webhook-auth';
 import { scheduleInboundDecisions } from '@/lib/decision/schedule';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess } from '@/lib/entitlements';
+import { intentTemperature, isHighPriorityIntent } from '@/lib/intent-temperature';
 
-const SYSTEM_PROMPT = `You are an elite sales triage AI. Read this inbound email reply. Score the buying intent from 0-100. Categorize it as HOT (score >= 80), WARM (score 40-79), or COLD (score < 40). Evaluate your confidence in this intent classification. If it is a clear rejection or unsubscribe, score confidence > 90. If it is ambiguous, sarcastic, or complex, score < 70. Return strictly a JSON object: { "intentScore": number, "status": "HOT" | "WARM" | "COLD", "signalAnalysis": "1 sentence explanation", "confidenceScore": number }.`;
+const SYSTEM_PROMPT = `You are a cautious B2B sales triage analyst. Read the inbound email reply and return strict JSON. Score prospect interest from 0 to 100 (separate from classification confidence): HOT 80-100, WARM 60-79, COLD 0-59. If interest cannot be assessed, return intentScore null. Return { "intentScore": number or null, "status": "HOT" | "WARM" | "COLD", "signalAnalysis": "one sentence", "confidenceScore": number }.`;
 
 function extractJsonObject(rawText: string): any {
   const cleaned = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     
     let finalIntentScore = 0;
-    let finalIntentType = "COLD";
+    let finalIntentType = "UNASSESSED";
     let finalSignalAnalysis = "No analysis performed due to missing API key.";
     let finalConfidenceScore = 0;
     let finalLifecycleStatus = 'PENDING';
@@ -91,12 +92,14 @@ export async function POST(req: Request) {
         const rawText = (response.content[0] as any).text.trim();
         const claude = extractJsonObject(rawText);
         
-        finalIntentScore = claude.intentScore;
-        finalIntentType = claude.status;
-        finalSignalAnalysis = claude.signalAnalysis;
-        finalConfidenceScore = claude.confidenceScore;
-        
-        finalLifecycleStatus = (claude.status === 'COLD' && claude.confidenceScore >= 90) ? 'AUTO_ARCHIVED' : 'PENDING';
+        const score = typeof claude.intentScore === 'number' && Number.isFinite(claude.intentScore) && claude.intentScore >= 0 && claude.intentScore <= 100
+          ? Math.round(claude.intentScore) : null;
+        finalIntentScore = score ?? 0;
+        finalIntentType = intentTemperature(score) ?? 'UNASSESSED';
+        finalSignalAnalysis = typeof claude.signalAnalysis === 'string' ? claude.signalAnalysis.slice(0, 500) : 'Review the reply manually.';
+        finalConfidenceScore = typeof claude.confidenceScore === 'number' && Number.isFinite(claude.confidenceScore) && claude.confidenceScore >= 0 && claude.confidenceScore <= 100
+          ? Math.round(claude.confidenceScore) : 0;
+        finalLifecycleStatus = 'PENDING';
       }
     } catch (anthropicError) {
       console.error("Anthropic Classification Failed:", anthropicError);
@@ -107,8 +110,8 @@ export async function POST(req: Request) {
     try {
       await prisma.inboundSignal.update({ where: { id: newSignal.id }, data: {
         intentScore: finalIntentScore || 0, confidenceScore: finalConfidenceScore || 0,
-        intentType: finalIntentType || 'COLD', signalAnalysis: finalSignalAnalysis || '',
-        isHighPriority: finalIntentType === 'HOT' || finalIntentType === 'WARM',
+        intentType: finalIntentType, signalAnalysis: finalSignalAnalysis || '',
+        isHighPriority: isHighPriorityIntent(finalIntentType === 'UNASSESSED' ? null : finalIntentScore),
         status: finalLifecycleStatus,
       } });
     } catch (updateError) {

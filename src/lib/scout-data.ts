@@ -1,9 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
 import { getProspectIntelligence } from './prospects/intelligence';
+import { verifyCustomerSession } from './customer-session';
 
-export async function resolveScoutUser(db: PrismaClient, session?: string, email?: string) {
-  if (!session?.trim() || !email?.trim()) return null;
-  return db.user.findUnique({ where: { email: email.trim().toLowerCase() }, select: { id: true } });
+export async function resolveScoutUser(db: PrismaClient, session?: string) {
+  return verifyCustomerSession(session, db);
 }
 
 export async function listScoutProspects(db: PrismaClient, userId: string) {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import FrameSelect from '@/components/ui/FrameSelect';
+import SetupNotice from '@/components/SetupNotice';
 
 type Mode = 'AUTOPILOT' | 'HUMAN_APPROVAL' | 'MANDATORY_ESCALATION';
 type Policy = { defaultMode: Mode; fallbackMode: 'HUMAN_APPROVAL' | 'MANDATORY_ESCALATION';
@@ -53,6 +54,9 @@ export default function AutomationSettings() {
         <p className="mt-1 text-sm text-gray-400">Governed reply execution. Automatic sending is disabled by default.</p></div>
       {loading && <p role="status">Loading settings…</p>}
       {message && <p role="status" className="text-sm text-amber-300">{message}</p>}
+      {policy && (policy.defaultMode === 'AUTOPILOT' || policy.autopilotEnabled || !policy.autoExecutionDisabled) && <SetupNotice level="REQUIRED" title="Review governance before enabling consequential automation" href="/dashboard/constitution" linkLabel="Review Sales Constitution" tone="warning">
+        This tenant policy is only one layer. Campaign and list controls, the server rollout setting, Sales Constitution boundaries, and human approval gates still apply. Review these prerequisites before permitting any automatic execution.
+      </SetupNotice>}
       {policy && <section className="w-full min-w-0 max-w-full rounded-lg border border-[#333] bg-[#121212]">
         <div className="grid w-full min-w-0 max-w-full gap-4 p-6 md:grid-cols-2 md:px-8 md:py-7 xl:px-10">
         <label className="block w-full min-w-0 max-w-full text-sm">Default mode

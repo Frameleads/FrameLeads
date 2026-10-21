@@ -26,7 +26,7 @@ export default function InboxTriagePage() {
 async function InboxTriageData() {
   const cookieStore = await cookies();
   const user = await resolveScoutUser(prisma,
-    cookieStore.get('frameleads_session')?.value, cookieStore.get('user_email')?.value);
+    cookieStore.get('frameleads_session')?.value);
 
   // Phase 4: Priority-sorted query — SIGNAL_TRIGGERED items with
   // isHighPriority=true always surface at the top of the triage queue.

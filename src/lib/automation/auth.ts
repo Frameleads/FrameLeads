@@ -5,8 +5,7 @@ import { resolveScoutUser } from '../scout-data';
 /** Central authorization seam until FrameLeads has a tenant-member role model. */
 export async function authenticatedAutomationUserId() {
   const jar = await cookies();
-  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value,
-    jar.get('user_email')?.value))?.id ?? null;
+  return (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id ?? null;
 }
 
 export function validMutationOrigin(request: Request) {

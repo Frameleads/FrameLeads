@@ -44,6 +44,7 @@
     "@prisma/client": "^5.22.0",
     "@vercel/oidc": "3.8.9",
     "@whop-apps/sdk": "^0.0.1-canary.117",
+    "@whop/sdk": "2.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

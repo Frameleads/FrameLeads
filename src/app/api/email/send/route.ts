@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { htmlToPlainText, sendNativeEmail, NativeMailUnavailable } from '@/lib/outbound/native-mail';
 import { requireFeatureAccess } from '@/lib/auth-guard';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,21 +20,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "Invalid request origin." }, { status: 403 });
     }
 
-    const cookieStore = await cookies();
-    const userEmail = cookieStore.get("user_email")?.value;
-    if (!userEmail) {
-      return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
-    }
-
-    const user = await prisma.user.findUnique({
-      where: { email: normalizeEmail(userEmail) },
+    const principal = await verifiedCustomerUser();
+    const user = principal ? await prisma.user.findUnique({
+      where: { id: principal.id },
       select: {
         id: true,
         imapEmail: true,
         imapPassword: true,
         imapHost: true,
       },
-    });
+    }) : null;
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }

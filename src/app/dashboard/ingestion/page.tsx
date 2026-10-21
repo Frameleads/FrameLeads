@@ -1,19 +1,17 @@
 export const dynamic = 'force-dynamic';
 
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import IngestionClient from "./IngestionClient";
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export default async function IngestionPage() {
-  const cookieStore = await cookies();
-  const email = cookieStore.get('user_email')?.value;
-  
-  if (!email) {
+  const principal = await verifiedCustomerUser();
+  if (!principal) {
     return <div>Unauthorized</div>;
   }
 
   const user = await prisma.user.findUnique({
-    where: { email },
+    where: { id: principal.id },
     select: { tier: true, monthlyQuota: true, leadsProcessed: true }
   });
   

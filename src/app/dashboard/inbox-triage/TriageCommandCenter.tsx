@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import SetupNotice from '@/components/SetupNotice';
 import { Loader2, Info, CalendarCheck, Mail, Trash2, X } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
@@ -13,6 +14,7 @@ import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/d
 import { deriveIntentSignals } from '@/lib/decision/intent-signals';
 import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
 import { getDisplayedIntentConfidence } from '@/lib/decision/intent-confidence';
+import { formatIntentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -79,6 +81,7 @@ function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
 }
 
 type DecisionPacket = { id: string; status: string; primaryIntent: string | null;
+  createdAt?: string;
   source: string;
   secondaryIntents: string[]; intentSignals?: unknown; confidenceScore: number | null; interpretation: string | null;
   recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
@@ -100,6 +103,8 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
   onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
+  const [awaitingDecision, setAwaitingDecision] = useState(true);
+  const autoWaitStartedAt = useRef(Date.now());
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [automation, setAutomation] = useState<AutomationPacket | null>(null);
@@ -115,6 +120,8 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
   useEffect(() => {
     let active = true;
     setLoading(true);
+    setAwaitingDecision(true);
+    autoWaitStartedAt.current = Date.now();
     setPacket(null);
     setError('');
     fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`)
@@ -123,21 +130,30 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
         return response.json();
       })
       .then(data => { if (active) { setPacket(data.decision ?? null);
-        if (data.decision) onDecision(signalId, data.decision.status, data.decision); } })
-      .catch(() => { if (active) setError('Could not load the decision packet.'); })
+        if (data.decision) { setAwaitingDecision(false); onDecision(signalId, data.decision.status, data.decision); } } })
+      .catch(() => { if (active) { setAwaitingDecision(false); setError('Could not load the decision packet.'); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [signalId, onDecision]);
   useEffect(() => {
-    if (packet?.status !== 'PENDING') return;
+    if (packet?.status !== 'PENDING' && !awaitingDecision) return;
+    let requestInFlight = false;
     const timer = window.setInterval(() => {
+      if (requestInFlight) return;
+      if (!packet && Date.now() - autoWaitStartedAt.current >= 60_000) {
+        setAwaitingDecision(false);
+        setError('Decision analysis is taking longer than expected. Refresh to check again.');
+        return;
+      }
+      requestInFlight = true;
       void fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`)
         .then(response => response.ok ? response.json() : null)
-        .then(data => { if (data?.decision) { setPacket(data.decision); onDecision(signalId, data.decision.status, data.decision); } })
-        .catch(() => { /* The saved packet remains visible; polling can retry. */ });
+        .then(data => { if (data?.decision) { setAwaitingDecision(false); setPacket(data.decision); onDecision(signalId, data.decision.status, data.decision); } })
+        .catch(() => { /* The saved packet remains visible; polling can retry. */ })
+        .finally(() => { requestInFlight = false; });
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [packet?.status, signalId, onDecision]);
+  }, [packet?.status, awaitingDecision, signalId, onDecision]);
   useEffect(() => {
     if (!isEnterpriseTier || !packet?.id) { setAutomation(null); return; }
     let active = true;
@@ -205,12 +221,15 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
   }
   async function run(retry: boolean) {
     if (running) return;
+    const uncertain = Boolean(packet?.reviewReasons.includes('ANALYSIS_OUTCOME_UNCERTAIN'));
+    if (uncertain && !window.confirm('Confirm you verified that the previous provider request has ended. Re-analysis will create a new Decision version and preserve the uncertain record.')) return;
     setRunning(true);
     setError('');
     try {
       const response = await fetch('/api/decisions/triage', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signalId, retryOfDecisionId: retry ? packet?.id : undefined }) });
+        body: JSON.stringify({ signalId, retryOfDecisionId: retry ? packet?.id : undefined,
+          confirmProviderRequestEnded: uncertain ? true : undefined }) });
       if (!response.ok) throw new Error('Decision analysis failed. The reply is safely stored; retry when ready.');
       const result = await response.json();
       if (result.decision) { setPacket(result.decision); onDecision(signalId, result.decision.status, result.decision); }
@@ -218,8 +237,21 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
     } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
     finally { setRunning(false); }
   }
+  async function markStalledForReview() {
+    if (!packet || packet.status !== 'PENDING') return;
+    const response = await fetch('/api/decisions/recovery', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decisionId: packet.id }) });
+    if (!response.ok) { setError('This analysis is not eligible for stalled review yet. Refresh and check again.'); return; }
+    const result = await response.json();
+    if (result.status !== 'MARKED_UNCERTAIN') { setError('The Decision changed while recovery was requested. Refresh to see its current state.'); return; }
+    const refreshed = await fetch(`/api/decisions?signalId=${encodeURIComponent(signalId)}`, { cache: 'no-store' });
+    if (refreshed.ok) {
+      const data = await refreshed.json();
+      if (data.decision) { setPacket(data.decision); setAwaitingDecision(false); onDecision(signalId, data.decision.status, data.decision); }
+    }
+  }
   const statusPresentation = decisionStatusPresentation(packet?.status);
-  const label = packet?.status === 'PENDING' ? 'Analyzing' : packet ? statusPresentation.label : 'Not analyzed';
+  const label = packet?.status === 'PENDING' || loading || awaitingDecision ? 'Analyzing' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
   const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
   const intentLabel = packet?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent unresolved';
@@ -241,6 +273,9 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
           className="min-h-11 rounded-lg border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.06] px-3 py-2 text-xs font-semibold text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.12] disabled:opacity-40">
           {running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
         </button>
+        {packet?.status === 'PENDING' && packet.createdAt && Date.now() - new Date(packet.createdAt).getTime() >= 10 * 60 * 1000 &&
+          <button type="button" onClick={() => void markStalledForReview()}
+            className="min-h-11 rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-300">Mark outcome uncertain</button>}
       </div>
     </header>
     {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
@@ -310,8 +345,8 @@ export default function TriageCommandCenter({
         dealStage: s.dealStage || '',
         createdAt: s.createdAt,
         inboundSignal: s.rawEmail || '',
-        intentScore: s.intentScore || 0,
-        status: s.intentType || 'COLD',
+        intentScore: typeof s.intentScore === 'number' && !['UNASSESSED', 'UNCLASSIFIED'].includes(s.intentType) ? s.intentScore : null,
+        status: resolveIntentTemperature(typeof s.intentScore === 'number' && !['UNASSESSED', 'UNCLASSIFIED'].includes(s.intentType) ? s.intentScore : null, s.intentType) || 'UNASSESSED',
         recordStatus: s.status || 'PENDING',
         draftText: s.aiDraft || 'Awaiting Triage Draft...',
         signals: getPersistedSignals(s.signals, s.intentRisk),
@@ -376,9 +411,9 @@ export default function TriageCommandCenter({
   const [bookingSlotEnd, setBookingSlotEnd] = useState('');
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
-  const [intentScore, setIntentScore] = useState(activeLead ? activeLead.intentScore : 0);
-  const displayedIntentScore = getDisplayedIntentConfidence({ intentScore }) ?? 0;
-  const [temperature, setTemperature] = useState(activeLead ? (activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD') : '');
+  const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
+  const displayedIntentScore = getDisplayedIntentConfidence({ intentScore });
+  const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
   const [showInboundSignalToast, setShowInboundSignalToast] = useState(false);
@@ -387,6 +422,7 @@ export default function TriageCommandCenter({
   const [isConnectingInbox, setIsConnectingInbox] = useState(false);
   const [imapConnectionError, setImapConnectionError] = useState('');
   const [imapForm, setImapForm] = useState<ImapConnectionForm>(DEFAULT_IMAP_FORM);
+  const [mailboxConnectionStatus, setMailboxConnectionStatus] = useState<'loading' | 'connected' | 'disconnected' | 'unavailable'>('loading');
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
   const [archiveToast, setArchiveToast] = useState('');
@@ -399,9 +435,10 @@ export default function TriageCommandCenter({
 
     const loadMailboxSettings = async () => {
       const response = await fetch('/api/inbox/credentials', { cache: 'no-store' }).catch(() => null);
-      if (!response?.ok) return;
+      if (!response?.ok) { setMailboxConnectionStatus('unavailable'); return; }
       const result = await response.json().catch(() => null);
-      if (!result?.mailbox) return;
+      if (typeof result?.mailbox?.connected !== 'boolean') { setMailboxConnectionStatus('unavailable'); return; }
+      setMailboxConnectionStatus(result.mailbox.connected ? 'connected' : 'disconnected');
 
       setImapForm((current) => ({
         ...current,
@@ -481,7 +518,7 @@ export default function TriageCommandCenter({
       setInboundSignal(activeLead.inboundSignal);
       setDraftText(activeLead.draftText);
       setIntentScore(activeLead.intentScore);
-      setTemperature(activeLead.status === 'HOT' ? '🔥 HOT' : activeLead.status === 'WARM' ? '☀️ WARM' : '❄️ COLD');
+      setTemperature(formatIntentTemperature(activeLead.intentScore, activeLead.status));
       setSignals(activeLead.signals);
     }
   }, [activeLeadId, activeLead]);
@@ -495,7 +532,7 @@ export default function TriageCommandCenter({
     setInboundSignal(lead.inboundSignal);
     setDraftText(lead.draftText);
     setIntentScore(lead.intentScore);
-    setTemperature(lead.status === 'HOT' ? 'ðŸ”¥ HOT' : lead.status === 'WARM' ? 'â˜€ï¸ WARM' : 'â„ï¸ COLD');
+    setTemperature(formatIntentTemperature(lead.intentScore, lead.status));
     setSignals(lead.signals);
     setIsEditing(false);
     setRegenerateError('');
@@ -511,10 +548,11 @@ export default function TriageCommandCenter({
     else setActiveLeadId(null);
   }, [leads, selectLead]);
 
-  const getProgressBarColor = (score: number) => {
-    if (score >= 71) return 'bg-green-500';
-    if (score >= 31) return 'bg-yellow-500';
-    return 'bg-red-500';
+  const getProgressBarColor = (score: number | null, category?: string | null) => {
+    const temperature = resolveIntentTemperature(score, category);
+    if (temperature === 'HOT') return 'bg-green-500';
+    if (temperature === 'WARM') return 'bg-yellow-500';
+    return temperature === 'COLD' ? 'bg-red-500' : 'bg-gray-500';
   };
 
   const handleRegenerate = async () => {
@@ -536,14 +574,14 @@ export default function TriageCommandCenter({
       if (res.ok) {
         const data = await res.json();
         if (typeof data.intentScore === 'number') {
-          setIntentScore(data.intentScore);
-          setTemperature(data.category === 'HOT' ? '🔥 HOT' : data.category === 'WARM' ? '☀️ WARM' : '❄️ COLD');
+          setIntentScore(data.category === 'UNASSESSED' ? null : data.intentScore);
+          setTemperature(formatIntentTemperature(data.category === 'UNASSESSED' ? null : data.intentScore));
           setSignals(Array.isArray(data.signals) ? data.signals : []);
           setDraftText(typeof data.draftResponse === 'string' ? data.draftResponse : 'Awaiting Triage Draft...');
           setLeads((current) => current.map((lead) => lead.id === activeLead?.id
             ? {
                 ...lead,
-                intentScore: data.intentScore,
+                intentScore: data.category === 'UNASSESSED' ? null : data.intentScore,
                 status: data.category,
                 signals: Array.isArray(data.signals) ? data.signals : [],
                 whyNowSignals: deriveIntentSignals({ decision: lead.decisionPacket,
@@ -610,7 +648,7 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = hasDecisionEngineAccess && intentScore >= 71;
+  const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
   const displayedSignals: string[] = activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
 
   const handleLockMeeting = async () => {
@@ -750,6 +788,7 @@ export default function TriageCommandCenter({
 
   const connectInboxButton = (
     <button
+      id="connect-native-inbox"
       type="button"
       onClick={() => {
         setImapConnectionError('');
@@ -767,6 +806,11 @@ export default function TriageCommandCenter({
       {connectInboxButton}
     </div>
   );
+  const mailboxSetupNotice = hasInboxAccess && mailboxConnectionStatus !== 'loading' && mailboxConnectionStatus !== 'connected' ? (
+    <SetupNotice level={mailboxConnectionStatus === 'disconnected' ? 'REQUIRED' : 'RECOMMENDED'} title={mailboxConnectionStatus === 'disconnected' ? 'Connect a mailbox to sync native inbox replies' : 'Mailbox connection could not be confirmed'} tone={mailboxConnectionStatus === 'disconnected' ? 'warning' : 'notice'}>
+      {mailboxConnectionStatus === 'disconnected' ? 'Inbox Triage can synchronize replies only after a native mailbox is connected. This connection is separate from Sandbox sending eligibility.' : 'The account connection status endpoint did not confirm whether a mailbox is connected. Check the native mailbox settings before relying on inbox synchronization.'}
+    </SetupNotice>
+  ) : null;
 
   const connectInboxModal = isConnectInboxOpen && mounted
     ? createPortal(
@@ -970,6 +1014,7 @@ export default function TriageCommandCenter({
                 : 'Awaiting campaign deployment and real inbound replies. New signals will appear here for review.'}
             </p>
             <div className="mt-6 flex flex-col items-center gap-2">
+              {mailboxSetupNotice}
               {inboxActions}
               {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
             </div>
@@ -1052,6 +1097,7 @@ export default function TriageCommandCenter({
             </p>
           </div>
           <div className="flex flex-col items-start gap-2 md:items-end">
+            {mailboxSetupNotice}
             {inboxActions}
             {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
           </div>
@@ -1113,16 +1159,16 @@ export default function TriageCommandCenter({
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-bold text-white">{displayedIntentScore}</span>
+                      <span className="text-4xl font-bold text-white">{displayedIntentScore === null ? '?' : displayedIntentScore}</span>
                       <span className="text-sm font-medium text-gray-400">/ 100</span>
                     </div>
                   </div>
-                  <div className={`text-sm font-bold tracking-widest uppercase ${displayedIntentScore >= 71 ? 'text-green-500' : displayedIntentScore >= 31 ? 'text-yellow-500' : 'text-red-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
+                  <div className={`text-sm font-bold tracking-widest uppercase ${resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'HOT' ? 'text-green-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'WARM' ? 'text-yellow-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'COLD' ? 'text-red-500' : 'text-gray-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
                     {temperature}
                   </div>
                 </div>
                 <div className="w-full bg-gray-800 rounded-full h-1.5 mb-6">
-                  <div className={`h-1.5 rounded-full transition-all duration-1000 ${getProgressBarColor(displayedIntentScore)}`} style={{ width: `${displayedIntentScore}%` }}></div>
+                  <div className={`h-1.5 rounded-full transition-all duration-1000 ${getProgressBarColor(displayedIntentScore, activeLead?.status)}`} style={{ width: `${displayedIntentScore ?? 0}%` }}></div>
                 </div>
                 
                 <div>

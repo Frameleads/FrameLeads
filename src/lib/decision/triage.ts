@@ -10,11 +10,13 @@ import { getInboundConversationMessage } from './conversation';
 import { buildReplyDecisionContext, DECISION_ENGINE_VERSION } from './context';
 import { realPreviewReply, reserveTriageDecision } from './activation-preview';
 import { selectTriageProvider, TRIAGE_MODEL, validateTriageOutput,
-  classifyTriageFailure, safeGoogleDiagnostic, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
+  classifyTriageFailure, safeGoogleDiagnostic, safeTriageOutputDiagnostic, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
 
 export type TriageDependencies = { db?: PrismaClient; provider?: TriageProvider; recordUsage?: typeof recordAIUsage;
   buildContext?: typeof buildReplyDecisionContext; evaluatePolicy?: typeof evaluateSalesConstitution };
 const MAX_REVIEW_REASONS = 8;
+const COMMERCIAL_AUTHORITY_INTENTS = new Set<Intent>([Intent.PRICING_INQUIRY, Intent.PRICING_OBJECTION,
+  Intent.BUDGET_OBJECTION, Intent.NEGOTIATION]);
 const cap = (value: string | null | undefined, max: number) => (value ?? '').trim().slice(0, max);
 
 /** Only server-owned structured source markers can take a deterministic fast path. */
@@ -48,6 +50,8 @@ export function decideReview(input: { analysis: TriageAnalysis | null; policy: {
     const labels = new Set(input.analysis.intents.map(v => v.intent));
     if ((labels.has(Intent.POSITIVE_INTEREST) && (labels.has(Intent.NOT_INTERESTED) || labels.has(Intent.UNSUBSCRIBE))) ||
       (labels.has(Intent.MEETING_REQUEST) && labels.has(Intent.NOT_INTERESTED))) reasons.push('CONTRADICTORY_INTENTS');
+    if (input.analysis.intents.some(v => COMMERCIAL_AUTHORITY_INTENTS.has(v.intent)))
+      reasons.push('COMMERCIAL_AUTHORITY_UNVERIFIED');
   }
   if (input.policy.some(p => p.configurationMissing)) reasons.push('CONSTITUTION_UNCONFIGURED');
   if (input.policy.some(p => p.unresolvedRules.length)) reasons.push('POLICY_UNRESOLVED');
@@ -154,9 +158,11 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
       source = providerName==='ANTHROPIC'?Source.ANTHROPIC:Source.GEMINI;
     } catch (error) {
       failureClass=classifyTriageFailure(error,providerPhase);
+      const invalidOutput = failureClass === 'JSON_PARSE_FAILED' || failureClass === 'OUTPUT_VALIDATION_FAILED' || failureClass === 'OUTPUT_TRUNCATED';
       console.error('[TRIAGE_FAILURE]',JSON.stringify({failureClass,
+        ...(invalidOutput ? { outputDiagnostic: safeTriageOutputDiagnostic(error) } : {}),
         ...(failureClass==='PROVIDER_4XX'||failureClass==='PROVIDER_5XX'?{providerDiagnostic:safeGoogleDiagnostic(error)}:{})}));
-      failure = error instanceof TypeError || error instanceof SyntaxError ? 'INVALID_MODEL_OUTPUT' : 'MODEL_UNAVAILABLE';
+      failure = invalidOutput || error instanceof TypeError || error instanceof SyntaxError ? 'INVALID_MODEL_OUTPUT' : 'MODEL_UNAVAILABLE';
     } finally {
       model=provider.model??model;
       latencyMs = Math.max(0, Date.now() - start);
@@ -222,11 +228,12 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   const reasons = decideReview({ analysis, policy: policyResults, failure });
   const blocked = !policyResults.length || policyResults.some(p => p.blockingRules.length);
   const policyConstrained = blocked || policyResults.some(p => !p.allowed);
-  const suggestedReply = policyConstrained ? null : analysis?.suggestedReply ?? null;
+  const commercialAuthorityUnverified = Boolean(analysis?.intents.some(v => COMMERCIAL_AUTHORITY_INTENTS.has(v.intent)));
+  const suggestedReply = policyConstrained || commercialAuthorityUnverified ? null : analysis?.suggestedReply ?? null;
   const status = reasons.length ? Status.NEEDS_REVIEW : Status.READY;
   const explanation = cap(analysis?.explanation ?? 'Intent could not be safely resolved; human review is required.', 500);
   const policy = policyResults.map((result, index) => ({ action: policyActions[index], ...policySnapshot(result) }));
-  const finalRecommendation = blocked ? 'NO_SALES_OUTREACH' : policyConstrained ? 'ESCALATE_TO_HUMAN' :
+  const finalRecommendation = blocked ? 'NO_SALES_OUTREACH' : policyConstrained || commercialAuthorityUnverified ? 'ESCALATE_TO_HUMAN' :
     analysis?.recommendedNextAction ?? 'REVIEW_MANUALLY';
   const packet = { status, source, primaryIntent: analysis?.primaryIntent ?? null,
     secondaryIntents: analysis?.intents.filter(v => v.intent !== analysis?.primaryIntent).map(v => v.intent) ?? [],

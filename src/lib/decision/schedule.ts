@@ -1,9 +1,6 @@
 import { after } from 'next/server';
 import { triageInboundSignal } from './triage';
 import { canAutomaticallyTriage } from './rollout';
-import { runAutopilot } from '../automation/actions';
-import { syncResponseSLAForDecision } from '../response-sla/service';
-import { assessRevenueAtRisk } from '../revenue-risk/service';
 import { prisma } from '../prisma';
 import { hasFeatureAccess, normalizeFrameLeadsTier } from '../entitlements';
 
@@ -28,15 +25,7 @@ export function scheduleInboundDecisions(userId: string, signalIds: string[],
         while (next < unique.length) {
           const signalId = unique[next++];
           try {
-            const result = await (deps.triage ?? triageInboundSignal)({ userId, signalId });
-            if (result.decision && !deps.triage && hasFeatureAccess(tier, 'REVENUE_RISK')) {
-              try { await runAutopilot({ userId, decisionId: result.decision.id }); }
-              finally {
-                try { await assessRevenueAtRisk({ userId, decisionId: result.decision.id }); }
-                catch { console.error('Post-ingestion risk assessment unavailable; SLA may use unknown duration'); }
-                await syncResponseSLAForDecision({ userId, decisionId: result.decision.id });
-              }
-            }
+            await (deps.triage ?? triageInboundSignal)({ userId, signalId });
           }
           catch { console.error('Post-ingestion decision triage failed; inbound remains saved'); }
         }

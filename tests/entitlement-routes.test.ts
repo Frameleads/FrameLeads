@@ -87,5 +87,19 @@ test('generation excludes Core-only context and tenant custom profiles for Micro
 test('automatic inbound triage checks the current tier and only Enterprise materializes Risk/SLA', () => {
   const scheduler = source('src/lib/decision/schedule.ts');
   assert.match(scheduler, /hasFeatureAccess\(tier, 'DECISION_ENGINE'\)/);
-  assert.match(scheduler, /hasFeatureAccess\(tier, 'REVENUE_RISK'\)/);
+  assert.doesNotMatch(scheduler, /runAutopilot|sendNativeEmail|bookMeeting|automation\/actions/);
+});
+
+test('stalled Decision recovery is authenticated, tenant scoped, stale only, and requires explicit confirmation before a new version', () => {
+  const recovery = source('src/app/api/decisions/recovery/route.ts');
+  assert.match(recovery, /getAuthenticatedEntitlementUser\(\)/);
+  assert.match(recovery, /userId: user\.id/);
+  const service = source('src/lib/decision/pending-recovery.ts');
+  assert.match(service, /STALLED_DECISION_AFTER_MS = 10 \* 60 \* 1000/);
+  assert.match(service, /updateMany\([\s\S]*?userId: input\.userId[\s\S]*?status: 'PENDING'[\s\S]*?trace: \{ is: null \}/);
+  assert.match(service, /ANALYSIS_OUTCOME_UNCERTAIN/);
+  assert.doesNotMatch(service, /provider\.analyze|runAutopilot|sendNativeEmail/);
+  const triage = source('src/app/api/decisions/triage/route.ts');
+  assert.match(triage, /confirmProviderRequestEnded !== true/);
+  assert.match(triage, /TRIAGE_UNCERTAIN_RETRY_CONFIRMED/);
 });

@@ -16,7 +16,6 @@ export default async function ScoutDetailPage({ params }: { params: Promise<{ id
   const user = await resolveScoutUser(
     prisma,
     cookieStore.get('frameleads_session')?.value,
-    cookieStore.get('user_email')?.value,
   );
   if (!user) redirect('/login');
   const tier = await getUserEntitlementTier(user.id);

@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { createInboundSignals } from '@/lib/prospects/persistence';
 import type { Prisma } from "@prisma/client";
@@ -12,6 +11,7 @@ import { decrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
 import { POST as classifyTriageSignal } from "@/app/api/triage/route";
 import { scheduleInboundDecisions } from '@/lib/decision/schedule';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -46,18 +46,11 @@ export async function POST() {
     const authError = await requireCoreOrEnterpriseTier();
     if (authError) return authError;
 
-    const cookieStore = await cookies();
-    const sessionEmail = cookieStore.get("user_email")?.value;
-    const user = sessionEmail
+    const principal = await verifiedCustomerUser();
+    const user = principal
       ? await prisma.user.findUnique({
-          where: { email: normalizeEmail(sessionEmail) },
-          select: {
-            id: true,
-            imapEmail: true,
-            imapPassword: true,
-            imapHost: true,
-            imapPort: true,
-          },
+          where: { id: principal.id },
+          select: { id: true, imapEmail: true, imapPassword: true, imapHost: true, imapPort: true },
         })
       : null;
 

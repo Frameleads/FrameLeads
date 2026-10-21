@@ -6,6 +6,8 @@ import { syncResponseSLAForDecision } from '@/lib/response-sla/service';
 import { assessRevenueAtRisk } from '@/lib/revenue-risk/service';
 import { featureAccessErrorForTier, getAuthenticatedEntitlementUser } from '@/lib/auth-guard';
 import { hasFeatureAccess } from '@/lib/entitlements';
+import { prisma } from '@/lib/prisma';
+import { UNCERTAIN_ANALYSIS_REASON } from '@/lib/decision/pending-recovery';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,9 +20,19 @@ export async function POST(request: Request) {
   if (!canManuallyAnalyze()) return NextResponse.json({ error: 'Decision analysis is disabled.' }, { status: 403 });
   const body = await request.json().catch(() => null);
   if (!body || typeof body.signalId !== 'string' || !body.signalId.trim() || body.signalId.length > 100 ||
-    (body.retryOfDecisionId != null && (typeof body.retryOfDecisionId !== 'string' || body.retryOfDecisionId.length > 100)))
+    (body.retryOfDecisionId != null && (typeof body.retryOfDecisionId !== 'string' || body.retryOfDecisionId.length > 100)) ||
+    (body.confirmProviderRequestEnded != null && typeof body.confirmProviderRequestEnded !== 'boolean'))
     return NextResponse.json({ error: 'Valid signal ID required.' }, { status: 400 });
   try {
+    if (body.retryOfDecisionId) {
+      const prior = await prisma.decision.findFirst({ where: { id: body.retryOfDecisionId, userId,
+        inputMessage: { sourceType: 'INBOUND_SIGNAL', sourceId: body.signalId.trim() } }, select: { reviewReasons: true } });
+      if (prior?.reviewReasons.includes(UNCERTAIN_ANALYSIS_REASON)) {
+        if (body.confirmProviderRequestEnded !== true)
+          return NextResponse.json({ error: 'Verify the prior provider request has ended before re-analysis.' }, { status: 409 });
+        console.info('[TRIAGE_UNCERTAIN_RETRY_CONFIRMED]', JSON.stringify({ userId, decisionId: body.retryOfDecisionId }));
+      }
+    }
     const result = await triageInboundSignal({ userId, signalId: body.signalId.trim(),
       retryOfDecisionId: body.retryOfDecisionId || undefined });
     let automation = null;

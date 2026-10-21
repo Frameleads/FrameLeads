@@ -1,18 +1,10 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { LeadSourceType } from '@prisma/client';
+import { verifiedCustomerUser } from '@/lib/customer-session';
 
 async function getCurrentUserId() {
-  const cookieStore = await cookies();
-  const email = cookieStore.get("user_email")?.value;
-  if (!email) return null;
-
-  const user = await prisma.user.findUnique({
-    where: { email: email.trim().toLowerCase() },
-    select: { id: true },
-  });
-  return user?.id || null;
+  return (await verifiedCustomerUser())?.id || null;
 }
 
 export async function GET() {

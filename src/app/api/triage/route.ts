@@ -1,18 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { requireFeatureAccess } from '@/lib/auth-guard';
 import { prisma } from '@/lib/prisma';
+import { verifiedCustomerUser } from '@/lib/customer-session';
+import { formatIntentTemperature, intentTemperature, isHighPriorityIntent } from '@/lib/intent-temperature';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const SYSTEM_PROMPT = `You are an elite B2B sales engineer analyzing an inbound email reply. You must return a strict JSON object with no markdown formatting.
 
-1. "intentScore": A strict number between 0-100.
-- 0-30: Rejection, Unsubscribe, Not interested.
-- 31-70: Soft interest, asking for info, deferring timeline.
-- 71-100: Direct meeting request, pricing inquiry, explicit high-intent.
+1. "intentScore": Prospect interest, from 0-100; use null if unavailable. This is separate from classification confidence.
+- 0-59: Rejection, unsubscribe, or no buying interest.
+- 60-79: Soft interest, asking for information, or deferring timeline.
+- 80-100: Direct meeting request, pricing inquiry, or explicit high intent.
 2. "category": Strictly "HOT", "WARM", or "COLD".
 3. "signals": An array of max 3 string tags extracted strictly from the text. YOU MUST ONLY CHOOSE FROM THIS EXACT LIST: ["Meeting Requested", "Pricing Inquiry", "Referred to Colleague", "Competitor Mentioned", "Timing Objection", "Requesting Resources", "OOTO / Bounced"]. Do not invent tags.
 4. "strategy": A 2-sentence diagnostic strategy for the rep.
@@ -28,7 +29,7 @@ const ALLOWED_SIGNALS = new Set([
   'OOTO / Bounced',
 ]);
 
-type IntentCategory = 'HOT' | 'WARM' | 'COLD';
+type IntentCategory = 'HOT' | 'WARM' | 'COLD' | 'UNASSESSED';
 
 interface TriageClassification {
   intentScore: number;
@@ -55,12 +56,6 @@ function parseClaudeJson(rawContent: string): unknown {
   }
 
   return JSON.parse(cleanedContent.substring(firstBrace, lastBrace + 1));
-}
-
-function categoryFromScore(intentScore: number): IntentCategory {
-  if (intentScore >= 71) return 'HOT';
-  if (intentScore >= 31) return 'WARM';
-  return 'COLD';
 }
 
 function normalizeStrategy(value: unknown) {
@@ -91,10 +86,10 @@ function normalizeDraftResponse(value: unknown) {
 
 function normalizeClassification(value: unknown): TriageClassification {
   const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-  const numericScore = Number(raw.intentScore);
-  const intentScore = Number.isFinite(numericScore)
-    ? Math.round(Math.max(0, Math.min(100, numericScore)))
-    : 0;
+  const numericScore = typeof raw.intentScore === 'number' ? raw.intentScore : Number.NaN;
+  const intentScore = Number.isFinite(numericScore) && numericScore >= 0 && numericScore <= 100
+    ? Math.round(numericScore)
+    : null;
   const signals = Array.isArray(raw.signals)
     ? Array.from(new Set(
         raw.signals.filter(
@@ -104,8 +99,8 @@ function normalizeClassification(value: unknown): TriageClassification {
     : [];
 
   return {
-    intentScore,
-    category: categoryFromScore(intentScore),
+    intentScore: intentScore ?? 0,
+    category: intentTemperature(intentScore) ?? 'UNASSESSED',
     signals,
     strategy: normalizeStrategy(raw.strategy),
     draftResponse: normalizeDraftResponse(raw.draftResponse),
@@ -115,7 +110,7 @@ function normalizeClassification(value: unknown): TriageClassification {
 function unavailableClassification(): TriageClassification {
   return {
     intentScore: 0,
-    category: 'COLD',
+    category: 'UNASSESSED',
     signals: [],
     draftResponse: 'Thank you for the reply. I will review the details and follow up shortly.',
     strategy: 'AI classification is unavailable, so review the reply manually. Do not act until a rep confirms the sender’s intent.',
@@ -134,14 +129,7 @@ export async function POST(request: Request) {
     let persistedSignal: { id: string; userId: string } | null = null;
 
     if (typeof payload?.signalId === 'string' && payload.signalId.trim()) {
-      const cookieStore = await cookies();
-      const userEmail = cookieStore.get('user_email')?.value;
-      const user = userEmail
-        ? await prisma.user.findUnique({
-            where: { email: userEmail.trim().toLowerCase() },
-            select: { id: true },
-          })
-        : null;
+      const user = await verifiedCustomerUser();
 
       if (!user) {
         return NextResponse.json({ success: false, error: 'Unauthorized.' }, { status: 401 });
@@ -196,12 +184,13 @@ export async function POST(request: Request) {
           signals: classification.signals,
           signalAnalysis: classification.strategy,
           aiDraft: classification.draftResponse,
-          isHighPriority: classification.category === 'HOT',
+          isHighPriority: isHighPriorityIntent(classification.category === 'UNASSESSED' ? null : classification.intentScore),
         },
       });
     }
 
-    return NextResponse.json({ success: true, ...classification });
+    return NextResponse.json({ success: true, ...classification,
+      temperatureLabel: classification.category === 'UNASSESSED' ? formatIntentTemperature(null) : formatIntentTemperature(classification.intentScore) });
   } catch (error) {
     console.error('[TRIAGE CLASSIFICATION ERROR]:', error);
     return NextResponse.json(

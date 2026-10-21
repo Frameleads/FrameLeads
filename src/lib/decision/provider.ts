@@ -42,7 +42,7 @@ export const TRIAGE_RESPONSE_SCHEMA: ResponseSchema = {
   },
 };
 export const TRIAGE_FAILURE_CLASSES=['MISSING_API_KEY','AUTH_FAILED','CREDIT_OR_BILLING_REQUIRED','RATE_LIMIT','PROVIDER_4XX','PROVIDER_5XX','PROVIDER_TIMEOUT','PROVIDER_NETWORK',
-  'JSON_PARSE_FAILED','OUTPUT_VALIDATION_FAILED','USAGE_RECORDING_FAILED','UNKNOWN_PROVIDER_FAILURE'] as const;
+  'JSON_PARSE_FAILED','OUTPUT_TRUNCATED','OUTPUT_VALIDATION_FAILED','USAGE_RECORDING_FAILED','UNKNOWN_PROVIDER_FAILURE'] as const;
 export type TriageFailureClass=typeof TRIAGE_FAILURE_CLASSES[number];
 // Provider error messages can contain request URLs, keys and arbitrary upstream text.
 // Return only fixed vocabulary; never serialize the SDK error itself.
@@ -85,6 +85,27 @@ export function classifyTriageFailure(error:unknown,phase:'PROVIDER'|'VALIDATION
   if(e?.name==='APIConnectionError')return 'PROVIDER_NETWORK';
   if(error instanceof TypeError || ['ECONNRESET','ENOTFOUND','ECONNREFUSED','ETIMEDOUT'].includes(e?.cause?.code??''))return 'PROVIDER_NETWORK';
   return 'UNKNOWN_PROVIDER_FAILURE';
+}
+/** Fixed codes only; never log raw model output, evidence, or provider messages. */
+export function safeTriageOutputDiagnostic(error: unknown): string {
+  if (error instanceof SyntaxError) return 'JSON_PARSE_FAILED';
+  const message = error instanceof TypeError ? error.message : '';
+  const codes: Record<string, string> = {
+    'Triage output must be an object': 'OUTPUT_NOT_OBJECT',
+    'Unexpected triage output field': 'UNEXPECTED_OUTPUT_FIELD',
+    'Invalid primary intent': 'INVALID_PRIMARY_INTENT',
+    'Invalid intent list': 'INVALID_INTENT_LIST',
+    'Invalid intent': 'INVALID_INTENT',
+    'Invalid intent evidence': 'INVALID_EVIDENCE_FIELD',
+    'Intent evidence is not in the reply': 'EVIDENCE_NOT_IN_CURRENT_REPLY',
+    'Primary intent must appear once in intents': 'PRIMARY_INTENT_MISSING_OR_DUPLICATE',
+    'Invalid next action': 'INVALID_NEXT_ACTION',
+    'Invalid suggested reply': 'INVALID_SUGGESTED_REPLY',
+    'Invalid confidence': 'INVALID_CONFIDENCE',
+    'Invalid interpretation': 'INVALID_INTERPRETATION',
+    'Invalid explanation': 'INVALID_EXPLANATION',
+  };
+  return codes[message] ?? 'OUTPUT_VALIDATION_FAILED';
 }
 const obj = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -166,6 +187,7 @@ export function createAnthropicTriageProvider(model=process.env.TRIAGE_ANTHROPIC
   const input=response.usage.input_tokens+(response.usage.cache_creation_input_tokens??0)+(response.usage.cache_read_input_tokens??0);
   observer?.onResponse({inputTokens:input,outputTokens:response.usage.output_tokens,totalTokens:input+response.usage.output_tokens,
    cachedInputTokens:response.usage.cache_read_input_tokens??null});
+  if(response.stop_reason==='max_tokens')throw new TriageProviderFailure('OUTPUT_TRUNCATED');
   if(response.stop_reason!=='end_turn')throw new TriageProviderFailure('OUTPUT_VALIDATION_FAILED');
   const text=response.content.filter(block=>block.type==='text').map(block=>block.text).join('');
   if(!text||text.length>12000)throw new TriageProviderFailure('OUTPUT_VALIDATION_FAILED');

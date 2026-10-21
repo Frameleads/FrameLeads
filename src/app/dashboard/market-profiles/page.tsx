@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function MarketProfilesPage() {
   const jar = await cookies();
-  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value, jar.get('user_email')?.value);
+  const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value);
   if (!user) redirect('/login');
   const tier = await getUserEntitlementTier(user.id);
   return <EnterprisePaywall userTier={tier} featureName="Custom Market Profiles"><main className="mx-auto w-full max-w-[1680px] space-y-6 py-6">

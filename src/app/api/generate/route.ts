@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import { enrichExistingLeadProspect, saveGeneratedLead } from '@/lib/prospects/persistence';
 import { extractProspectMetadata } from '@/lib/prospects/metadata';
@@ -13,7 +12,8 @@ import { getSalesConstitutionContext } from '@/lib/sales-constitution';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
-import { resolveScoutUser } from '@/lib/scout-data';
+import { verifiedCustomerUser } from '@/lib/customer-session';
+import { normalizeOutboundCopy } from '@/lib/outbound-copy';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   validateGeneratedChannels,
@@ -43,6 +43,7 @@ CRITICAL SYSTEM DIRECTIVES (STRICTLY ENFORCED):
 
 1. Zero Hallucinated Context: The core pain point must be derived only from the incident field in TRUSTED PROSPECT INPUT (the supplied incident details). If incident is absent, do not invent a pain, event, software, metric, or monetary loss. If it mentions manual labor, discuss only that supplied operational issue. Do not assume specific software unless explicitly stated in incident.
 1a. Only FrameLeads Brain entries marked VERIFIED can support company/product factual claims; other Brain entries may guide voice only.
+1b. Write like a clear, thoughtful professional. Use natural sentence lengths and plain sentence breaks. Do not use em dashes, en dashes, formulaic contrast patterns (such as "the problem isn't X, it's Y"), generic SaaS filler, or markdown formatting in copy.
 2. Abolish Fake Empathy: You are forbidden from using generic B2B pleasantries. Do not start with phrases like "I noticed you are growing fast," or "Congrats on the scaling." The first sentence must immediately and cleanly address the operational reality extracted from the incident.
 3. No Fabrication: Never invent financial values, performance metrics, software/tool usage, company facts, business events, pains, ROI, or offers. Use numbers only when present in trusted supplied input/context. If evidence is absent, omit the claim.
 
@@ -105,9 +106,6 @@ function sanitizeLeadingEmailSubject(body: unknown, subject: string): string {
 
 export async function POST(req: Request) {
   try {
-    const cookieStore = await cookies();
-    const userEmail = cookieStore.get('user_email')?.value;
-
     let {
       leads, 
       batch_id, 
@@ -130,7 +128,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
-    const authenticatedUser = await resolveScoutUser(prisma, cookieStore.get('frameleads_session')?.value, userEmail);
+    const authenticatedUser = await verifiedCustomerUser();
     const currentUser = authenticatedUser ? await prisma.user.findUnique({
       where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true },
     }) : null;
@@ -288,15 +286,20 @@ export async function POST(req: Request) {
 
               // Inject the array-hack join logic before validation
               if (generated.email && Array.isArray(generated.email.paragraphs)) {
+                generated.email.paragraphs = generated.email.paragraphs.map((paragraph: unknown) => typeof paragraph === 'string' ? normalizeOutboundCopy(paragraph) : paragraph);
                 generated.email.body = generated.email.paragraphs.join('\n\n');
               }
               if (generated.email && typeof generated.email === 'object') {
-                generated.email.subject = normalizeEmailSubject(generated.email.subject);
-                generated.email.body = sanitizeLeadingEmailSubject(
-                  generated.email.body,
-                  generated.email.subject
-                );
+                generated.email.subject = normalizeOutboundCopy(normalizeEmailSubject(generated.email.subject));
+                generated.email.body = normalizeOutboundCopy(sanitizeLeadingEmailSubject(generated.email.body, generated.email.subject));
               }
+              if (typeof generated.linkedin === 'string') generated.linkedin = normalizeOutboundCopy(generated.linkedin);
+              else if (generated.linkedin && typeof generated.linkedin.body === 'string') generated.linkedin.body = normalizeOutboundCopy(generated.linkedin.body);
+              if (typeof generated.coldCall === 'string') generated.coldCall = normalizeOutboundCopy(generated.coldCall);
+              else if (generated.coldCall && typeof generated.coldCall.body === 'string') generated.coldCall.body = normalizeOutboundCopy(generated.coldCall.body);
+              if (typeof generated.whatsapp === 'string') generated.whatsapp = normalizeOutboundCopy(generated.whatsapp);
+              else if (generated.whatsapp && typeof generated.whatsapp.body === 'string') generated.whatsapp.body = normalizeOutboundCopy(generated.whatsapp.body);
+              if (typeof generated.psLine === 'string') generated.psLine = normalizeOutboundCopy(generated.psLine);
               // Prevent crashes during validation if the LLM drops these keys based on the rigid prompt
               generated.linkedin = generated.linkedin || { body: "" };
               generated.coldCall = generated.coldCall || { body: "" };
@@ -334,7 +337,7 @@ export async function POST(req: Request) {
               );
               const rawPsLine = generated.psLine || "Here is a quick visual breakdown of this architecture in action.";
               const cleanPsLine = rawPsLine.replace(/^(P\.S\.|PS:|P\.S|PS)\s*/i, '').trim();
-              const finalEmailBody = `${generated.email.body}\n\nBest,\n${senderName}\n${companyName}\n\nP.S. ${cleanPsLine}`;
+              const finalEmailBody = normalizeOutboundCopy(`${generated.email.body}\n\nBest,\n${senderName}\n${companyName}\n\nP.S. ${cleanPsLine}`);
               generated.email.body = finalEmailBody;
             }
 
@@ -454,9 +457,9 @@ export async function POST(req: Request) {
 
     processedLeads = [...processedLeads, ...ghostLeads];
 
-    if (userEmail && allowedLeads.length > 0) {
+    if (allowedLeads.length > 0) {
       await prisma.user.update({
-        where: { email: userEmail },
+        where: { id: currentUserId },
         data: { leadsProcessed: { increment: allowedLeads.length } }
       });
     }
