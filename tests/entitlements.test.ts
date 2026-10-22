@@ -44,3 +44,61 @@ test('tier quota values remain locked', () => {
   assert.equal(monthlyLeadQuotaForTier('ENTERPRISE'), 20_000);
   assert.equal(monthlyLeadQuotaForTier('unknown'), 0);
 });
+
+
+test('current paid Core and Enterprise plan IDs resolve without trusting product names', async () => {
+  const { resolveWhopSubscription } = await import('../src/lib/whop-subscription');
+  const previousCore = process.env.WHOP_CORE_IDS;
+  const previousEnterprise = process.env.WHOP_ENTERPRISE_IDS;
+  const previousCorePattern = process.env.WHOP_CORE_PATTERN;
+  const previousEnterprisePattern = process.env.WHOP_ENTERPRISE_PATTERN;
+  try {
+    delete process.env.WHOP_CORE_IDS;
+    delete process.env.WHOP_ENTERPRISE_IDS;
+    delete process.env.WHOP_CORE_PATTERN;
+    delete process.env.WHOP_ENTERPRISE_PATTERN;
+    for (const [planId, expectedTier, expectedQuota] of [
+      ['plan_sAEhr77rTrhX4', 'CORE', 500],
+      ['plan_jdy5Z44fMKMAz', 'ENTERPRISE', 20_000],
+      ['plan_MUeh0CYdRPPaJ', 'CORE', 500],
+      ['plan_PZqjKqvMr0KBI', 'ENTERPRISE', 20_000],
+    ] as const) {
+      const mapped = resolveWhopSubscription({
+        product: { id: 'prod_unrecognized', name: 'Unnamed' },
+        plan: { id: planId, name: 'Unnamed' },
+      });
+      assert.equal(mapped.tier, expectedTier, planId);
+      assert.equal(mapped.monthlyQuota, expectedQuota, planId);
+    }
+    assert.throws(() => resolveWhopSubscription({
+      product: { id: 'prod_unrecognized' },
+      plan: { id: 'plan_unrecognized' },
+    }), /Unrecognized Whop product/);
+  } finally {
+    if (previousCore === undefined) delete process.env.WHOP_CORE_IDS;
+    else process.env.WHOP_CORE_IDS = previousCore;
+    if (previousEnterprise === undefined) delete process.env.WHOP_ENTERPRISE_IDS;
+    else process.env.WHOP_ENTERPRISE_IDS = previousEnterprise;
+    if (previousCorePattern === undefined) delete process.env.WHOP_CORE_PATTERN;
+    else process.env.WHOP_CORE_PATTERN = previousCorePattern;
+    if (previousEnterprisePattern === undefined) delete process.env.WHOP_ENTERPRISE_PATTERN;
+    else process.env.WHOP_ENTERPRISE_PATTERN = previousEnterprisePattern;
+  }
+});
+
+test('environment override remains authoritative and needs release verification', async () => {
+  const { resolveWhopSubscription } = await import('../src/lib/whop-subscription');
+  const before = process.env.WHOP_CORE_IDS;
+  const patternBefore = process.env.WHOP_CORE_PATTERN;
+  try {
+    process.env.WHOP_CORE_IDS = 'plan_sandbox_isolated';
+    process.env.WHOP_CORE_PATTERN = 'NEVER_MATCH_WHOP_CHECKOUT_CONTRACT';
+    assert.throws(() => resolveWhopSubscription({ plan: { id: 'plan_sAEhr77rTrhX4' } }), /Unrecognized Whop product/);
+    assert.equal(resolveWhopSubscription({ plan: { id: 'plan_sandbox_isolated' } }).tier, 'CORE');
+  } finally {
+    if (before === undefined) delete process.env.WHOP_CORE_IDS;
+    else process.env.WHOP_CORE_IDS = before;
+    if (patternBefore === undefined) delete process.env.WHOP_CORE_PATTERN;
+    else process.env.WHOP_CORE_PATTERN = patternBefore;
+  }
+});
