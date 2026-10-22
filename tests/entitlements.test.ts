@@ -102,3 +102,88 @@ test('environment override remains authoritative and needs release verification'
     else process.env.WHOP_CORE_PATTERN = patternBefore;
   }
 });
+
+
+test('Sandbox Core membership readback demands exact company, paid receipt, session and logged-in Whop subject', async () => {
+  const { reviewSandboxCoreMembershipEvidence } = await import('../src/lib/whop-sandbox-core-access-review');
+  const env = {
+    FRAMELEADS_SANDBOX_CORE_MEMBERSHIP_REVIEW_ENABLED: 'true',
+    VERCEL_ENV: 'preview', WHOP_ENVIRONMENT: 'sandbox',
+    WHOP_SANDBOX_ACCOUNT_ID: 'biz_6YudF3G7nc8Wdw',
+    WHOP_SANDBOX_PRODUCT_ID: 'prod_2RDEl6d8jhM9W',
+    WHOP_SANDBOX_CORE_PLAN_ID: 'plan_kgrX8LpuAH2Ba',
+    WHOP_COMPANY_ID: 'biz_RSQW7xARXYAQke',
+  };
+  const buyer = 'user_SandboxBuyer123';
+  const receipt = {
+    environment: 'sandbox' as const, state: 'PROCESSED' as const, linkage: 'LINKED' as const,
+    paymentId: 'pay_SandboxPurchase123', membershipId: 'mem_SandboxMember123',
+    checkoutConfigurationId: 'ch_SandboxCheckout123',
+    directAttemptId: '11111111-1111-4111-8111-111111111111',
+    accountId: env.WHOP_SANDBOX_ACCOUNT_ID, productId: env.WHOP_SANDBOX_PRODUCT_ID,
+    planId: env.WHOP_SANDBOX_CORE_PLAN_ID,
+  };
+  const membership = {
+    id: receipt.membershipId, checkout_configuration_id: receipt.checkoutConfigurationId,
+    company: { id: receipt.accountId },
+    plan: { id: receipt.planId, title: 'Enterprise-looking text must not upgrade tier' },
+    product: { id: receipt.productId, title: 'Unknown name' },
+    user: { id: buyer, email: 'different@example.com' },
+    status: 'active', currency: 'usd',
+    metadata: {
+      frameleads_direct_checkout_attempt_id: receipt.directAttemptId,
+      affiliate_verification: 'NO_AFFILIATE',
+    },
+  };
+
+  const result = reviewSandboxCoreMembershipEvidence(env, buyer, receipt, membership);
+  assert.deepEqual(result, { status: 'EVIDENCE_MATCHED', tier: 'CORE', monthlyQuota: 500 });
+  assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+    { ...env, FRAMELEADS_SANDBOX_CORE_MEMBERSHIP_REVIEW_ENABLED: undefined },
+    buyer, receipt, membership,
+  ), { status: 'DISABLED' });
+  assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+    { ...env, VERCEL_ENV: 'production' }, buyer, receipt, membership,
+  ), { status: 'DISABLED' });
+  assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+    { ...env, WHOP_SANDBOX_ACCOUNT_ID: env.WHOP_COMPANY_ID }, buyer, receipt, membership,
+  ), { status: 'DISABLED' });
+
+  for (const patch of [
+    { environment: 'production' as const },
+    { state: 'REVIEW_REQUIRED' as const },
+    { linkage: 'UNLINKED' as const },
+    { paymentId: 'not-provider-id' },
+    { membershipId: 'mem_Other' },
+    { checkoutConfigurationId: 'ch_Other' },
+    { directAttemptId: 'invalid-uuid' },
+    { accountId: env.WHOP_COMPANY_ID }, { productId: 'prod_Other' },
+    { planId: 'plan_sAEhr77rTrhX4' },
+  ]) {
+    assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+      env, buyer, { ...receipt, ...patch }, membership,
+    ), { status: 'REVIEW_REQUIRED' }, JSON.stringify(patch));
+  }
+  for (const patch of [
+    { id: 'mem_Other' }, { checkout_configuration_id: 'ch_Other' },
+    { company: { id: env.WHOP_COMPANY_ID } },
+    { plan: { id: 'plan_jdy5Z44fMKMAz', title: 'Core' } },
+    { product: { id: 'prod_Other', title: 'Core' } },
+    { user: { id: 'user_Other', email: 'different@example.com' } },
+    { status: 'past_due' }, { status: 'trialing' }, { status: 'canceled' },
+    { currency: 'aed' },
+    { metadata: { ...membership.metadata, frameleads_checkout_attempt_id: receipt.directAttemptId } },
+    { metadata: { ...membership.metadata, affiliate_code: 'PARTNER' } },
+    { metadata: { ...membership.metadata, frameleads_direct_checkout_attempt_id: '22222222-2222-4222-8222-222222222222' } },
+  ]) {
+    assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+      env, buyer, receipt, { ...membership, ...patch },
+    ), { status: 'REVIEW_REQUIRED' }, JSON.stringify(patch));
+  }
+  assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+    env, 'user_Attacker', receipt, membership,
+  ), { status: 'REVIEW_REQUIRED' });
+  assert.deepEqual(reviewSandboxCoreMembershipEvidence(
+    env, buyer, receipt, null,
+  ), { status: 'REVIEW_REQUIRED' });
+});
