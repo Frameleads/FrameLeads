@@ -25,8 +25,13 @@ export class UnrecognizedWhopProductError extends Error {
 
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
-  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ"],
-  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI"],
+  // Preserve pre-existing active memberships and recognize the exact newer
+  // checkout plan IDs sold by FrameLeads Landing / Brand Brain. These are
+  // provider plan identifiers, not prices and not synthetic payment evidence.
+  // A configured WHOP_*_IDS list still overrides these defaults; release
+  // verification must compare actual production environment configuration.
+  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ", "plan_sAEhr77rTrhX4"],
+  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz"],
 } as const;
 
 function configuredIds(name: string, defaults: readonly string[]) {
