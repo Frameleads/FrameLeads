@@ -228,8 +228,9 @@ test('Sandbox Core lifecycle review refuses stale, disputed, refunded, or unrela
     status: 'PAID' as const, adversePaymentSignal: false,
     checkedAtEpochSeconds: now - 5,
   };
-  const call=(payment=paid, m=membership, when=now)=>
-    reviewSandboxCorePaymentLifecycleForE2E(env,id,receipt,m,payment,when);
+  const call=(payment: unknown=paid, m=membership, when=now)=>
+    reviewSandboxCorePaymentLifecycleForE2E(env,id,receipt,m,
+      payment as Parameters<typeof reviewSandboxCorePaymentLifecycleForE2E>[4],when);
   assert.deepEqual(call(), {status:'EVIDENCE_MATCHED_FOR_E2E'});
   for (const status of ['PENDING','FAILED','REFUNDED','DISPUTED','CHARGEBACK','UNKNOWN'] as const)
     assert.deepEqual(call({...paid,status}), {status:'REVIEW_REQUIRED'});
