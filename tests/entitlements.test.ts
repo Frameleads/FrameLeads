@@ -187,3 +187,69 @@ test('Sandbox Core membership readback demands exact company, paid receipt, sess
     env, buyer, receipt, null,
   ), { status: 'REVIEW_REQUIRED' });
 });
+
+
+test('Sandbox Core lifecycle review refuses stale, disputed, refunded, or unrelated payment evidence', async () => {
+  const { reviewSandboxCorePaymentLifecycleForE2E } =
+    await import('../src/lib/whop-sandbox-core-lifecycle-review');
+  const env = {
+    FRAMELEADS_SANDBOX_CORE_MEMBERSHIP_REVIEW_ENABLED: 'true',
+    VERCEL_ENV: 'preview', WHOP_ENVIRONMENT: 'sandbox',
+    WHOP_SANDBOX_ACCOUNT_ID: 'biz_6YudF3G7nc8Wdw',
+    WHOP_SANDBOX_PRODUCT_ID: 'prod_2RDEl6d8jhM9W',
+    WHOP_SANDBOX_CORE_PLAN_ID: 'plan_kgrX8LpuAH2Ba',
+    WHOP_COMPANY_ID: 'biz_NotSandbox',
+  };
+  const id='user_Buyer0001';
+  const receipt = {
+    environment: 'sandbox' as const, state: 'PROCESSED' as const,
+    linkage: 'LINKED' as const,
+    paymentId: 'pay_Initial0001', membershipId: 'mem_Buyer0001',
+    checkoutConfigurationId: 'ch_Checkout0001',
+    directAttemptId: '11111111-1111-4111-8111-111111111111',
+    accountId: env.WHOP_SANDBOX_ACCOUNT_ID, planId: env.WHOP_SANDBOX_CORE_PLAN_ID,
+    productId: env.WHOP_SANDBOX_PRODUCT_ID,
+  };
+  const membership = {
+    id: receipt.membershipId, checkout_configuration_id: receipt.checkoutConfigurationId,
+    company: { id: receipt.accountId }, plan: { id: receipt.planId },
+    product: { id: receipt.productId }, user: { id },
+    status: 'active', currency: 'usd',
+    metadata: {
+      frameleads_direct_checkout_attempt_id: receipt.directAttemptId,
+      affiliate_verification: 'NO_AFFILIATE',
+    },
+  };
+  const now=1800000000;
+  const paid = {
+    source: 'AUTHENTICATED_WHOP_READBACK' as const, paymentId: 'pay_Renewal0001',
+    membershipId: receipt.membershipId, accountId: receipt.accountId,
+    productId: receipt.productId, planId: receipt.planId,
+    status: 'PAID' as const, adversePaymentSignal: false,
+    checkedAtEpochSeconds: now - 5,
+  };
+  const call=(payment=paid, m=membership, when=now)=>
+    reviewSandboxCorePaymentLifecycleForE2E(env,id,receipt,m,payment,when);
+  assert.deepEqual(call(), {status:'EVIDENCE_MATCHED_FOR_E2E'});
+  for (const status of ['PENDING','FAILED','REFUNDED','DISPUTED','CHARGEBACK','UNKNOWN'] as const)
+    assert.deepEqual(call({...paid,status}), {status:'REVIEW_REQUIRED'});
+  for (const bad of [
+    {...paid,adversePaymentSignal:true},
+    {...paid,source:'BROWSER_CALLBACK' as const},
+    {...paid,membershipId:'mem_Attacker0001'},
+    {...paid,accountId:'biz_Wrong0001'},
+    {...paid,planId:'plan_Wrong0001'},
+    {...paid,productId:'prod_Wrong0001'},
+    {...paid,checkedAtEpochSeconds:now-301},
+    {...paid,checkedAtEpochSeconds:now+31},
+  ]) assert.deepEqual(call(bad),{status:'REVIEW_REQUIRED'});
+  for (const badMembership of [
+    {...membership,status:'canceled'},
+    {...membership,status:'past_due'},
+    {...membership,user:{id:'user_Another0001'}},
+  ]) assert.deepEqual(call(paid,badMembership),{status:'REVIEW_REQUIRED'});
+  assert.deepEqual(call(null),{status:'REVIEW_REQUIRED'});
+  assert.deepEqual(reviewSandboxCorePaymentLifecycleForE2E(
+    {...env,VERCEL_ENV:'production'},id,receipt,membership,paid,now
+  ),{status:'DISABLED'});
+});
