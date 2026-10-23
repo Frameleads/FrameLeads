@@ -1,0 +1,36 @@
+name: Whop entitlement checkout plan compatibility
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/whop-subscription.ts"
+      - "src/lib/whop-sandbox-core-access-review.ts"
+      - "src/lib/whop-sandbox-core-lifecycle-review.ts"
+      - "tests/entitlements.test.ts"
+      - ".github/workflows/whop-checkout-plan-compat.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Generate Prisma client without database access
+        run: npx prisma generate
+      - name: Check entitlement and checkout plan mappings
+        run: npm run test:entitlements
+      - name: Check Whop OAuth callback compatibility
+        run: npm run test:whop-oauth
+      - name: Typecheck
+        run: npx tsc --noEmit
