@@ -5,6 +5,7 @@ on:
     paths:
       - "src/lib/whop-subscription.ts"
       - "src/lib/whop-sandbox-core-access-review.ts"
+      - "src/lib/whop-sandbox-core-lifecycle-review.ts"
       - "tests/entitlements.test.ts"
       - ".github/workflows/whop-checkout-plan-compat.yml"
   workflow_dispatch:
