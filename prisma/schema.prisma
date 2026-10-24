@@ -147,6 +147,7 @@ model User {
   marketMessagingProfiles MarketMessagingProfile[]
   microPilotDecisionClaims MicroPilotDecisionClaim[]
   microPilotResearchClaims MicroPilotResearchClaim[]
+  microPilotOutboundClaims MicroPilotOutboundClaim[]
 }
 
 model WhopWebhookReceipt {
@@ -306,6 +307,18 @@ model MicroPilotResearchClaim {
   prospect   Prospect @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([userId, prospectId])
+  @@index([userId, createdAt])
+}
+
+model MicroPilotOutboundClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  identityKey String
+  status     String   @default("RESERVED")
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, identityKey])
   @@index([userId, createdAt])
 }
 

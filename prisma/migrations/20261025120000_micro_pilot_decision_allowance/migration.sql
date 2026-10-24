@@ -14,6 +14,35 @@ WHERE u."tier" = 'MICRO_PILOT';
 
 UPDATE "User" SET "microPilotOutboundUsed" = LEAST(25, "leadsProcessed") WHERE "tier" = 'MICRO_PILOT';
 
+CREATE TABLE "MicroPilotOutboundClaim" (
+  "id" TEXT NOT NULL,
+  "userId" TEXT NOT NULL,
+  "identityKey" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'RESERVED',
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "MicroPilotOutboundClaim_pkey" PRIMARY KEY ("id")
+);
+CREATE UNIQUE INDEX "MicroPilotOutboundClaim_userId_identityKey_key"
+ON "MicroPilotOutboundClaim"("userId", "identityKey");
+CREATE INDEX "MicroPilotOutboundClaim_userId_createdAt_idx"
+ON "MicroPilotOutboundClaim"("userId", "createdAt");
+ALTER TABLE "MicroPilotOutboundClaim" ADD CONSTRAINT "MicroPilotOutboundClaim_userId_fkey"
+FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Give previously generated prospects stable identities so retries do not count them again.
+INSERT INTO "MicroPilotOutboundClaim" ("id", "userId", "identityKey", "status", "createdAt")
+SELECT md5(u."id" || ':' || src."identityKey"), u."id", src."identityKey", 'COMPLETED', MIN(src."createdAt")
+FROM "User" u
+JOIN (
+  SELECT g."userId", g."createdAt",
+    CASE WHEN NULLIF(BTRIM(g."linkedInUrl"), '') IS NOT NULL THEN 'linkedin:' || LOWER(BTRIM(g."linkedInUrl"))
+      ELSE 'email:' || LOWER(BTRIM(g."email")) END AS "identityKey"
+  FROM "GeneratedLead" g
+  WHERE NULLIF(BTRIM(g."linkedInUrl"), '') IS NOT NULL OR NULLIF(BTRIM(g."email"), '') IS NOT NULL
+) src ON src."userId" = u."id"
+WHERE u."tier" = 'MICRO_PILOT'
+GROUP BY u."id", src."identityKey";
+
 CREATE TABLE "MicroPilotResearchClaim" (
   "id" TEXT NOT NULL,
   "userId" TEXT NOT NULL,

@@ -75,6 +75,8 @@ export async function listPlaybookRules(input: { userId: string; take?: number; 
 export async function createPlaybookRule(input: { userId: string } & PlaybookRuleInput, db: PrismaClient = prisma) {
   const userId = owner(input.userId), data = validatePlaybookRule(input);
   return identityTransaction(db, async tx => {
+    // Lock the tenant row so concurrent create requests cannot both pass the Micro-Pilot cap.
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const playbook = await root(tx, userId);
     const account = await tx.user.findUnique({ where: { id: userId }, select: { tier: true } });
     if (account?.tier === 'MICRO_PILOT') {

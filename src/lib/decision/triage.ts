@@ -13,7 +13,8 @@ import { selectTriageProvider, TRIAGE_MODEL, validateTriageOutput,
   classifyTriageFailure, safeGoogleDiagnostic, safeTriageOutputDiagnostic, type TriageFailureClass, type TriageAnalysis, type TriageProvider } from './provider';
 
 export type TriageDependencies = { db?: PrismaClient; provider?: TriageProvider; recordUsage?: typeof recordAIUsage;
-  buildContext?: typeof buildReplyDecisionContext; evaluatePolicy?: typeof evaluateSalesConstitution };
+  buildContext?: typeof buildReplyDecisionContext; evaluatePolicy?: typeof evaluateSalesConstitution;
+  onProviderRequestStart?: () => void };
 const MAX_REVIEW_REASONS = 8;
 const COMMERCIAL_AUTHORITY_INTENTS = new Set<Intent>([Intent.PRICING_INQUIRY, Intent.PRICING_OBJECTION,
   Intent.BUDGET_OBJECTION, Intent.NEGOTIATION]);
@@ -78,7 +79,7 @@ function policySnapshot(result: Awaited<ReturnType<typeof evaluateSalesConstitut
 }
 
 export async function triageInboundSignal(input: { userId: string; signalId: string;
-  retryOfDecisionId?: string; activationPreview?: boolean }, deps: TriageDependencies = {}) {
+  retryOfDecisionId?: string; activationPreview?: boolean; microPilotReserved?: boolean }, deps: TriageDependencies = {}) {
   const db = deps.db ?? prisma;
   if (!input.userId?.trim() || !input.signalId?.trim()) throw new TypeError('Tenant and signal required');
   const linked = await getInboundConversationMessage(input, db);
@@ -113,7 +114,8 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
   try {
     pending = await reserveTriageDecision(db, { userId: input.userId, prospectId: linked.signal.prospectId,
       conversationId: linked.conversation.id, inputMessageId: linked.message.id, contextFingerprint: fingerprint,
-      decisionType: DecisionType.INBOUND_TRIAGE, shadowMode: true, supersedesDecisionId }, input.activationPreview === true);
+      decisionType: DecisionType.INBOUND_TRIAGE, shadowMode: true, supersedesDecisionId }, input.activationPreview === true,
+      input.microPilotReserved === true);
   } catch (error) {
     if ((error as { code?: string }).code !== 'P2002') throw error;
     const existing = await db.decision.findUnique({ where: { userId_inputMessageId_decisionType_contextFingerprint: key }, include: { trace: true } });
@@ -152,7 +154,7 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
     const start = Date.now();
     try {
       const raw = await provider.analyze({ contextText: context.contextText }, {
-        onRequestStart: () => { providerStarted = true; }, onResponse: tokens => { usage = tokens; } });
+        onRequestStart: () => { providerStarted = true; deps.onProviderRequestStart?.(); }, onResponse: tokens => { usage = tokens; } });
       providerPhase='VALIDATION';
       analysis = validateTriageOutput(raw, context.currentReply);
       source = providerName==='ANTHROPIC'?Source.ANTHROPIC:Source.GEMINI;

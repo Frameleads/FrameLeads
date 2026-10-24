@@ -841,8 +841,8 @@ useEffect(() => {
               <Shield className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-white">Monthly Quota</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{leadsProcessed} of {monthlyQuota} leads generated</p>
+              <p className="text-sm font-semibold text-white">{userTier === 'MICRO_PILOT' ? 'One-Time Allowance' : 'Monthly Quota'}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{leadsProcessed} of {monthlyQuota} {userTier === 'MICRO_PILOT' ? 'outbound prospects used total' : 'leads generated'}</p>
             </div>
           </div>
           <div className="text-right">

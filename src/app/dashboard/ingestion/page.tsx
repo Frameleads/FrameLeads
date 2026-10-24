@@ -12,12 +12,13 @@ export default async function IngestionPage() {
 
   const user = await prisma.user.findUnique({
     where: { id: principal.id },
-    select: { tier: true, monthlyQuota: true, leadsProcessed: true }
+    select: { tier: true, monthlyQuota: true, leadsProcessed: true, microPilotOutboundUsed: true }
   });
   
   if (!user) {
     return <div>User not found</div>;
   }
 
-  return <IngestionClient userTier={user.tier} monthlyQuota={user.monthlyQuota} leadsProcessed={user.leadsProcessed} />;
+  return <IngestionClient userTier={user.tier} monthlyQuota={user.monthlyQuota}
+    leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed} />;
 }

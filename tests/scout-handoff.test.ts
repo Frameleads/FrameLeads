@@ -24,6 +24,7 @@ function fixture() {
       findFirst: async ({ where }: any) => leads.find(row => row.userId === where.userId && row.prospectId === where.prospectId) || null,
       create: async ({ data }: any) => { const lead = { id: `lead-${leads.length + 1}`, ...data }; leads.push(lead); return lead; },
     },
+    user: { findUnique: async () => ({ tier: 'CORE' }) },
     companyIntelligence: { updateMany: async () => { companyUpdates++; throw new Error('Company cache must not change'); } },
     aIUsageEvent: { create: async () => { usageCreates++; throw new Error('No AI usage expected'); } },
   };

@@ -7,7 +7,7 @@ import { researchProspectICP } from '@/lib/prospects/research';
 import { requireFeatureAccess } from '@/lib/auth-guard';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { qualifyProspect } from '@/lib/prospects/qualification';
-import { MicroPilotLimitError, reserveMicroPilotResearch } from '@/lib/micro-pilot-limits';
+import { MicroPilotLimitError, releaseUnstartedMicroPilotResearch, reserveMicroPilotResearch } from '@/lib/micro-pilot-limits';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,13 @@ export async function POST(request: Request) {
     if (!prospectId || prospectId.length > 128 || (body.forceRefresh !== undefined && typeof body.forceRefresh !== 'boolean') || (body.overrideQualification !== undefined && typeof body.overrideQualification !== 'boolean')) {
       return NextResponse.json({ success: false, error: 'Valid prospectId and forceRefresh are required.' }, { status: 400 });
     }
-    if (await getUserEntitlementTier(user.id) === 'MICRO_PILOT') {
+    const isMicroPilot = await getUserEntitlementTier(user.id) === 'MICRO_PILOT';
+    if (isMicroPilot) {
+      const priorIntelligence = await prisma.prospectIntelligence.findUnique({
+        where: { userId_prospectId: { userId: user.id, prospectId } }, select: { researchStatus: true },
+      });
+      if (priorIntelligence?.researchStatus === 'READY' && body.forceRefresh !== true)
+        return NextResponse.json(await runScoutResearch(user.id, prospectId, false, researchProspectICP, false));
       if (body.forceRefresh === true || body.overrideQualification === true) return NextResponse.json({ success: false,
         error: 'Micro-Pilot allows one research operation per qualified prospect.' }, { status: 403 });
       const qualification = await qualifyProspect({ userId: user.id, prospectId }, prisma);
@@ -40,6 +46,8 @@ export async function POST(request: Request) {
       }
     }
     const result = await runScoutResearch(user.id, prospectId, body.forceRefresh === true, researchProspectICP, body.overrideQualification === true);
+    if (isMicroPilot && result.status === 'FAILED' && result.retryableWithoutCharge)
+      await releaseUnstartedMicroPilotResearch(user.id, prospectId);
     return NextResponse.json({ success: true, status: result.status, evidenceCount: result.evidenceCount, warnings: result.warnings });
   } catch (error) {
     if (error instanceof ProspectIntelligenceNotFound) {

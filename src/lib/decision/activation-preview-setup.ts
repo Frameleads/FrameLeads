@@ -28,11 +28,16 @@ export function importPreviewProspect(userId: string, suppliedEmail: unknown, db
     if (!resolution.prospectId) throw new Error('PROSPECT_IDENTITY_CONFLICT');
     const existing = await tx.generatedLead.findFirst({ where: { userId, prospectId: resolution.prospectId }, select: { id: true, prospectId: true } });
     if (existing) return existing;
-    if (user.microPilotOutboundUsed >= 25) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
+    const identityKey = `email:${email}`;
+    const claim = await tx.microPilotOutboundClaim.findUnique({ where: { userId_identityKey: { userId, identityKey } } });
+    if (!claim) {
+      if (user.microPilotOutboundUsed >= 25) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
+      await tx.microPilotOutboundClaim.create({ data: { userId, identityKey, status: 'COMPLETED' } });
+      await tx.user.update({ where: { id: userId }, data: { microPilotOutboundUsed: { increment: 1 } } });
+    } else if (claim.status === 'RESERVED') throw new Error('MICRO_PILOT_OUTBOUND_RESERVED');
     const lead = await tx.generatedLead.create({ data: { userId, prospectId: resolution.prospectId, email,
       firstName: '', lastName: '', companyName: '', emailDraft: '', linkedInDraft: '' }, select: { id: true, prospectId: true } });
     await tx.user.update({ where: { id: userId }, data: { leadsProcessed: { increment: 1 } } });
-    await tx.user.update({ where: { id: userId }, data: { microPilotOutboundUsed: { increment: 1 } } });
     await recordProspectMemoryEventInTransaction(tx, { userId, prospectId: resolution.prospectId,
       eventType: MEMORY_EVENT.LEAD_LINKED, sourceType: 'GENERATED_LEAD', sourceId: lead.id, description: 'Controlled activation prospect imported without draft generation.' });
     return lead;

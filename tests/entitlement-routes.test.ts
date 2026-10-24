@@ -90,6 +90,30 @@ test('automatic inbound triage checks the current tier and only Enterprise mater
   assert.doesNotMatch(scheduler, /runAutopilot|sendNativeEmail|bookMeeting|automation\/actions/);
 });
 
+test('Micro-Pilot inbox routes authorize read/write mailbox access but skip all automatic paid AI work', () => {
+  const credentials = source('src/app/api/inbox/credentials/route.ts');
+  const sync = source('src/app/api/inbox/sync/route.ts');
+  assert.match(credentials, /requireFeatureAccess\('INBOX_TRIAGE'\)/);
+  assert.match(sync, /requireFeatureAccess\('INBOX_TRIAGE'\)/);
+  assert.match(credentials, /resolvePublicImapHost\(requestedHost\)/);
+  assert.match(credentials, /encrypt\(appPassword\)/);
+  assert.match(sync, /decrypt\(user\.imapPassword\)/);
+  assert.match(sync, /if \(tier !== 'MICRO_PILOT'\) scheduleInboundDecisions/);
+  assert.match(sync, /if \(tier !== 'MICRO_PILOT'\) await Promise\.allSettled/);
+  assert.match(sync, /rawEmail: cleanBody/);
+  assert.match(sync, /sourceMessageId: \{/);
+});
+
+test('Micro-Pilot cannot use direct email dispatch or widen access through Core/Enterprise paywall wrappers', () => {
+  const send = source('src/app/api/email/send/route.ts');
+  assert.match(send, /getUserEntitlementTier\(user\.id\) === 'MICRO_PILOT'/);
+  assert.ok(send.indexOf("getUserEntitlementTier(user.id) === 'MICRO_PILOT'") < send.indexOf('sendNativeEmail('));
+  const core = source('src/components/CorePaywall.tsx');
+  assert.match(core, /corePaywallFeatureForName\(featureName\)/);
+  const enterprise = source('src/components/EnterprisePaywall.tsx');
+  assert.match(enterprise, /featureName === 'Sales Constitution' \? 'CONSTITUTION_MANAGEMENT' : 'GOVERNANCE'/);
+});
+
 test('stalled Decision recovery is authenticated, tenant scoped, stale only, and requires explicit confirmation before a new version', () => {
   const recovery = source('src/app/api/decisions/recovery/route.ts');
   assert.match(recovery, /getAuthenticatedEntitlementUser\(\)/);

@@ -32,6 +32,7 @@ type Result = {
   evidenceCount: number;
   warnings: string[];
   reused: boolean;
+  retryableWithoutCharge?: boolean;
 };
 type GateResult = {
   status: 'NOT_ELIGIBLE' | 'QUALIFICATION_REQUIRED';
@@ -369,6 +370,8 @@ export async function researchProspectICP(
       where: { id: lease.id, ...scope, researchStatus: ProspectResearchStatus.RESEARCHING, updatedAt: lease.updatedAt },
       data: { researchStatus: ProspectResearchStatus.FAILED },
     });
-    return currentResult(db, scope, warnings);
+    const result = await currentResult(db, scope, warnings);
+    result.retryableWithoutCharge = !(error instanceof AIUsageRecordingError);
+    return result;
   }
 }

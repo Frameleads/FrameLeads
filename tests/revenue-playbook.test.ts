@@ -13,6 +13,7 @@ function fixture(tier = 'CORE') {
   const roots: any[] = [], rules: any[] = [];
   let usage = 0;
   const tx: any = {
+    $queryRaw: async () => [],
     user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id, tier } : null },
     revenuePlaybook: {
       upsert: async ({ where, create }: any) => { let row = roots.find(p => p.userId === where.userId); if (!row) { row = { id: `p-${where.userId}`, revision: 0, name: 'Default Revenue Playbook', ...create }; roots.push(row); } return { ...row }; },

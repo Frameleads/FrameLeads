@@ -8,7 +8,7 @@ import { featureAccessErrorForTier, getAuthenticatedEntitlementUser } from '@/li
 import { hasFeatureAccess } from '@/lib/entitlements';
 import { prisma } from '@/lib/prisma';
 import { UNCERTAIN_ANALYSIS_REASON } from '@/lib/decision/pending-recovery';
-import { MicroPilotLimitError, reserveMicroPilotDecision } from '@/lib/micro-pilot-limits';
+import { MicroPilotLimitError, releaseUnstartedMicroPilotDecision, reserveMicroPilotDecision } from '@/lib/micro-pilot-limits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -25,6 +25,8 @@ export async function POST(request: Request) {
     (body.retryOfDecisionId != null && (typeof body.retryOfDecisionId !== 'string' || body.retryOfDecisionId.length > 100)) ||
     (body.confirmProviderRequestEnded != null && typeof body.confirmProviderRequestEnded !== 'boolean'))
     return NextResponse.json({ error: 'Valid signal ID required.' }, { status: 400 });
+  let reservedProspectId: string | null = null;
+  let providerRequestStarted = false;
   try {
     if (isPilot) {
       if (body.retryOfDecisionId) return NextResponse.json({ error: 'Micro-Pilot decisions allow one initial analysis per prospect. Re-analysis is locked.' }, { status: 403 });
@@ -39,6 +41,7 @@ export async function POST(request: Request) {
           remaining: error.limit === 'DECISIONS_EXHAUSTED' ? 0 : undefined }, { status: 403 });
         throw error;
       }
+      reservedProspectId = signal.prospectId;
     }
     if (body.retryOfDecisionId) {
       const prior = await prisma.decision.findFirst({ where: { id: body.retryOfDecisionId, userId,
@@ -50,7 +53,10 @@ export async function POST(request: Request) {
       }
     }
     const result = await triageInboundSignal({ userId, signalId: body.signalId.trim(),
-      retryOfDecisionId: body.retryOfDecisionId || undefined });
+      retryOfDecisionId: body.retryOfDecisionId || undefined, microPilotReserved: isPilot },
+      { onProviderRequestStart: () => { providerRequestStarted = true; } });
+    if (isPilot && reservedProspectId && !providerRequestStarted && (!result.decision || result.decision.source === 'UNAVAILABLE'))
+      await releaseUnstartedMicroPilotDecision(userId, reservedProspectId);
     let automation = null;
     if (result.decision) {
       if (hasFeatureAccess(entitlementUser.tier, 'AUTOMATION')) {
@@ -65,6 +71,10 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ ...result, automation });
   } catch (error) {
+    // A provider request that started may have incurred cost even if the result
+    // was lost or persistence failed. Retain that reservation to prevent an unsafe retry.
+    if (isPilot && reservedProspectId && !providerRequestStarted)
+      await releaseUnstartedMicroPilotDecision(userId, reservedProspectId).catch(() => false);
     if (error instanceof Error && /not found|Retry source/.test(error.message)) return NextResponse.json({ error: 'Signal or retry source not found.' }, { status: 404 });
     console.error('[DECISION_TRIAGE] Failed', error);
     return NextResponse.json({ error: 'Decision triage could not complete. The inbound reply remains saved.' }, { status: 500 });

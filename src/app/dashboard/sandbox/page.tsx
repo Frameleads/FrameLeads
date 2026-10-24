@@ -26,7 +26,7 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
 
   const user = await prisma.user.findUnique({
     where: { id: authenticated.id },
-    select: { id: true, tier: true, monthlyQuota: true, leadsProcessed: true }
+    select: { id: true, tier: true, monthlyQuota: true, leadsProcessed: true, microPilotOutboundUsed: true }
   });
 
   if (!user) {
@@ -117,7 +117,7 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
 
   return (
     <SandboxClient
-      leadsProcessed={user.leadsProcessed}
+      leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed}
       monthlyQuota={user.monthlyQuota}
       userTier={user.tier}
       initialLeads={initialLeads}

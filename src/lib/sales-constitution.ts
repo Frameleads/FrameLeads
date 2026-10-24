@@ -222,6 +222,8 @@ export async function listConstitutionRevisionEvents(input: { userId: string; ta
 export async function createConstitutionRule(input: { userId: string; actorId?: string } & ConstitutionRuleInput, db: PrismaClient = prisma) {
   const { userId, actorId } = authorizeConstitutionMutation(input.userId, input.actorId), data = validateConstitutionRule(input);
   return identityTransaction(db, async tx => {
+    // Serialize tenant configuration writes before checking the Micro-Pilot cap.
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
     const constitution = await root(tx, userId);
     const account = await tx.user.findUnique({ where: { id: userId }, select: { tier: true } });
     if (account?.tier === 'MICRO_PILOT') {

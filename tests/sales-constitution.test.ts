@@ -35,6 +35,7 @@ function fixture(tier = 'CORE') {
   const roots: any[] = [], rules: any[] = [], events: any[] = [];
   let usage = 0;
   const tx: any = {
+    $queryRaw: async () => [],
     user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id, tier } : null },
     salesConstitution: {
       findUnique: async ({ where }: any) => { const row = roots.find(p => p.userId === where.userId); return row ? { ...row } : null; },

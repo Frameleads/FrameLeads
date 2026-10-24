@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { htmlToPlainText, sendNativeEmail, NativeMailUnavailable } from '@/lib/outbound/native-mail';
-import { requireFeatureAccess } from '@/lib/auth-guard';
+import { getUserEntitlementTier, requireFeatureAccess } from '@/lib/auth-guard';
 import { verifiedCustomerUser } from '@/lib/customer-session';
 
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export async function POST(request: Request) {
       where: { id: principal.id },
       select: {
         id: true,
+        tier: true,
         imapEmail: true,
         imapPassword: true,
         imapHost: true,
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
+    if (await getUserEntitlementTier(user.id) === 'MICRO_PILOT') return NextResponse.json({ success: false,
+      error: 'Micro-Pilot does not allow direct outbound email dispatch.' }, { status: 403 });
     if (!user.imapEmail || !user.imapPassword || !user.imapHost) {
       return NextResponse.json(
         { success: false, error: "Connect your native inbox before sending email." },

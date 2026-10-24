@@ -3,13 +3,15 @@ import { prisma } from '../prisma';
 import { identityTransaction } from './identity';
 import { qualifyProspect } from './qualification';
 import { MEMORY_EVENT, recordProspectMemoryEventInTransaction } from './memory';
+import { microPilotOutboundIdentityKey } from '../micro-pilot-limits';
 
-export type SandboxHandoffFailure = 'NOT_FOUND' | 'QUALIFICATION_REQUIRED' | 'RESEARCH_REQUIRED';
+export type SandboxHandoffFailure = 'NOT_FOUND' | 'QUALIFICATION_REQUIRED' | 'RESEARCH_REQUIRED' | 'OUTBOUND_LIMIT_REACHED' | 'OUTBOUND_ALREADY_RESERVED';
 
 export class SandboxHandoffError extends Error {
   constructor(public readonly reason: SandboxHandoffFailure) {
     super(reason === 'NOT_FOUND' ? 'Prospect not found.' : reason === 'QUALIFICATION_REQUIRED'
-      ? 'Qualify this prospect before sending it to Sandbox.' : 'Complete Scout research before sending this prospect to Sandbox.');
+      ? 'Qualify this prospect before sending it to Sandbox.' : reason === 'RESEARCH_REQUIRED'
+      ? 'Complete Scout research before sending this prospect to Sandbox.' : 'Micro-Pilot outbound prospect allowance is unavailable.');
   }
 }
 
@@ -36,6 +38,20 @@ export async function sendProspectToSandbox(
       where: { userId: scope.userId, prospectId: scope.prospectId }, orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
+    const account = await tx.user.findUnique({ where: { id: scope.userId }, select: { tier: true } });
+    if (account?.tier === 'MICRO_PILOT' && !existing) {
+      const identityKey = microPilotOutboundIdentityKey(prospect);
+      if (!identityKey) throw new SandboxHandoffError('OUTBOUND_LIMIT_REACHED');
+      const claim = await tx.microPilotOutboundClaim.findUnique({ where: { userId_identityKey: { userId: scope.userId, identityKey } } });
+      if (claim?.status === 'RESERVED') throw new SandboxHandoffError('OUTBOUND_ALREADY_RESERVED');
+      if (!claim) {
+        try { await tx.microPilotOutboundClaim.create({ data: { userId: scope.userId, identityKey, status: 'COMPLETED' } }); }
+        catch (error) { if ((error as { code?: string }).code === 'P2002') throw new SandboxHandoffError('OUTBOUND_ALREADY_RESERVED'); throw error; }
+        const reserved = await tx.user.updateMany({ where: { id: scope.userId, tier: 'MICRO_PILOT', microPilotOutboundUsed: { lt: 25 } },
+          data: { microPilotOutboundUsed: { increment: 1 } } });
+        if (!reserved.count) throw new SandboxHandoffError('OUTBOUND_LIMIT_REACHED');
+      }
+    }
     const lead = existing || await tx.generatedLead.create({ data: {
       userId: scope.userId, prospectId: scope.prospectId,
       firstName: prospect.firstName || '', lastName: prospect.lastName || '',

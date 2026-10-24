@@ -6,6 +6,9 @@ import { SCOUT_RESEARCH_MODEL, type ResearchProvider, type ResearchRequest } fro
 export class AIUsageRecordingError extends Error {
   constructor(cause: unknown) { super('AI usage recording failed', { cause }); }
 }
+export class ResearchProviderNotStartedError extends Error {
+  constructor(cause: unknown) { super('Research provider request did not start', { cause }); }
+}
 
 export async function analyzeScoutWithUsage(input: {
   db: PrismaClient;
@@ -44,6 +47,9 @@ export async function analyzeScoutWithUsage(input: {
       }, input.db);
     } catch (error) { throw new AIUsageRecordingError(error); }
   }
-  if (failure) throw failure;
+  if (failure) {
+    if (!attempted) throw new ResearchProviderNotStartedError(failure);
+    throw failure;
+  }
   return output;
 }
