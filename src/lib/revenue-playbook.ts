@@ -76,6 +76,11 @@ export async function createPlaybookRule(input: { userId: string } & PlaybookRul
   const userId = owner(input.userId), data = validatePlaybookRule(input);
   return identityTransaction(db, async tx => {
     const playbook = await root(tx, userId);
+    const account = await tx.user.findUnique({ where: { id: userId }, select: { tier: true } });
+    if (account?.tier === 'MICRO_PILOT') {
+      const configured = await tx.revenuePlaybookRule.count({ where: { userId, source: Source.USER_ENTERED, archivedAt: null } });
+      if (configured >= 2) throw new Error('Micro-Pilot supports up to 2 configured Revenue Playbook rules.');
+    }
     const rule = await tx.revenuePlaybookRule.create({ data: { userId, playbookId: playbook.id, ...data, source: Source.USER_ENTERED } });
     if (rule.enabled) await tx.revenuePlaybook.update({ where: { userId }, data: { revision: { increment: 1 } } });
     return rule;
@@ -122,6 +127,8 @@ export async function getPlaybookContext(input: { userId: string; purpose?: Play
   const explicit = input.scenarios ?? [], relevant = input.purpose ? purposeScenarios[input.purpose] : [];
   const scenarios = [...new Set([...explicit, ...relevant, Scenario.GENERAL])];
   const maxRules = Math.min(10, Math.max(1, input.maxRules ?? 6)), maxCharacters = Math.min(5000, Math.max(1, input.maxCharacters ?? 3000));
+  const account = await db.user.findUnique({ where: { id: userId }, select: { tier: true } });
+  const isMicroPilot = account?.tier === 'MICRO_PILOT';
   const common = { userId, playbookId: playbook.id, enabled: true, archivedAt: null,
     AND: [input.qualificationStatus ? { OR: [{ qualificationCondition: null }, { qualificationCondition: input.qualificationStatus }] } : { qualificationCondition: null },
       input.direction ? { OR: [{ direction: null }, { direction: input.direction }] } : { direction: null }] };
@@ -138,12 +145,14 @@ export async function getPlaybookContext(input: { userId: string; purpose?: Play
       b.updatedAt.getTime() - a.updatedAt.getTime() || a.id.localeCompare(b.id);
   });
   const selected: { id: string; scenario: Scenario; priority: number; source: Source; text: string }[] = [];
-  let used = 0;
+  let used = 0, pilotUserRules = 0;
   for (const rule of candidates) {
     if (selected.length >= maxRules) break;
+    if (isMicroPilot && rule.source === Source.USER_ENTERED && pilotUserRules >= 2) continue;
     const text = render(rule);
     if (used + text.length + 1 > maxCharacters) continue;
     selected.push({ id: rule.id, scenario: rule.scenario, priority: rule.priority, source: rule.source, text });
+    if (isMicroPilot && rule.source === Source.USER_ENTERED) pilotUserRules++;
     used += text.length + 1;
   }
   return { revision: playbook.revision, rules: selected, contextText: selected.map(r => r.text).join('\n').slice(0, maxCharacters) };

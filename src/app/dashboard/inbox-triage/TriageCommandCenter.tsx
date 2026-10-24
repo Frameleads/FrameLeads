@@ -96,11 +96,11 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
   escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
   riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier }: { signalId: string;
+function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, canAnalyze, canReanalyze }: { signalId: string;
   reply: string;
   onDecision: (signalId: string, status: string, packet?: DecisionPacket) => void;
   onRisk: (signalId: string, risk: RevenueRiskView) => void;
-  onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean }) {
+  onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean; canAnalyze: boolean; canReanalyze: boolean }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
   const [awaitingDecision, setAwaitingDecision] = useState(true);
@@ -269,15 +269,20 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`} className="inline-flex min-h-11 items-center rounded-lg border border-white/[0.1] px-3 py-2 text-xs text-white/65 transition-colors hover:border-white/25 hover:text-white focus-visible:outline">Replay</Link>}
-        <button type="button" disabled={running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
+        <button type="button" disabled={(!packet ? !canAnalyze : !canReanalyze) || running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
           className="min-h-11 rounded-lg border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.06] px-3 py-2 text-xs font-semibold text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.12] disabled:opacity-40">
-          {running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
+          {!canAnalyze && !packet ? 'Decision intelligence locked' : running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
         </button>
         {packet?.status === 'PENDING' && packet.createdAt && Date.now() - new Date(packet.createdAt).getTime() >= 10 * 60 * 1000 &&
           <button type="button" onClick={() => void markStalledForReview()}
             className="min-h-11 rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-300">Mark outcome uncertain</button>}
       </div>
     </header>
+    {!canAnalyze && !packet && <div className="mt-5 rounded-xl border border-[#FF5A1F]/25 bg-[#1A1A1A] p-5">
+      <p className="font-mono text-xs font-bold tracking-widest text-[#FF5A1F]">🔒 DECISION INTELLIGENCE LOCKED</p>
+      <p className="mt-2 text-sm text-white/65">Your three Micro-Pilot decision analyses have been used. This original reply remains available to read.</p>
+      <Link href="/dashboard/billing" className="mt-4 inline-flex rounded-lg bg-[#FF5A1F] px-4 py-2 text-sm font-semibold text-black">Upgrade to Core</Link>
+    </div>}
     {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
@@ -324,17 +329,20 @@ function SummaryCard({ label, value, detail, active = false }: { label: string; 
 export default function TriageCommandCenter({
   initialData,
   userTier,
+  pilotDecisionsRemaining = 0,
   slaDueSoonPercent = 75,
 }: {
   initialData: any;
   userTier: string;
+  pilotDecisionsRemaining?: number;
   slaDueSoonPercent?: number;
 }) {
   const router = useRouter();
   const isCoreTier = !hasFeatureAccess(userTier, 'AUTOMATION');
   const hasInboxAccess = hasFeatureAccess(userTier, 'INBOX_TRIAGE');
   const isEnterpriseTier = hasFeatureAccess(userTier, 'REVENUE_RISK');
-  const hasDecisionEngineAccess = hasFeatureAccess(userTier, 'DECISION_ENGINE');
+  const hasDecisionEngineAccess = hasFeatureAccess(userTier, 'DECISION_ENGINE') || (userTier === 'MICRO_PILOT' && pilotDecisionsRemaining > 0);
+  const canGenerateLegacyDraft = userTier !== 'MICRO_PILOT' && hasDecisionEngineAccess;
   const dbLeads = useMemo(() => Array.isArray(initialData) && initialData.length > 0
     ? initialData.map((s: any) => ({
         id: s.id,
@@ -355,6 +363,7 @@ export default function TriageCommandCenter({
           intentRisk: s.intentRisk, reply: s.rawEmail || '' }),
         strategyLogic: s.signalAnalysis || "Awaiting strategy logic...",
         decisionStatus: s.decisionStatus || null,
+        decisionId: s.decisionId || null,
         decisionSource: s.decisionSource || null,
         revenueRisk: s.revenueRisk || null,
         responseSLA: s.responseSLA || null,
@@ -1104,7 +1113,8 @@ export default function TriageCommandCenter({
         </div>
 
         <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} reply={activeLead.inboundSignal} onDecision={updateDecisionStatus}
-          onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier} />
+          onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier}
+          canAnalyze={hasDecisionEngineAccess && !activeLead.decisionId} canReanalyze={userTier !== 'MICRO_PILOT'} />
 
         <div className="mt-6 flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
           
@@ -1235,7 +1245,9 @@ export default function TriageCommandCenter({
 
               {/* 5. The Action Buttons (Stacked natively at the bottom) */}
               <div className="sticky bottom-0 z-20 -mx-4 flex w-[calc(100%+2rem)] flex-col gap-3 border-t border-[#1A1A1A] bg-[#0D0D0D]/95 p-4 backdrop-blur-md md:static md:mx-0 md:w-full md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
-                {queueView === 'archived' ? (
+                {queueView === 'archived' ? userTier === 'MICRO_PILOT' ? (
+                  <p className="rounded-lg border border-white/10 bg-[#1A1A1A] p-3 text-xs text-white/55">Original messages are retained with your Micro-Pilot account.</p>
+                ) : (
                   <button
                     type="button"
                     onClick={handlePermanentDelete}
@@ -1252,8 +1264,8 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    <button type="button" onClick={handleRegenerate} disabled={!hasDecisionEngineAccess || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
-                      {!hasDecisionEngineAccess ? 'Decision Engine unavailable' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                    <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
+                      {!canGenerateLegacyDraft ? 'Use Decision analysis' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
                     </button>
                     <button
                       type="button"

@@ -33,7 +33,9 @@ export function hasFeatureAccess(tierValue: unknown, feature: FeatureKey): boole
   const tier = normalizeFrameLeadsTier(tierValue);
   if (tier === 'INACTIVE') return false;
   if (tier === 'ENTERPRISE') return true;
+  if (tier === 'MICRO_PILOT' && ['SCOUT', 'ICP', 'PROSPECT_RESEARCH', 'BRAIN', 'PLAYBOOK', 'CONSTITUTION_MANAGEMENT'].includes(feature)) return true;
   if (ENTERPRISE_FEATURES.has(feature)) return false;
+  if (feature === 'INBOX_TRIAGE' || feature === 'DECISION_REPLAY') return tier === 'MICRO_PILOT' || tier === 'CORE';
   if (CORE_FEATURES.has(feature)) return tier === 'CORE';
   return tier === 'MICRO_PILOT' || tier === 'CORE';
 }

@@ -10,6 +10,9 @@ export async function POST(req: Request) {
     if (authError) return authError;
     const user = await verifiedCustomerUser();
     if (!user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    const account = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true } });
+    if (account?.tier === 'MICRO_PILOT') return NextResponse.json({ success: false,
+      error: 'Use the governed Decision approval flow for Micro-Pilot replies.' }, { status: 403 });
 
     const { leadId, replyText, leadEmail } = await req.json();
 

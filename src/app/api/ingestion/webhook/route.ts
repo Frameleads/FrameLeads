@@ -196,6 +196,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'INBOX_TRIAGE',
         requiredTier: requiredTierForFeature('INBOX_TRIAGE') }, { status: 403 });
     }
+    if (!hasFeatureAccess(tier, 'DECISION_ENGINE')) {
+      return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'DECISION_ENGINE',
+        requiredTier: requiredTierForFeature('DECISION_ENGINE') }, { status: 403 });
+    }
 
     // ── Step 2: PARSE & NORMALIZE ────────────────────────────────────
     let rawPayload: Record<string, any>;

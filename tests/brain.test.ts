@@ -6,8 +6,8 @@ import { BrainKnowledgeCategory as C, BrainKnowledgeSource as S, BrainVerificati
 import { getOrCreateFrameLeadsBrain, rebuildBrainFromCanonicalSources, upsertBrainKnowledge,
   removeBrainKnowledge, getBrainKnowledge, getBrainContext, refreshBrainSummary } from '../src/lib/brain';
 
-function fixture() {
-  const users: Record<string, any> = { a: { id: 'a', rootBrandDomain: 'acme.example' }, b: { id: 'b', rootBrandDomain: null } };
+function fixture(tier = 'CORE') {
+  const users: Record<string, any> = { a: { id: 'a', tier, rootBrandDomain: 'acme.example' }, b: { id: 'b', tier: 'CORE', rootBrandDomain: null } };
   const profiles: Record<string, any> = { a: { id: 'icp-a', userId: 'a', targetTitles: ['VP Sales'], targetSeniorities: [], targetIndustries: ['B2B SaaS'],
     targetGeographies: [], excludedTitles: [], excludedIndustries: [], excludedDomains: [], requiredKeywords: [], excludedKeywords: [], companySizeMin: null, companySizeMax: null } };
   const roots: any[] = [], entries: any[] = []; let usage = 0;
@@ -20,6 +20,8 @@ function fixture() {
       update: async ({ where, data }: any) => { const row = roots.find(r => r.userId === where.userId); if (data.revision) row.revision += data.revision.increment; if (data.compactSummary !== undefined) row.compactSummary = data.compactSummary; return { ...row }; },
     },
     brainKnowledgeEntry: {
+      count: async ({ where }: any) => entries.filter(e => e.userId === where.userId && e.sourceType === where.sourceType &&
+        (where.archivedAt === undefined || e.archivedAt === where.archivedAt)).length,
       findMany: async ({ where, orderBy, take, cursor }: any) => {
         let rows = entries.filter(e => e.userId === where.userId && (where.brainId === undefined || e.brainId === where.brainId) &&
           (where.archivedAt === undefined || e.archivedAt === where.archivedAt) &&
@@ -107,6 +109,14 @@ test('unverified and conflicted facts never masquerade as verified context', asy
   const context = await getBrainContext({ userId: 'a', purpose: 'pricing', maxEntries: 1 }, f.db);
   assert.equal(context.entries[0].key, 'Confirmed price');
   assert.equal(context.contextText.includes('Conflicting price'), false);
+});
+
+test('Micro-Pilot Brain allows one company context entry and retains editability', async () => {
+  const f = fixture('MICRO_PILOT');
+  const context = await upsertBrainKnowledge({ userId: 'a', category: C.COMPANY, key: 'Company', value: 'Acme builds software.' }, f.db);
+  await assert.rejects(upsertBrainKnowledge({ userId: 'a', category: C.COMPANY, key: 'Market', value: 'B2B SaaS' }, f.db), /Micro-Pilot supports one/);
+  const edited = await upsertBrainKnowledge({ userId: 'a', id: context.id, category: C.COMPANY, key: 'Company', value: 'Acme builds B2B software.' }, f.db);
+  assert.equal(edited.value, 'Acme builds B2B software.');
 });
 
 test('Brain routes derive tenancy from session and ignore client source ownership fields', () => {

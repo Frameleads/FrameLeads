@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ rule }, { status: 201 });
   } catch (error) {
     if (error instanceof TypeError) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error instanceof Error && error.message.startsWith('Micro-Pilot supports')) return NextResponse.json({ error: error.message }, { status: 403 });
     console.error('[PLAYBOOK] Create failed', error);
     return NextResponse.json({ error: 'Rule could not be saved.' }, { status: 500 });
   }

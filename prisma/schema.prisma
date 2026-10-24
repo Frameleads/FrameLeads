@@ -96,6 +96,10 @@ model User {
   tier           String   @default("INACTIVE")
   monthlyQuota   Int      @default(0)
   leadsProcessed Int      @default(0)
+  // One-time Micro-Pilot decision allowance, bound to this purchased tenant.
+  microPilotDecisionsUsed Int @default(0)
+  microPilotOutboundUsed Int @default(0)
+  microPilotResearchUsed Int @default(0)
   imapEmail      String?
   imapPassword   String?  @db.Text
   imapHost       String?
@@ -141,6 +145,8 @@ model User {
   decisionOutcomes        DecisionOutcome[]
   learningSuggestions     LearningSuggestion[]
   marketMessagingProfiles MarketMessagingProfile[]
+  microPilotDecisionClaims MicroPilotDecisionClaim[]
+  microPilotResearchClaims MicroPilotResearchClaim[]
 }
 
 model WhopWebhookReceipt {
@@ -268,6 +274,8 @@ model Prospect {
   conversationMessages  ConversationMessage[]
   decisions             Decision[]
   decisionOutcomes      DecisionOutcome[]
+  microPilotDecisionClaims MicroPilotDecisionClaim[]
+  microPilotResearchClaims MicroPilotResearchClaim[]
   automationHold        ProspectHold?
 
   @@unique([userId, id])
@@ -275,6 +283,30 @@ model Prospect {
   @@unique([userId, normalizedLinkedInUrl])
   @@index([userId, fallbackIdentityKey])
   @@index([userId, companyId])
+}
+
+model MicroPilotDecisionClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  prospectId String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospect   Prospect @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, prospectId])
+  @@index([userId, createdAt])
+}
+
+model MicroPilotResearchClaim {
+  id         String   @id @default(cuid())
+  userId     String
+  prospectId String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospect   Prospect @relation(fields: [userId, prospectId], references: [userId, id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([userId, prospectId])
+  @@index([userId, createdAt])
 }
 
 model ProspectMemoryState {

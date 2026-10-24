@@ -142,6 +142,6 @@ test('Inbox query and UI remain tenant-scoped and automation authority stays sep
   const service = readFileSync(join(__dirname, '../src/lib/revenue-risk/service.ts'), 'utf8');
   assert.match(page, /assessRevenueAtRiskBatch\(\{ userId: user\.id/);
   assert.match(ui, /sortInboxByRevenueRisk\(filteredLeads\)/);
-  assert.match(ui, /Priority index, not a dollar-loss estimate/);
+  assert.match(ui, /Revenue priority/);
   assert.doesNotMatch(service, /generateText|generateObject|Gemini|AIUsageEvent|fetch\(/);
 });

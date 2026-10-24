@@ -8,14 +8,16 @@ import { featureAccessErrorForTier, getAuthenticatedEntitlementUser } from '@/li
 import { hasFeatureAccess } from '@/lib/entitlements';
 import { prisma } from '@/lib/prisma';
 import { UNCERTAIN_ANALYSIS_REASON } from '@/lib/decision/pending-recovery';
+import { MicroPilotLimitError, reserveMicroPilotDecision } from '@/lib/micro-pilot-limits';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export async function POST(request: Request) {
   const entitlementUser = await getAuthenticatedEntitlementUser();
   if (!entitlementUser) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
+  const isPilot = entitlementUser.tier === 'MICRO_PILOT';
   const entitlementError = featureAccessErrorForTier(entitlementUser.tier, 'DECISION_ENGINE');
-  if (entitlementError) return entitlementError;
+  if (entitlementError && !isPilot) return entitlementError;
   const { id: userId } = entitlementUser;
   if (!canManuallyAnalyze()) return NextResponse.json({ error: 'Decision analysis is disabled.' }, { status: 403 });
   const body = await request.json().catch(() => null);
@@ -24,6 +26,20 @@ export async function POST(request: Request) {
     (body.confirmProviderRequestEnded != null && typeof body.confirmProviderRequestEnded !== 'boolean'))
     return NextResponse.json({ error: 'Valid signal ID required.' }, { status: 400 });
   try {
+    if (isPilot) {
+      if (body.retryOfDecisionId) return NextResponse.json({ error: 'Micro-Pilot decisions allow one initial analysis per prospect. Re-analysis is locked.' }, { status: 403 });
+      const signal = await prisma.inboundSignal.findFirst({ where: { id: body.signalId.trim(), userId }, select: { id: true, prospectId: true, generatedLeadId: true } });
+      if (!signal) return NextResponse.json({ error: 'Signal not found.' }, { status: 404 });
+      if (!signal.prospectId) return NextResponse.json({ error: 'A verified tenant-owned prospect is required for trial analysis.' }, { status: 403 });
+      const existing = await prisma.decision.findFirst({ where: { userId, prospectId: signal.prospectId }, select: { id: true } });
+      if (existing) return NextResponse.json({ error: 'This prospect already has a trial decision. Re-analysis is locked.' }, { status: 403 });
+      try { await reserveMicroPilotDecision(userId, signal.prospectId); }
+      catch (error) {
+        if (error instanceof MicroPilotLimitError) return NextResponse.json({ error: error.limit,
+          remaining: error.limit === 'DECISIONS_EXHAUSTED' ? 0 : undefined }, { status: 403 });
+        throw error;
+      }
+    }
     if (body.retryOfDecisionId) {
       const prior = await prisma.decision.findFirst({ where: { id: body.retryOfDecisionId, userId,
         inputMessage: { sourceType: 'INBOUND_SIGNAL', sourceId: body.signalId.trim() } }, select: { reviewReasons: true } });

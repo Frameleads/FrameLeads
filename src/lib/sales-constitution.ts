@@ -223,6 +223,12 @@ export async function createConstitutionRule(input: { userId: string; actorId?: 
   const { userId, actorId } = authorizeConstitutionMutation(input.userId, input.actorId), data = validateConstitutionRule(input);
   return identityTransaction(db, async tx => {
     const constitution = await root(tx, userId);
+    const account = await tx.user.findUnique({ where: { id: userId }, select: { tier: true } });
+    if (account?.tier === 'MICRO_PILOT') {
+      const configured = await tx.salesConstitutionRule.count({ where: { userId, constitutionId: constitution.id,
+        source: Source.USER_ENTERED, archivedAt: null } });
+      if (configured >= 1) throw new Error('Micro-Pilot supports one configurable Sales Constitution rule.');
+    }
     const rule = await tx.salesConstitutionRule.create({ data: { ...data, constraint: data.constraint as Prisma.InputJsonValue,
       userId, constitutionId: constitution.id, source: Source.USER_ENTERED } });
     const revision = rule.enabled ? (await tx.salesConstitution.update({ where: { userId }, data: { revision: { increment: 1 } } })).revision : constitution.revision;
@@ -534,6 +540,8 @@ function render(rule: SalesConstitutionRule) {
 export async function getSalesConstitutionContext(input: { userId: string; purpose?: ConstitutionPurpose; categories?: Category[];
   maxRules?: number; maxCharacters?: number }, db: PrismaClient = prisma) {
   const userId = own(input.userId), constitution = await getOrCreateSalesConstitution(userId, db);
+  const account = await db.user.findUnique({ where: { id: userId }, select: { tier: true } });
+  const isMicroPilot = account?.tier === 'MICRO_PILOT';
   if (input.purpose && !purposeCategories[input.purpose]) throw new TypeError('Invalid Constitution purpose');
   if (input.categories && (!Array.isArray(input.categories) || input.categories.some(c => !Object.values(Category).includes(c)))) throw new TypeError('Invalid category');
   const explicit = [...new Set(input.categories ?? [])], relevant = input.purpose ? [...purposeCategories[input.purpose], Category.CUSTOM] : explicit.length ? [Category.CUSTOM] : [];
@@ -554,9 +562,10 @@ export async function getSalesConstitutionContext(input: { userId: string; purpo
     severityRank[a.severity] - severityRank[b.severity] || b.priority - a.priority || a.id.localeCompare(b.id));
   const rules: { id: string; category: Category; effect: Effect; severity: Severity; scope: Scope;
     priority: number; source: Source; revision: number; text: string; machineEvaluable: boolean }[] = [];
-  let used = 0;
+  let used = 0, pilotUserRules = 0;
   for (const rule of candidates) {
     if (rules.length >= maxRules) break;
+    if (isMicroPilot && rule.source === Source.USER_ENTERED && pilotUserRules >= 1) continue;
     let text: string;
     try { text = render(rule).slice(0, 700); } catch { text = `${rule.category} | ${rule.effect} | Invalid constraint; manual review required`; }
     if (used + text.length + 1 > maxCharacters) continue;
@@ -564,6 +573,7 @@ export async function getSalesConstitutionContext(input: { userId: string; purpo
       scope: rule.scope, priority: rule.priority, source: rule.source,
       revision: rule.revision, text, machineEvaluable: (rule.constraint as { kind?: string }).kind !== 'CUSTOM_MANUAL' });
     used += text.length + 1;
+    if (isMicroPilot && rule.source === Source.USER_ENTERED) pilotUserRules++;
   }
   return { revision: constitution.revision, rules, contextText: rules.map(r => r.text).join('\n') };
 }

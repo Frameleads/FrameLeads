@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifiedCustomerUser } from '@/lib/customer-session';
 import { requireFeatureAccess } from "@/lib/auth-guard";
+import { getUserEntitlementTier } from '@/lib/auth-guard';
 
 async function getCurrentUserId() {
   return (await verifiedCustomerUser())?.id || null;
@@ -61,6 +62,8 @@ export async function DELETE(request: Request) {
     if (!userId) {
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
+    if (await getUserEntitlementTier(userId) === 'MICRO_PILOT') return NextResponse.json({ success: false,
+      error: 'Micro-Pilot preserves original customer messages; permanent deletion is unavailable.' }, { status: 403 });
 
     const payload = await request.json().catch(() => null);
     const id = typeof payload?.id === "string" ? payload.id.trim() : "";

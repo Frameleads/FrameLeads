@@ -21,7 +21,7 @@ export default async function BrainPage() {
     prisma.frameLeadsBrain.findUnique({ where: { userId: user.id }, select: { revision: true, compactSummary: true } }),
     getBrainKnowledge({ userId: user.id, take: 100 }),
   ]);
-  return <CorePaywall userTier={tier} featureName="FrameLeads Brain"><BrainEditor initial={{ revision: brain?.revision ?? 0, compactSummary: brain?.compactSummary ?? '',
+  return <CorePaywall userTier={tier} featureName="FrameLeads Brain"><BrainEditor microPilot={tier === 'MICRO_PILOT'} initial={{ revision: brain?.revision ?? 0, compactSummary: brain?.compactSummary ?? '',
     entries: entries.map(entry => ({ id: entry.id, category: entry.category, key: entry.key, value: entry.value,
       sourceType: entry.sourceType, verification: entry.verification, importance: entry.importance })) }} /></CorePaywall>;
 }

@@ -11,7 +11,7 @@ export function controlledEmail(value: unknown) {
   return value.trim().toLowerCase();
 }
 async function lockPreviewUser(tx: any, userId: string) {
-  const users = await tx.$queryRaw`SELECT "tier", "email", "monthlyQuota", "leadsProcessed" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+  const users = await tx.$queryRaw`SELECT "tier", "email", "monthlyQuota", "leadsProcessed", "microPilotOutboundUsed" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
   const user = users[0];
   if (user?.tier !== 'MICRO_PILOT') throw new Error('MICRO_PILOT_REQUIRED');
   if (await tx.decision.findFirst({ where: { userId }, select: { id: true } })) throw new Error('ACTIVATION_PREVIEW_EXHAUSTED');
@@ -28,10 +28,11 @@ export function importPreviewProspect(userId: string, suppliedEmail: unknown, db
     if (!resolution.prospectId) throw new Error('PROSPECT_IDENTITY_CONFLICT');
     const existing = await tx.generatedLead.findFirst({ where: { userId, prospectId: resolution.prospectId }, select: { id: true, prospectId: true } });
     if (existing) return existing;
-    if (user.leadsProcessed >= Math.min(25, user.monthlyQuota)) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
+    if (user.microPilotOutboundUsed >= 25) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
     const lead = await tx.generatedLead.create({ data: { userId, prospectId: resolution.prospectId, email,
       firstName: '', lastName: '', companyName: '', emailDraft: '', linkedInDraft: '' }, select: { id: true, prospectId: true } });
     await tx.user.update({ where: { id: userId }, data: { leadsProcessed: { increment: 1 } } });
+    await tx.user.update({ where: { id: userId }, data: { microPilotOutboundUsed: { increment: 1 } } });
     await recordProspectMemoryEventInTransaction(tx, { userId, prospectId: resolution.prospectId,
       eventType: MEMORY_EVENT.LEAD_LINKED, sourceType: 'GENERATED_LEAD', sourceId: lead.id, description: 'Controlled activation prospect imported without draft generation.' });
     return lead;

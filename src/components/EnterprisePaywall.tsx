@@ -24,7 +24,7 @@ export default function EnterprisePaywall({ children, userTier, featureName }: P
   // Strict Fail-Closed Architecture
   // Block unless the user has Enterprise access.
   // ONLY allow if strictly 'ENTERPRISE'
-  const hasEnterpriseAccess = hasFeatureAccess(userTier, 'GOVERNANCE');
+  const hasEnterpriseAccess = hasFeatureAccess(userTier, featureName === 'Sales Constitution' ? 'CONSTITUTION_MANAGEMENT' : 'GOVERNANCE');
 
   if (hasEnterpriseAccess) {
     return (

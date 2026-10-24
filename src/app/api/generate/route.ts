@@ -12,6 +12,7 @@ import { getSalesConstitutionContext } from '@/lib/sales-constitution';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { MicroPilotLimitError, reserveMicroPilotOutbound } from '@/lib/micro-pilot-limits';
 import { verifiedCustomerUser } from '@/lib/customer-session';
 import { normalizeOutboundCopy } from '@/lib/outbound-copy';
 import Anthropic from '@anthropic-ai/sdk';
@@ -130,7 +131,7 @@ export async function POST(req: Request) {
 
     const authenticatedUser = await verifiedCustomerUser();
     const currentUser = authenticatedUser ? await prisma.user.findUnique({
-      where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true },
+      where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true, microPilotOutboundUsed: true },
     }) : null;
     if (!currentUser) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const currentUserId = currentUser.id;
@@ -153,41 +154,47 @@ export async function POST(req: Request) {
     }
 
     const maxQuota = monthlyLeadQuotaForTier(tier);
-    const remainingQuota = Math.max(0, maxQuota - currentUser.leadsProcessed);
+    const remainingQuota = Math.max(0, maxQuota - (tier === 'MICRO_PILOT' ? currentUser.microPilotOutboundUsed : currentUser.leadsProcessed));
 
     const getLeadLinkedInUrl = (lead: any) => {
       const value = lead.linkedin || lead.linkedInUrl || lead.linkedin_url;
       return typeof value === 'string' ? value.trim() : '';
     };
+    const getLeadEmail = (lead: any) => typeof (lead.email || lead.email_address || lead.emailAddress) === 'string'
+      ? (lead.email || lead.email_address || lead.emailAddress).trim().toLowerCase() : '';
     const linkedInUrls = Array.from(new Set(leads.map(getLeadLinkedInUrl).filter(Boolean))) as string[];
-    const existingRecords = currentUserId && linkedInUrls.length > 0
+    const emails = Array.from(new Set(leads.map(getLeadEmail).filter(Boolean))) as string[];
+    const existingRecords = currentUserId && (linkedInUrls.length > 0 || emails.length > 0)
       ? await prisma.generatedLead.findMany({
-          where: {
-            userId: currentUserId,
-            linkedInUrl: { in: linkedInUrls },
-          },
+          where: { userId: currentUserId, OR: [
+            ...(linkedInUrls.length ? [{ linkedInUrl: { in: linkedInUrls } }] : []),
+            ...(emails.length ? [{ email: { in: emails } }] : []),
+          ] },
           orderBy: { createdAt: 'desc' },
           include: { prospect: { select: { country: true } } },
         })
       : [];
-    const existingByLinkedInUrl = new Map<string, (typeof existingRecords)[number]>();
+    const existingByIdentity = new Map<string, (typeof existingRecords)[number]>();
     for (const record of existingRecords) {
-      if (!record.linkedInUrl) continue;
-      const current = existingByLinkedInUrl.get(record.linkedInUrl);
-      if (!current || (listId && record.listId === listId && current.listId !== listId)) {
-        existingByLinkedInUrl.set(record.linkedInUrl, record);
+      for (const key of [record.linkedInUrl ? `linkedin:${record.linkedInUrl.trim().toLowerCase()}` : '',
+        record.email ? `email:${record.email.trim().toLowerCase()}` : ''].filter(Boolean)) {
+        const current = existingByIdentity.get(key);
+        if (!current || (listId && record.listId === listId && current.listId !== listId)) existingByIdentity.set(key, record);
       }
     }
+    const existingForLead = (lead: any) => existingByIdentity.get(`linkedin:${getLeadLinkedInUrl(lead).toLowerCase()}`) ||
+      existingByIdentity.get(`email:${getLeadEmail(lead)}`);
 
     const skippedCandidates: Array<{ existing: (typeof existingRecords)[number]; source: any }> = [];
     const generationCandidates: any[] = [];
-    const handledLinkedInUrls = new Set<string>();
+    const handledProspectKeys = new Set<string>();
     for (const lead of leads) {
       const linkedInUrl = getLeadLinkedInUrl(lead);
-      if (linkedInUrl && handledLinkedInUrls.has(linkedInUrl)) continue;
-      if (linkedInUrl) handledLinkedInUrls.add(linkedInUrl);
+      const identityKey = linkedInUrl ? `linkedin:${linkedInUrl.toLowerCase()}` : getLeadEmail(lead) ? `email:${getLeadEmail(lead)}` : '';
+      if (identityKey && handledProspectKeys.has(identityKey)) continue;
+      if (identityKey) handledProspectKeys.add(identityKey);
 
-      const existing = linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined;
+      const existing = existingForLead(lead);
       if (existing && !shouldOverwriteExisting) {
         skippedCandidates.push({ existing, source: lead });
       } else {
@@ -224,11 +231,34 @@ export async function POST(req: Request) {
       };
     }));
 
-    const allowedLeads = generationCandidates.slice(0, remainingQuota);
-    const lockedLeads = generationCandidates.slice(remainingQuota);
+    let allowedLeads: any[] = [];
+    let lockedLeads: any[] = [];
+    if (tier === 'MICRO_PILOT') {
+      let newProspects = 0;
+      for (const lead of generationCandidates) {
+        if (existingForLead(lead) || newProspects < remainingQuota) {
+          allowedLeads.push(lead);
+          if (!existingForLead(lead)) newProspects++;
+        } else lockedLeads.push(lead);
+      }
+    } else {
+      allowedLeads = generationCandidates.slice(0, remainingQuota);
+      lockedLeads = generationCandidates.slice(remainingQuota);
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     let processedLeads: any[] = [...skippedLeads];
+
+    if (allowedLeads.length > 0 && !apiKey) return NextResponse.json({ success: false, error: 'Missing Anthropic API Key' }, { status: 401 });
+    if (tier === 'MICRO_PILOT') {
+      const newProspects = allowedLeads.filter(lead => !existingForLead(lead)).length;
+      try { await reserveMicroPilotOutbound(currentUserId, newProspects); }
+      catch (error) {
+        if (error instanceof MicroPilotLimitError) return NextResponse.json({ success: false,
+          error: 'MICRO_PILOT_OUTBOUND_LIMIT_REACHED', remaining: 0 }, { status: 403 });
+        throw error;
+      }
+    }
 
     if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
@@ -244,7 +274,7 @@ export async function POST(req: Request) {
           try {
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-            const savedLead = lead.lead_id ? existingByLinkedInUrl.get(getLeadLinkedInUrl(lead)) : undefined;
+            const savedLead = lead.lead_id ? existingForLead(lead) : undefined;
             const marketRequestedLeadId = regenerate === true && typeof (lead.lead_id || lead.id) === 'string' ? (lead.lead_id || lead.id) as string : null;
             const ownedLead = marketRequestedLeadId ? await prisma.generatedLead.findFirst({ where: { id: marketRequestedLeadId, userId: currentUserId },
               include: { prospect: { select: { country: true } } } }) : null;
@@ -379,7 +409,7 @@ export async function POST(req: Request) {
               const safeLinkedInUrl = linkedInUrl !== ''
                 ? linkedInUrl
                 : `missing-url-${Date.now()}-${Math.random()}`;
-              const existingLead = ownedRegenerationLead || (linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined);
+              const existingLead = ownedRegenerationLead || existingForLead(lead);
 
               const persistedLead = await saveGeneratedLead(prisma, {
                 userId: currentUserId,

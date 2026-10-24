@@ -12,10 +12,14 @@ test('local Enterprise tier applies only to development loopback hosts', () => {
   assert.equal(localDevelopmentTierFor(null, 'development'), null);
 });
 
-test('MICRO_PILOT includes only the base outbound and built-in market capabilities', () => {
+test('MICRO_PILOT includes inbox reading and replay while paid intelligence stays locked', () => {
   assert.equal(hasFeatureAccess('MICRO_PILOT', 'BASE_OUTBOUND'), true);
   assert.equal(hasFeatureAccess('MICRO_PILOT', 'BUILTIN_MARKET_MESSAGING'), true);
-  for (const feature of FEATURE_KEYS.filter(key => !['BASE_OUTBOUND', 'BUILTIN_MARKET_MESSAGING'].includes(key))) {
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'INBOX_TRIAGE'), true);
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'DECISION_REPLAY'), true);
+  for (const feature of ['SCOUT', 'ICP', 'PROSPECT_RESEARCH', 'BRAIN', 'PLAYBOOK', 'CONSTITUTION_MANAGEMENT'] as const)
+    assert.equal(hasFeatureAccess('MICRO_PILOT', feature), true, `${feature} is available with pilot limits`);
+  for (const feature of FEATURE_KEYS.filter(key => !['BASE_OUTBOUND', 'BUILTIN_MARKET_MESSAGING', 'SCOUT', 'ICP', 'PROSPECT_RESEARCH', 'BRAIN', 'PLAYBOOK', 'INBOX_TRIAGE', 'DECISION_REPLAY', 'CONSTITUTION_MANAGEMENT'].includes(key))) {
     assert.equal(hasFeatureAccess('MICRO_PILOT', feature), false, `${feature} should be locked`);
     assert.ok(['CORE', 'ENTERPRISE'].includes(requiredTierForFeature(feature)));
   }

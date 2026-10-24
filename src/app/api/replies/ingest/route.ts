@@ -48,9 +48,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: auth.error || "Invalid API key." }, { status: 401 });
     }
     const tier = await getUserEntitlementTier(auth.userId);
-    if (!hasFeatureAccess(tier, 'DECISION_ENGINE')) {
-      return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'DECISION_ENGINE',
-        requiredTier: requiredTierForFeature('DECISION_ENGINE') }, { status: 403 });
+    if (!hasFeatureAccess(tier, 'INBOX_TRIAGE')) {
+      return NextResponse.json({ success: false, error: 'FEATURE_LOCKED', feature: 'INBOX_TRIAGE',
+        requiredTier: requiredTierForFeature('INBOX_TRIAGE') }, { status: 403 });
     }
 
     const payload = await req.json();
