@@ -30,15 +30,15 @@ test('current Whop Standard Webhooks signature accepts a real synthetic envelope
 
 function loadProcessor() {
   const exports = {};
-  const calls = { merges: [], entitlementUpdates: [], receipts: new Set() };
+  const calls = { invalidations: [], receipts: new Set() };
   const module = ts.transpileModule(readFileSync(new URL('../src/lib/whop-webhook-processing.ts', import.meta.url), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   vm.runInNewContext(module, {
     exports,
-    require: name => name === './whop-subscription'
-      ? { resolveWhopSubscription: () => ({ tier: 'CORE', monthlyQuota: 500 }) }
-      : { mergeWhopUserInTransaction: async (_tx, input) => calls.merges.push(input) },
+    require: name => name === './auth-guard'
+      ? { invalidateWhopEntitlementCache: whopId => calls.invalidations.push(whopId) }
+      : { membershipSubject: payload => ({ whopId: payload.data?.user?.id || payload.data?.user_id }) },
   });
   return { processor: exports, calls };
 }
@@ -49,27 +49,36 @@ function fakeTransaction(calls) {
       if (calls.receipts.has(data.webhookId)) throw { code: 'P2002' };
       calls.receipts.add(data.webhookId);
     } },
-    user: { updateMany: async args => calls.entitlementUpdates.push(args) },
+    user: { updateMany: async () => { throw new Error('Webhooks must not write entitlement state'); } },
   };
 }
 
-test('verified active event maps Whop subject to the expected synthetic tenant and duplicate IDs are rejected', async () => {
+test('verified direct Whop membership event invalidates freshness cache and duplicate IDs are rejected', async () => {
   const { processor, calls } = loadProcessor();
   const tx = fakeTransaction(calls);
-  const event = { data: { user: { id: 'whop-test-a', email: 'a@example.invalid' }, membership: { plan: { id: 'plan_core' } } } };
+  const event = { data: { id: 'mem_123', user: { id: 'whop-test-a', email: 'a@example.invalid' }, status: 'active', cancel_at_period_end: false } };
   await processor.applyVerifiedWhopEvent(tx, 'msg_once', 'membership.went_valid', event);
-  assert.deepEqual(JSON.parse(JSON.stringify(calls.merges)), [{ whopId: 'whop-test-a', email: 'a@example.invalid', subscription: { tier: 'CORE', monthlyQuota: 500 } }]);
+  assert.deepEqual(calls.invalidations, ['whop-test-a']);
   await assert.rejects(processor.applyVerifiedWhopEvent(tx, 'msg_once', 'membership.went_valid', event), error => error.code === 'P2002');
-  assert.equal(calls.merges.length, 1);
+  assert.equal(calls.invalidations.length, 1);
 });
 
-test('inactive event scopes mutation to Whop subject and ignores conflicting event email', async () => {
+test('period-end cancellation event invalidates cached state but does not revoke from one membership payload', async () => {
   const { processor, calls } = loadProcessor();
-  await processor.applyVerifiedWhopEvent(fakeTransaction(calls), 'msg_revoke', 'membership.went_invalid', {
-    data: { user: { id: 'whop-test-a', email: 'tenant-b@example.invalid' } },
+  await processor.applyVerifiedWhopEvent(fakeTransaction(calls), 'msg_cancel', 'membership.cancel_at_period_end_changed', {
+    data: { id: 'mem_123', user_id: 'whop-test-a', status: 'active', cancel_at_period_end: true, renewal_period_end: '2030-01-01T00:00:00.000Z' },
   });
-  assert.deepEqual(JSON.parse(JSON.stringify(calls.entitlementUpdates)), [{ where: { whopId: 'whop-test-a' }, data: { tier: 'INACTIVE', monthlyQuota: 0 } }]);
-  assert.equal(calls.merges.length, 0);
+  assert.deepEqual(calls.invalidations, ['whop-test-a']);
+});
+
+test('failed payment and refund events invalidate membership freshness without trusting event order', async () => {
+  const { processor, calls } = loadProcessor();
+  for (const eventType of ['payment.failed', 'payment.refunded', 'refund.created']) {
+    await processor.applyVerifiedWhopEvent(fakeTransaction(calls), `msg_${eventType}`, eventType, {
+      data: { id: 'payment_test', user_id: 'whop-test-a' },
+    });
+  }
+  assert.deepEqual(calls.invalidations, ['whop-test-a', 'whop-test-a', 'whop-test-a']);
 });
 
 test('OAuth and signed webhook merges refuse conflicting Whop-ID/email tenants', async () => {
