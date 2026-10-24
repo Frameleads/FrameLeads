@@ -35,6 +35,7 @@
     "test:entitlements": "node scripts/run-prospect-tool.cjs entitlements-test",
     "test:entitlement-routes": "node scripts/run-prospect-tool.cjs entitlement-routes-test",
     "test:whop-oauth": "node scripts/run-prospect-tool.cjs whop-oauth-test",
+    "test:whop-memberships": "node scripts/run-prospect-tool.cjs whop-memberships-test",
     "test:diagnostic": "node scripts/run-prospect-tool.cjs diagnostic-test",
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
   },
