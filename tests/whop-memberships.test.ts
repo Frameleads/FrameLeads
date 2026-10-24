@@ -24,8 +24,14 @@ test('Whop membership lifecycle grants only current paid/trial access and schedu
     assert.equal(membershipCurrentlyEntitled(membership(status), now), false, status);
   }
   assert.equal(membershipCurrentlyEntitled(membership('active', { valid: false }), now), false);
-  assert.equal(membershipCurrentlyEntitled(membership('completed'), now), true, 'retain recognized legacy one-time memberships');
-  assert.equal(membershipCurrentlyEntitled(membership('completed', { expires_at: past }), now), false);
+});
+
+test('Micro-Pilot one-time membership follows Whop expiration and non-expiring completion policy', () => {
+  assert.equal(membershipCurrentlyEntitled(membership('completed'), now), true, 'Whop completed one-time memberships with no expiration retain access');
+  assert.equal(membershipCurrentlyEntitled(membership('completed', { valid: true, expires_at: future }), now), true);
+  assert.equal(membershipCurrentlyEntitled(membership('completed', { valid: true, expires_at: past }), now), false);
+  assert.equal(membershipCurrentlyEntitled(membership('expired', { expires_at: past }), now), false);
+  assert.equal(membershipCurrentlyEntitled(membership('completed', { valid: false }), now), false);
 });
 
 test('existing SaaS maps the checkout Core and Enterprise plan IDs to their paid tiers', () => {
