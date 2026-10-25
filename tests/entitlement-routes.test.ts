@@ -162,6 +162,7 @@ test('upgrade destinations and visibility match quota tiers without upselling En
   const sandbox = source('src/app/dashboard/sandbox/SandboxClient.tsx');
   assert.ok(sandbox.includes("const quotaUpgrade = userTier === 'MICRO_PILOT'"));
   assert.ok(sandbox.includes("{ url: CORE_CHECKOUT_URL, label: 'Upgrade to Core' }"));
+  assert.ok(sandbox.includes("'MICRO-PILOT ALLOWANCE USED'"));
   assert.ok(sandbox.includes("userTier === 'CORE'\n      ? { url: ENTERPRISE_CHECKOUT_URL, label: 'Upgrade to Enterprise' }"));
   assert.ok(sandbox.includes(': null;'));
   assert.ok(sandbox.includes('{quotaUpgrade && <a'));
