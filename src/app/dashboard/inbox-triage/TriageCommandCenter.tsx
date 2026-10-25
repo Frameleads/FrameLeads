@@ -15,6 +15,7 @@ import { deriveIntentSignals } from '@/lib/decision/intent-signals';
 import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
 import { getDisplayedIntentConfidence } from '@/lib/decision/intent-confidence';
 import { formatIntentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
+import { CORE_CHECKOUT_URL } from '@/lib/checkout';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -281,7 +282,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
     {!canAnalyze && !packet && <div className="mt-5 rounded-xl border border-[#FF5A1F]/25 bg-[#1A1A1A] p-5">
       <p className="font-mono text-xs font-bold tracking-widest text-[#FF5A1F]">🔒 DECISION INTELLIGENCE LOCKED</p>
       <p className="mt-2 text-sm text-white/65">Your three Micro-Pilot decision analyses have been used. This original reply remains available to read.</p>
-      <Link href="/dashboard/billing" className="mt-4 inline-flex rounded-lg bg-[#FF5A1F] px-4 py-2 text-sm font-semibold text-black">Upgrade to Core</Link>
+      <Link href={CORE_CHECKOUT_URL} className="mt-4 inline-flex rounded-lg bg-[#FF5A1F] px-4 py-2 text-sm font-semibold text-black">Upgrade to Core</Link>
     </div>}
     {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}

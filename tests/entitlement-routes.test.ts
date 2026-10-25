@@ -104,14 +104,37 @@ test('Micro-Pilot inbox routes authorize read/write mailbox access but skip all 
   assert.match(sync, /sourceMessageId: \{/);
 });
 
-test('Micro-Pilot cannot use direct email dispatch or widen access through Core/Enterprise paywall wrappers', () => {
+test('Micro-Pilot Sandbox sending is confined to the quota-backed native sender and paywall wrappers stay tier-specific', () => {
   const send = source('src/app/api/email/send/route.ts');
-  assert.match(send, /getUserEntitlementTier\(user\.id\) === 'MICRO_PILOT'/);
-  assert.ok(send.indexOf("getUserEntitlementTier(user.id) === 'MICRO_PILOT'") < send.indexOf('sendNativeEmail('));
+  assert.match(send, /tier === 'MICRO_PILOT'/);
+  assert.match(send, /sendMicroPilotSandboxEmail/);
+  assert.ok(send.indexOf("tier === 'MICRO_PILOT'") < send.indexOf('sendMicroPilotSandboxEmail('));
+  const microSend = source('src/lib/outbound/micro-pilot-sandbox-send.ts');
+  assert.match(microSend, /microPilotOutboundClaim\.findUnique/);
+  assert.match(microSend, /microPilotNativeSendClaim\.create/);
+  assert.match(microSend, /onDispatchStart/);
+  assert.match(microSend, /PROVIDER_CONFIRMED'[\s\S]*UNSUBSCRIBE_CONFIRMED/);
+  assert.match(microSend, /prospectHold\.findUnique/);
   const core = source('src/components/CorePaywall.tsx');
   assert.match(core, /corePaywallFeatureForName\(featureName\)/);
   const enterprise = source('src/components/EnterprisePaywall.tsx');
   assert.match(enterprise, /featureName === 'Sales Constitution' \? 'CONSTITUTION_MANAGEMENT' : 'GOVERNANCE'/);
+});
+
+test('Decision upgrade CTA uses the existing Core Whop checkout and membership merges preserve lifetime counters', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /import \{ CORE_CHECKOUT_URL \} from '@\/lib\/checkout'/);
+  assert.match(panel, /href=\{CORE_CHECKOUT_URL\}[\s\S]*?Upgrade to Core/);
+  assert.doesNotMatch(panel, /href="\/dashboard\/billing"/);
+  assert.match(source('src/lib/checkout.ts'), /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_sAEhr77rTrhX4'/);
+  const merge = source('src/lib/whop-user.ts');
+  assert.match(merge, /data: \{ whopId, email: normalizedEmail, \.\.\.subscription \}/);
+  const existingMembershipUpdate = merge.slice(merge.indexOf('if (existingUser)'), merge.indexOf('return tx.user.create'));
+  assert.doesNotMatch(existingMembershipUpdate, /leadsProcessed|microPilot(?:Decisions|Outbound|Research)Used/);
+  const scripts = JSON.parse(source('package.json')) as { scripts: Record<string, string> };
+  assert.doesNotMatch(scripts.scripts.build, /migrate deploy/);
+  assert.equal(scripts.scripts['build:preview'], 'npm run build');
+  assert.match(scripts.scripts['db:migrate:deploy'], /prisma migrate deploy/);
 });
 
 test('stalled Decision recovery is authenticated, tenant scoped, stale only, and requires explicit confirmation before a new version', () => {

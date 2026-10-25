@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build",
+    "build:preview": "npm run build",
+    "db:migrate:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "next lint",
     "test:prospects": "node scripts/run-prospect-tool.cjs test",
@@ -39,7 +41,9 @@
     "test:micro-pilot-decision": "node scripts/run-prospect-tool.cjs micro-pilot-decision-test",
     "test:whop-oauth": "node scripts/run-prospect-tool.cjs whop-oauth-test",
     "test:diagnostic": "node scripts/run-prospect-tool.cjs diagnostic-test",
-    "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
+    "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill",
+    "test:micro-pilot-send": "node scripts/run-prospect-tool.cjs micro-pilot-send-test",
+    "test:micro-pilot-send-route": "node --test tests/micro-pilot-send-route.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

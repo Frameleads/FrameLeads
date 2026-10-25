@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { htmlToPlainText, sendNativeEmail, NativeMailUnavailable } from '@/lib/outbound/native-mail';
 import { getUserEntitlementTier, requireFeatureAccess } from '@/lib/auth-guard';
 import { verifiedCustomerUser } from '@/lib/customer-session';
+import { MicroPilotSandboxSendError, sendMicroPilotSandboxEmail } from '@/lib/outbound/micro-pilot-sandbox-send';
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -34,8 +35,7 @@ export async function POST(request: Request) {
     if (!user) {
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
-    if (await getUserEntitlementTier(user.id) === 'MICRO_PILOT') return NextResponse.json({ success: false,
-      error: 'Micro-Pilot does not allow direct outbound email dispatch.' }, { status: 403 });
+    const tier = await getUserEntitlementTier(user.id);
     if (!user.imapEmail || !user.imapPassword || !user.imapHost) {
       return NextResponse.json(
         { success: false, error: "Connect your native inbox before sending email." },
@@ -56,6 +56,15 @@ export async function POST(request: Request) {
     }
     if (!htmlBody || htmlBody.length > 200_000) {
       return NextResponse.json({ success: false, error: "Enter a valid email body." }, { status: 400 });
+    }
+
+    if (tier === 'MICRO_PILOT') {
+      if (requestOrigin !== new URL(request.url).origin) return NextResponse.json({ success: false, error: 'Invalid request origin.' }, { status: 403 });
+      if (typeof payload?.leadId !== 'string' || payload.leadId.length > 128 || payload.confirmSend !== true)
+        return NextResponse.json({ success: false, error: 'Select an eligible Sandbox prospect and confirm the send.' }, { status: 400 });
+      const result = await sendMicroPilotSandboxEmail({ userId: user.id, leadId: payload.leadId, to, subject, html: htmlBody,
+        text: htmlToPlainText(htmlBody), confirmed: true });
+      return NextResponse.json(result);
     }
 
     const ownedLead = await prisma.generatedLead.findFirst({
@@ -84,6 +93,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if (error instanceof MicroPilotSandboxSendError) {
+      const status = error.reason === 'ALREADY_SENT' ? 409 : error.reason === 'DAILY_LIMIT_REACHED' ? 429 : 403;
+      return NextResponse.json({ success: false, error: error.reason }, { status });
+    }
+    if (error instanceof TypeError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     const message = error instanceof Error ? error.message : "Unknown SMTP error";
     if (error instanceof NativeMailUnavailable) return NextResponse.json({ success: false, error: message }, { status: 409 });
     console.error("[NATIVE EMAIL SEND ERROR]:", message);
