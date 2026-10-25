@@ -3,11 +3,12 @@ import { prisma } from '../prisma';
 import { identityTransaction } from '../prospects/identity';
 import { microPilotOutboundIdentityKey } from '../micro-pilot-limits';
 import { evaluateSalesConstitution } from '../sales-constitution';
+import { validateSenderDomain } from '../domain-armor';
 import { sendNativeEmail, type NativeMailInput } from './native-mail';
 
 const DAILY_SEND_LIMIT_PER_INBOX = 30;
 const MAX_BODY_LENGTH = 200_000;
-export type MicroPilotSendFailure = 'LEAD_NOT_ELIGIBLE' | 'RECIPIENT_MISMATCH' | 'SUPPRESSED' |
+export type MicroPilotSendFailure = 'LEAD_NOT_ELIGIBLE' | 'RECIPIENT_MISMATCH' | 'SENDER_DOMAIN_NOT_CONFIGURED' | 'SENDER_DOMAIN_BLOCKED' | 'SUPPRESSED' |
   'GOVERNANCE_REVIEW_REQUIRED' | 'ALREADY_SENT' | 'DAILY_LIMIT_REACHED' | 'NOT_MICRO_PILOT';
 export class MicroPilotSandboxSendError extends Error {
   constructor(readonly reason: MicroPilotSendFailure) { super(reason); this.name = 'MicroPilotSandboxSendError'; }
@@ -32,6 +33,12 @@ async function verifySafety(userId: string, prospectId: string, db: PrismaClient
     throw new MicroPilotSandboxSendError('GOVERNANCE_REVIEW_REQUIRED');
 }
 
+async function verifySenderDomain(userId: string, db: PrismaClient) {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { rootBrandDomain: true, imapEmail: true } });
+  const result = validateSenderDomain(user?.rootBrandDomain || '', user?.imapEmail || '');
+  if (!result.passed) throw new MicroPilotSandboxSendError(user?.rootBrandDomain?.trim() ? 'SENDER_DOMAIN_BLOCKED' : 'SENDER_DOMAIN_NOT_CONFIGURED');
+}
+
 /** Reserve and execute exactly one explicit human-approved Sandbox send per counted Micro-Pilot prospect. */
 export async function sendMicroPilotSandboxEmail(input: {
   userId: string; leadId: string; to: string; subject: string; text: string; html: string; confirmed: boolean;
@@ -46,13 +53,15 @@ export async function sendMicroPilotSandboxEmail(input: {
     !text || text.length > MAX_BODY_LENGTH || input.html.length > MAX_BODY_LENGTH) throw new TypeError('Invalid native email');
 
   const [account, lead] = await Promise.all([
-    db.user.findUnique({ where: { id: input.userId }, select: { tier: true, imapEmail: true } }),
+    db.user.findUnique({ where: { id: input.userId }, select: { tier: true, imapEmail: true, rootBrandDomain: true } }),
     db.generatedLead.findFirst({ where: { id: input.leadId, userId: input.userId }, select: {
       id: true, userId: true, prospectId: true, email: true, linkedInUrl: true, firstName: true, lastName: true,
       companyName: true, websiteUrl: true,
     } }),
   ]);
   if (account?.tier !== 'MICRO_PILOT') throw new MicroPilotSandboxSendError('NOT_MICRO_PILOT');
+  if (!account.imapEmail) throw new MicroPilotSandboxSendError('LEAD_NOT_ELIGIBLE');
+  await verifySenderDomain(input.userId, db);
   if (!lead?.email || !lead.prospectId) throw new MicroPilotSandboxSendError('LEAD_NOT_ELIGIBLE');
   const prospectId = lead.prospectId;
   const leadEmail = lead.email.trim().toLowerCase();
@@ -77,6 +86,7 @@ export async function sendMicroPilotSandboxEmail(input: {
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${input.userId} FOR UPDATE`;
       const existing = await tx.microPilotNativeSendClaim.findUnique({ where: { userId_prospectId: { userId: input.userId, prospectId } } });
       if (existing) throw new MicroPilotSandboxSendError('ALREADY_SENT');
+      await verifySenderDomain(input.userId, tx as unknown as PrismaClient);
       await verifySafety(input.userId, prospectId, tx as unknown as PrismaClient, evaluate);
       const [sentToday, pendingToday] = await Promise.all([
         tx.outboundLog.count({ where: { inbox: { userId: input.userId }, status: 'sent', sentAt: { gte: today } } }),
@@ -95,6 +105,7 @@ export async function sendMicroPilotSandboxEmail(input: {
   let dispatchStarted = false;
   const claimWhere = { userId_prospectId: { userId: input.userId, prospectId } };
   try {
+    await verifySenderDomain(input.userId, db);
     await verifySafety(input.userId, prospectId, db, evaluate);
     const result = await sender({ userId: input.userId, leadId: lead.id, to: leadEmail, subject, text, html: input.html,
       onDispatchStart: () => { dispatchStarted = true; } }, db);

@@ -95,7 +95,12 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof MicroPilotSandboxSendError) {
       const status = error.reason === 'ALREADY_SENT' ? 409 : error.reason === 'DAILY_LIMIT_REACHED' ? 429 : 403;
-      return NextResponse.json({ success: false, error: error.reason }, { status });
+      const errorMessage = error.reason === 'SENDER_DOMAIN_NOT_CONFIGURED'
+        ? 'Outbound sending is locked until you configure your workspace root brand domain and connect an eligible secondary sending domain.'
+        : error.reason === 'SENDER_DOMAIN_BLOCKED'
+          ? 'Domain Armor blocked this sender. Connect a secondary sending domain that differs from your root brand domain.'
+          : error.reason;
+      return NextResponse.json({ success: false, error: errorMessage, code: error.reason }, { status });
     }
     if (error instanceof TypeError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     const message = error instanceof Error ? error.message : "Unknown SMTP error";

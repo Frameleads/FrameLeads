@@ -120,6 +120,9 @@ test('email-cookie identity paths are removed and dashboard data pages resolve t
   const preflight = source('src/app/api/deploy/preflight/route.ts');
   assert.match(preflight, /requestedUserId && requestedUserId !== principal\.id/);
   assert.match(preflight, /const userId = principal\.id/);
+  assert.match(preflight, /user\.tier === 'MICRO_PILOT'/);
+  assert.match(preflight, /MICRO_PILOT_SANDBOX_ONLY/);
+  assert.match(preflight, /if \(user\.tier === 'MICRO_PILOT'\)[\s\S]*?return NextResponse\.json[\s\S]*?MICRO_PILOT_SANDBOX_ONLY[\s\S]*?const inbox/);
 });
 
 test('signed smoke sessions are local development only, short-lived, and restricted to synthetic tenants', async () => {

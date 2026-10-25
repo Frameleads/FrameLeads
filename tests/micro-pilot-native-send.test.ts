@@ -4,8 +4,8 @@ import { sendMicroPilotSandboxEmail, MicroPilotSandboxSendError } from '../src/l
 
 function fixture(): any {
   const state: any = { claims: new Map(), logs: [], sends: 0, suppression: false, hold: false, claimStatus: 'COMPLETED', dailySent: 0,
-    aliasLeadIds: [], tier: 'MICRO_PILOT' };
-  const user: any = { id: 'tenant', get tier() { return state.tier; }, imapEmail: 'owner@example.com' };
+    aliasLeadIds: [], tier: 'MICRO_PILOT', rootBrandDomain: 'brand.example' };
+  const user: any = { id: 'tenant', get tier() { return state.tier; }, imapEmail: 'owner@outbound.example', get rootBrandDomain() { return state.rootBrandDomain; } };
   const lead: any = { id: 'lead-1', userId: 'tenant', prospectId: 'prospect-1', email: 'buyer@example.com',
     linkedInUrl: 'https://linkedin.com/in/buyer', firstName: 'Buyer', lastName: 'Person', companyName: 'Acme', websiteUrl: 'acme.example' };
   const prospect: any = { ...lead, id: 'prospect-1' };
@@ -65,6 +65,14 @@ test('arbitrary recipients, unclaimed prospects, suppression, and missing human 
   const unconfirmed = fixture();
   await assert.rejects(unconfirmed.send({ confirmed: false }), /Explicit send confirmation required/);
   assert.equal(unconfirmed.state.sends, 0);
+});
+
+test('Domain Armor requires a configured root domain and blocks sending from the protected root', async () => {
+  const missing = fixture(); missing.state.rootBrandDomain = '';
+  await assert.rejects(missing.send(), error => error instanceof MicroPilotSandboxSendError && error.reason === 'SENDER_DOMAIN_NOT_CONFIGURED');
+  const protectedRoot = fixture(); protectedRoot.state.rootBrandDomain = 'outbound.example';
+  await assert.rejects(protectedRoot.send(), error => error instanceof MicroPilotSandboxSendError && error.reason === 'SENDER_DOMAIN_BLOCKED');
+  assert.equal(protectedRoot.state.sends, 0);
 });
 
 test('repeat sends and uncertain SMTP outcomes cannot duplicate dispatch', async () => {
