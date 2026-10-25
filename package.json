@@ -45,7 +45,8 @@
     "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill",
     "test:micro-pilot-send": "node scripts/run-prospect-tool.cjs micro-pilot-send-test",
     "test:micro-pilot-send-route": "node --test tests/micro-pilot-send-route.test.mjs",
-    "test:micro-pilot-deploy-preflight": "node --test tests/micro-pilot-deploy-preflight.test.mjs"
+    "test:micro-pilot-deploy-preflight": "node --test tests/micro-pilot-deploy-preflight.test.mjs",
+    "test:micro-pilot-journey": "node --test tests/micro-pilot-journey.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
