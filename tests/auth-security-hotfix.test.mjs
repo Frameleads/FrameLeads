@@ -190,6 +190,7 @@ function loadRouteWithVerifiedSession(routePath, cookies, db) {
     exports: customerExports,
     require: name => name === 'next/headers' ? { cookies: async () => ({ get: key => cookies[key] ? { value: cookies[key] } : undefined }) }
       : name === './prisma' ? { prisma: db }
+        : name === './whop-environment' ? { getWhopApiOrigin: () => 'https://api.whop.com' }
         : { verifyAuthSmokeSession: () => null, isAuthSmokeSessionToken: () => false },
     fetch: async (_url, options) => {
       if (options.headers.authorization !== 'Bearer signed-token-a') return { ok: false };
