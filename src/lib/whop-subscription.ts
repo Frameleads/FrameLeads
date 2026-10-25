@@ -27,8 +27,8 @@ export class UnrecognizedWhopProductError extends Error {
 
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
-  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ", "plan_sAEhr77rTrhX4"],
-  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz"],
+  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ", "plan_sAEhr77rTrhX4", "plan_GQTDPXnvijugf"],
+  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz", "plan_uGDGf5WKW7hlE"],
 } as const;
 
 function configuredIds(name: string, defaults: readonly string[]) {

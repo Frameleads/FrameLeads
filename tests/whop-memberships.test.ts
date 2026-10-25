@@ -34,9 +34,11 @@ test('Micro-Pilot one-time membership follows Whop expiration and non-expiring c
   assert.equal(membershipCurrentlyEntitled(membership('completed', { valid: false }), now), false);
 });
 
-test('existing SaaS maps the checkout Core and Enterprise plan IDs to their paid tiers', () => {
+test('SaaS recognizes both legacy and newly priced Whop checkout plans for all three tiers', () => {
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_sAEhr77rTrhX4' } }), { tier: 'CORE', monthlyQuota: 500 });
+  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf' } }), { tier: 'CORE', monthlyQuota: 500 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_jdy5Z44fMKMAz' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_8qLWfJZHQUYZf' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
   assert.deepEqual(resolveWhopSubscription({ product: { id: 'prod_bTf6npFBh6teM' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
 });
