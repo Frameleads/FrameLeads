@@ -1,6 +1,10 @@
+import { isWhopSandbox } from "./whop-environment";
+
 export type WhopSubscription = {
   tier: "MICRO_PILOT" | "CORE" | "ENTERPRISE";
   monthlyQuota: number;
+  /** Earliest known renewal/expiry boundary for a fresh membership recheck. */
+  validUntil?: number;
 };
 
 export class MembershipFilteredOutError extends Error {
@@ -25,8 +29,8 @@ export class UnrecognizedWhopProductError extends Error {
 
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
-  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ"],
-  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI"],
+  CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ", "plan_sAEhr77rTrhX4", "plan_GQTDPXnvijugf"],
+  ENTERPRISE: ["prod_7CoRolH7SDjmQ", "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz", "plan_uGDGf5WKW7hlE"],
 } as const;
 
 function configuredIds(name: string, defaults: readonly string[]) {
@@ -35,7 +39,7 @@ function configuredIds(name: string, defaults: readonly string[]) {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  return values?.length ? values : defaults;
+  return isWhopSandbox() ? [...new Set(values ?? [])] : [...new Set([...defaults, ...(values ?? [])])];
 }
 
 function configuredPattern(name: string, fallback: RegExp) {
@@ -45,10 +49,7 @@ function configuredPattern(name: string, fallback: RegExp) {
   try {
     return new RegExp(value, "i");
   } catch (error) {
-    console.error(`[WHOP CONFIG] Invalid ${name}; using built-in pattern.`, {
-      value,
-      error,
-    });
+    console.error(`[WHOP CONFIG] Invalid ${name}; using built-in pattern.`, { error });
     return fallback;
   }
 }
@@ -178,49 +179,29 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
   ];
 
   for (const mapping of mappings) {
-    const matchedId = mapping.ids.find((id) =>
-      observedIds.includes(id.toLowerCase()),
-    );
-    const matchedName = mapping.namePattern.test(nameText);
-
-    if (matchedId || matchedName) {
-      console.log("[WHOP DEBUG] Resolved paid tier:", {
+    const matchedId = mapping.ids.find((id) => observedIds.includes(id.toLowerCase()));
+    if (matchedId) {
+      console.info("[WHOP] Paid tier resolved", {
         tier: mapping.tier,
-        matchedBy: matchedId ? "product_or_plan_id" : "product_or_plan_name",
-        matchedValue: matchedId || nameText,
-        idsEnvironmentVariable: mapping.idsEnvironmentVariable,
-        patternEnvironmentVariable: mapping.patternEnvironmentVariable,
+        matchedBy: "product_or_plan_id",
       });
       return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
     }
   }
 
-  console.error(
-    "[WHOP DEBUG] Unrecognized product/plan:",
-    JSON.stringify(
-      {
-        observed: {
-          productIds: observed.productIds,
-          planIds: observed.planIds,
-          names: observed.names,
-        },
-        configuredMappings: mappings.map((mapping) => ({
-          tier: mapping.tier,
-          ids: mapping.ids,
-          idsEnvironmentVariable: mapping.idsEnvironmentVariable,
-          namePattern: mapping.namePattern.source,
-          patternEnvironmentVariable: mapping.patternEnvironmentVariable,
-        })),
-      },
-      null,
-      2,
-    ),
-  );
-  for (const membership of observed.rawProductPlans) {
-    console.log("[WHOP DEBUG] Unrecognized Product/Plan:", {
-      product: membership.product,
-      plan: membership.plan,
-    });
+  // Sandbox must match exact configured plan IDs, never display names or live-plan defaults.
+  if (isWhopSandbox()) throw new UnrecognizedWhopProductError();
+
+  for (const mapping of mappings) {
+    if (mapping.namePattern.test(nameText)) {
+      console.info("[WHOP] Paid tier resolved", { tier: mapping.tier, matchedBy: "product_or_plan_name" });
+      return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
+    }
   }
+
+  console.warn("[WHOP] Membership plan did not match a configured tier", {
+    productCount: observed.productIds.length,
+    planCount: observed.planIds.length,
+  });
   throw new UnrecognizedWhopProductError();
 }

@@ -110,6 +110,12 @@ export async function upsertBrainKnowledge(input: { userId: string; id?: string;
     const brain = await root(tx, userId);
     const old = input.id ? await tx.brainKnowledgeEntry.findFirst({ where: { id: input.id, userId, archivedAt: null } }) : null;
     if (input.id && (!old || old.sourceType !== Source.USER_ENTERED)) throw new Error('User-owned knowledge entry not found');
+    const account = await tx.user.findUnique({ where: { id: userId }, select: { tier: true } });
+    if (!old && account?.tier === 'MICRO_PILOT') {
+      const configured = await tx.brainKnowledgeEntry.count({ where: { userId, sourceType: Source.USER_ENTERED, archivedAt: null } });
+      if (configured >= 1) throw new Error('Micro-Pilot supports one limited company context entry.');
+      if (input.category !== Category.COMPANY) throw new TypeError('Micro-Pilot company context must use the COMPANY category.');
+    }
     const duplicate = await tx.brainKnowledgeEntry.findFirst({ where: { userId, category: input.category, key, archivedAt: null,
       ...(old ? { id: { not: old.id } } : {}) } });
     if (duplicate) throw new Error('Conflicting knowledge key exists; edit its canonical source or use a distinct key');
@@ -152,6 +158,8 @@ export async function getBrainContext(input: { userId: string; purpose?: BrainPu
   if (categories.some(c => !Object.values(Category).includes(c))) throw new TypeError('Invalid knowledge category');
   const maxEntries = Math.min(20, Math.max(1, input.maxEntries ?? 8));
   const maxCharacters = Math.min(4000, Math.max(200, input.maxCharacters ?? 2400));
+  const account = await db.user.findUnique({ where: { id: userId }, select: { tier: true } });
+  const isMicroPilot = account?.tier === 'MICRO_PILOT';
   const candidates = await db.brainKnowledgeEntry.findMany({ where: { userId, brainId: brain.id, archivedAt: null,
     category: { in: categories }, verification: { not: Trust.CONFLICTED } },
     orderBy: [{ importance: 'desc' }, { updatedAt: 'desc' }], take: 100 });
@@ -160,8 +168,11 @@ export async function getBrainContext(input: { userId: string; purpose?: BrainPu
     b.importance - a.importance || b.updatedAt.getTime() - a.updatedAt.getTime());
   const entries: typeof candidates = [];
   let used = 0;
+  let pilotCompanyContexts = 0;
   for (const item of candidates) {
     if (entries.length >= maxEntries) break;
+    if (isMicroPilot && item.sourceType === Source.USER_ENTERED && pilotCompanyContexts >= 1) continue;
+    if (isMicroPilot && item.sourceType === Source.USER_ENTERED) pilotCompanyContexts++;
     const line = `${item.category} [${item.verification}, ${item.sourceType}] / ${item.key}: ${clean(item.value, 600)}`;
     if (used + line.length > maxCharacters) continue;
     entries.push({ ...item, value: clean(item.value, 600) }); used += line.length + 1;

@@ -5,6 +5,8 @@ import { decrypt } from '../encryption';
 import { resolvePublicImapHost } from '../imap-security';
 
 export class NativeMailUnavailable extends Error {}
+export type NativeMailInput = { userId: string; leadId: string; to: string; subject: string; text: string;
+  html?: string; onDispatchStart?: () => void };
 export function resolveSmtpSettings(imapHost: string) {
   const host = imapHost.trim().toLowerCase();
   if (host.includes('gmail')) return { host: 'smtp.gmail.com', port: 465, secure: true };
@@ -21,8 +23,7 @@ export function htmlToPlainText(html: string) {
 }
 
 /** Canonical native-mail sender for authenticated manual sends and governed Decision execution. */
-export async function sendNativeEmail(input: { userId: string; leadId: string; to: string; subject: string;
-  text: string; html?: string }, db: PrismaClient = prisma) {
+export async function sendNativeEmail(input: NativeMailInput, db: PrismaClient = prisma) {
   const to = input.to.trim().toLowerCase();
   if (!/^\S+@\S+\.\S+$/.test(to) || !input.subject.trim() || input.subject.length > 500 ||
     !input.text.trim() || input.text.length > 200_000) throw new TypeError('Invalid native email');
@@ -40,6 +41,7 @@ export async function sendNativeEmail(input: { userId: string; leadId: string; t
     tls: { servername: publicHost.hostname }, connectionTimeout: 15_000, greetingTimeout: 10_000,
     socketTimeout: 30_000 });
   try {
+    input.onDispatchStart?.();
     const sent = await transport.sendMail({ from: user.imapEmail, to: lead.email, subject: input.subject.trim(),
       text: input.text.trim(), ...(input.html ? { html: input.html } : {}) });
     return { provider: 'NATIVE_SMTP', providerMessageId: sent.messageId || null };

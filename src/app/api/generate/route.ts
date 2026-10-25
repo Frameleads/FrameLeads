@@ -12,6 +12,7 @@ import { getSalesConstitutionContext } from '@/lib/sales-constitution';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { completeMicroPilotOutbound, MicroPilotLimitError, microPilotOutboundIdentityKey, releaseUnstartedMicroPilotOutbound, reserveMicroPilotOutbound } from '@/lib/micro-pilot-limits';
 import { verifiedCustomerUser } from '@/lib/customer-session';
 import { normalizeOutboundCopy } from '@/lib/outbound-copy';
 import Anthropic from '@anthropic-ai/sdk';
@@ -130,7 +131,7 @@ export async function POST(req: Request) {
 
     const authenticatedUser = await verifiedCustomerUser();
     const currentUser = authenticatedUser ? await prisma.user.findUnique({
-      where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true },
+      where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true, microPilotOutboundUsed: true },
     }) : null;
     if (!currentUser) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const currentUserId = currentUser.id;
@@ -153,41 +154,64 @@ export async function POST(req: Request) {
     }
 
     const maxQuota = monthlyLeadQuotaForTier(tier);
-    const remainingQuota = Math.max(0, maxQuota - currentUser.leadsProcessed);
+    const remainingQuota = Math.max(0, maxQuota - (tier === 'MICRO_PILOT' ? currentUser.microPilotOutboundUsed : currentUser.leadsProcessed));
 
     const getLeadLinkedInUrl = (lead: any) => {
       const value = lead.linkedin || lead.linkedInUrl || lead.linkedin_url;
       return typeof value === 'string' ? value.trim() : '';
     };
+    const getLeadEmail = (lead: any) => typeof (lead.email || lead.email_address || lead.emailAddress) === 'string'
+      ? (lead.email || lead.email_address || lead.emailAddress).trim().toLowerCase() : '';
     const linkedInUrls = Array.from(new Set(leads.map(getLeadLinkedInUrl).filter(Boolean))) as string[];
-    const existingRecords = currentUserId && linkedInUrls.length > 0
+    const emails = Array.from(new Set(leads.map(getLeadEmail).filter(Boolean))) as string[];
+    const existingRecords = tier === 'MICRO_PILOT'
+      ? await prisma.generatedLead.findMany({ where: { userId: currentUserId }, orderBy: { createdAt: 'desc' },
+          include: { prospect: { select: { country: true } } } })
+      : currentUserId && (linkedInUrls.length > 0 || emails.length > 0)
       ? await prisma.generatedLead.findMany({
-          where: {
-            userId: currentUserId,
-            linkedInUrl: { in: linkedInUrls },
-          },
+          where: { userId: currentUserId, OR: [
+            ...(linkedInUrls.length ? [{ linkedInUrl: { in: linkedInUrls } }] : []),
+            ...(emails.length ? [{ email: { in: emails } }] : []),
+          ] },
           orderBy: { createdAt: 'desc' },
           include: { prospect: { select: { country: true } } },
         })
       : [];
-    const existingByLinkedInUrl = new Map<string, (typeof existingRecords)[number]>();
+    const existingByIdentity = new Map<string, (typeof existingRecords)[number]>();
     for (const record of existingRecords) {
-      if (!record.linkedInUrl) continue;
-      const current = existingByLinkedInUrl.get(record.linkedInUrl);
-      if (!current || (listId && record.listId === listId && current.listId !== listId)) {
-        existingByLinkedInUrl.set(record.linkedInUrl, record);
+      const fallbackKey = microPilotOutboundIdentityKey({ firstName: record.firstName, lastName: record.lastName,
+        companyName: record.companyName, websiteUrl: record.websiteUrl });
+      for (const key of [record.linkedInUrl ? `linkedin:${record.linkedInUrl.trim().toLowerCase()}` : '',
+        record.email ? `email:${record.email.trim().toLowerCase()}` : '',
+        fallbackKey?.startsWith('fallback:') ? fallbackKey : ''].filter(Boolean)) {
+        const current = existingByIdentity.get(key);
+        if (!current || (listId && record.listId === listId && current.listId !== listId)) existingByIdentity.set(key, record);
       }
     }
+    const existingById = new Map(existingRecords.map(record => [record.id, record]));
+    const existingForLead = (lead: any) => existingByIdentity.get(`linkedin:${getLeadLinkedInUrl(lead).toLowerCase()}`) ||
+      existingByIdentity.get(`email:${getLeadEmail(lead)}`) || existingByIdentity.get(microPilotOutboundIdentityKey(lead) || '') ||
+      (shouldOverwriteExisting && typeof (lead.lead_id || lead.id) === 'string' ? existingById.get(lead.lead_id || lead.id) : undefined);
 
     const skippedCandidates: Array<{ existing: (typeof existingRecords)[number]; source: any }> = [];
     const generationCandidates: any[] = [];
-    const handledLinkedInUrls = new Set<string>();
+    const handledProspectKeys = new Set<string>();
     for (const lead of leads) {
+      const existing = existingForLead(lead) || (shouldOverwriteExisting && typeof (lead.lead_id || lead.id) === 'string'
+        ? existingById.get(lead.lead_id || lead.id) : undefined);
       const linkedInUrl = getLeadLinkedInUrl(lead);
-      if (linkedInUrl && handledLinkedInUrls.has(linkedInUrl)) continue;
-      if (linkedInUrl) handledLinkedInUrls.add(linkedInUrl);
+      let identityKey = tier === 'MICRO_PILOT'
+        ? microPilotOutboundIdentityKey({ ...lead, firstName: lead.first_name, lastName: lead.last_name,
+            linkedin: linkedInUrl, email: getLeadEmail(lead), companyName: lead.company_name, websiteUrl: lead.website_url }) || ''
+        : linkedInUrl ? `linkedin:${linkedInUrl.toLowerCase()}` : getLeadEmail(lead) ? `email:${getLeadEmail(lead)}` : '';
+      if (!identityKey && tier === 'MICRO_PILOT' && existing) identityKey = microPilotOutboundIdentityKey({
+        firstName: existing.firstName, lastName: existing.lastName, email: existing.email, linkedInUrl: existing.linkedInUrl,
+        companyName: existing.companyName, websiteUrl: existing.websiteUrl }) || '';
+      if (tier === 'MICRO_PILOT' && !identityKey)
+        return NextResponse.json({ success: false, error: 'A stable prospect identity is required for the Micro-Pilot allowance.' }, { status: 400 });
+      if (identityKey && handledProspectKeys.has(identityKey)) continue;
+      if (identityKey) handledProspectKeys.add(identityKey);
 
-      const existing = linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined;
       if (existing && !shouldOverwriteExisting) {
         skippedCandidates.push({ existing, source: lead });
       } else {
@@ -224,12 +248,25 @@ export async function POST(req: Request) {
       };
     }));
 
-    const allowedLeads = generationCandidates.slice(0, remainingQuota);
-    const lockedLeads = generationCandidates.slice(remainingQuota);
+    let allowedLeads: any[] = [];
+    let lockedLeads: any[] = [];
+    if (tier === 'MICRO_PILOT') {
+      let newProspects = 0;
+      for (const lead of generationCandidates) {
+        if (existingForLead(lead) || newProspects < remainingQuota) {
+          allowedLeads.push(lead);
+          if (!existingForLead(lead)) newProspects++;
+        } else lockedLeads.push(lead);
+      }
+    } else {
+      allowedLeads = generationCandidates.slice(0, remainingQuota);
+      lockedLeads = generationCandidates.slice(remainingQuota);
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     let processedLeads: any[] = [...skippedLeads];
 
+    if (allowedLeads.length > 0 && !apiKey) return NextResponse.json({ success: false, error: 'Missing Anthropic API Key' }, { status: 401 });
     if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
       const [brain, playbook, constitution, marketProfiles] = await Promise.all([
@@ -239,12 +276,29 @@ export async function POST(req: Request) {
         hasFeatureAccess(tier, 'CUSTOM_MARKET_PROFILES') ? listMarketProfiles(currentUserId, prisma) : Promise.resolve([]),
       ]);
 
-      const generatedLeads = await Promise.all(
+      const outboundIdentities = tier === 'MICRO_PILOT'
+        ? allowedLeads.filter(lead => !existingForLead(lead)).map(lead => microPilotOutboundIdentityKey({ ...lead,
+            firstName: lead.first_name, lastName: lead.last_name, linkedin: getLeadLinkedInUrl(lead), email: getLeadEmail(lead),
+            companyName: lead.company_name, websiteUrl: lead.website_url })!) : [];
+      try { if (outboundIdentities.length) await reserveMicroPilotOutbound(currentUserId, outboundIdentities); }
+      catch (error) {
+        if (error instanceof MicroPilotLimitError) return NextResponse.json({ success: false,
+          error: error.limit === 'OUTBOUND_EXHAUSTED' ? 'MICRO_PILOT_OUTBOUND_LIMIT_REACHED' : 'MICRO_PILOT_PROSPECT_ALREADY_RESERVED', remaining: 0 },
+          { status: error.limit === 'OUTBOUND_EXHAUSTED' ? 403 : 409 });
+        throw error;
+      }
+      const requestStarted = new Set<string>();
+      const completedIdentities = new Set<string>();
+
+      const generationResults = await Promise.allSettled(
         allowedLeads.map(async (lead: any, index: number) => {
           try {
+            const outboundIdentity = tier === 'MICRO_PILOT' && !existingForLead(lead)
+              ? microPilotOutboundIdentityKey({ ...lead, firstName: lead.first_name, lastName: lead.last_name,
+                  linkedin: getLeadLinkedInUrl(lead), email: getLeadEmail(lead), companyName: lead.company_name, websiteUrl: lead.website_url }) : null;
             const uniqueSeed = `seed_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-            const savedLead = lead.lead_id ? existingByLinkedInUrl.get(getLeadLinkedInUrl(lead)) : undefined;
+            const savedLead = lead.lead_id ? existingForLead(lead) : undefined;
             const marketRequestedLeadId = regenerate === true && typeof (lead.lead_id || lead.id) === 'string' ? (lead.lead_id || lead.id) as string : null;
             const ownedLead = marketRequestedLeadId ? await prisma.generatedLead.findFirst({ where: { id: marketRequestedLeadId, userId: currentUserId },
               include: { prospect: { select: { country: true } } } }) : null;
@@ -273,6 +327,7 @@ export async function POST(req: Request) {
                 ? prompt
                 : `${prompt}\n\nPREVIOUS ATTEMPT EXCEEDED WORD LIMITS. You MUST keep each channel body STRICTLY under ${OUTBOUND_WORD_LIMIT} words. Be more concise.`;
 
+              if (outboundIdentity) requestStarted.add(outboundIdentity);
               const response = await anthropic.messages.create({
                 model: 'claude-haiku-4-5',
                 max_tokens: 1024,
@@ -379,7 +434,7 @@ export async function POST(req: Request) {
               const safeLinkedInUrl = linkedInUrl !== ''
                 ? linkedInUrl
                 : `missing-url-${Date.now()}-${Math.random()}`;
-              const existingLead = ownedRegenerationLead || (linkedInUrl ? existingByLinkedInUrl.get(linkedInUrl) : undefined);
+              const existingLead = ownedRegenerationLead || existingForLead(lead);
 
               const persistedLead = await saveGeneratedLead(prisma, {
                 userId: currentUserId,
@@ -399,6 +454,7 @@ export async function POST(req: Request) {
                 listId: listId || ownedRegenerationLead?.listId || null,
               }, existingLead?.id, extractProspectMetadata(lead));
               persistedLeadId = persistedLead.id;
+              if (outboundIdentity) completedIdentities.add(outboundIdentity);
             }
 
             const responseLeadId = persistedLeadId || lead.id || lead.lead_id || `lead_gen_${index}_${Date.now()}`;
@@ -428,6 +484,13 @@ export async function POST(req: Request) {
           }
         })
       );
+      const generatedLeads: any[] = [];
+      const preProviderFailures = outboundIdentities.filter(identity => !requestStarted.has(identity));
+      if (preProviderFailures.length) await releaseUnstartedMicroPilotOutbound(currentUserId, preProviderFailures);
+      if (completedIdentities.size) await completeMicroPilotOutbound(currentUserId, [...completedIdentities]);
+      const firstFailure = generationResults.find(result => result.status === 'rejected');
+      if (firstFailure?.status === 'rejected') throw firstFailure.reason;
+      for (const result of generationResults) if (result.status === 'fulfilled') generatedLeads.push(result.value);
       processedLeads = [...processedLeads, ...generatedLeads];
     } else if (allowedLeads.length > 0) {
       return NextResponse.json(

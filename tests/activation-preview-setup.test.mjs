@@ -18,23 +18,26 @@ vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/lib/decisi
   throw Error('Forbidden dependency '+n);
  }});
 function fixture(){
- const leads=[],signals=[],memory=[],messages=[],user={tier:'MICRO_PILOT',email:'owner@gmail.com',monthlyQuota:25,leadsProcessed:0};
+ const leads=[],signals=[],memory=[],messages=[],outboundClaims=[],user={tier:'MICRO_PILOT',email:'owner@gmail.com',monthlyQuota:25,leadsProcessed:0,microPilotOutboundUsed:0};
  const db={queue:Promise.resolve(),memory,messages,
   $queryRaw:async(_sql,id)=>{assert.equal(id,'tenant');return [user];},
-  decision:{findFirst:async()=>null},user:{update:async()=>user.leadsProcessed++},
+  decision:{findFirst:async()=>null},microPilotOutboundClaim:{findUnique:async({where})=>outboundClaims.includes(where.userId_identityKey.identityKey)?{id:'claim',status:'COMPLETED'}:null,
+   create:async({data})=>{outboundClaims.push(data.identityKey);return data;}},
+  user:{update:async({data})=>{user.leadsProcessed+=data.leadsProcessed?.increment??0;user.microPilotOutboundUsed+=data.microPilotOutboundUsed?.increment??0;}},
   generatedLead:{findFirst:async({where})=>leads.find(l=>l.userId===where.userId && (!where.id||l.id===where.id) && (!where.prospectId||l.prospectId===where.prospectId)),
    create:async({data})=>{const lead={id:'lead:'+leads.length,...data};leads.push(lead);return lead;}},
   inboundSignal:{findFirst:async({where})=>signals.find(s=>s.userId===where.userId && (!where.sourceMessageId||s.sourceMessageId===where.sourceMessageId) && (!where.signalAnalysis||s.signalAnalysis===where.signalAnalysis)),
    create:async({data})=>{const signal={id:'signal:'+signals.length,...data};signals.push(signal);return signal;}}};
- return {db,leads,signals,user,memory,messages};
+ return {db,leads,signals,user,memory,messages,outboundClaims};
 }
 const reply={messageId:'<actual-reply@provider.example>',inReplyTo:'<actual-sent@provider.example>',from:'controlled@example.com',to:['owner@gmail.com'],text:'How does approval work?',receivedAt:new Date()};
 test('concurrent controlled import creates one canonical lead and consumes one quota slot without generating drafts',async()=>{
  const f=fixture();const [a,b]=await Promise.all([exports.importPreviewProspect('tenant',' Controlled@example.com '.trim(),f.db),exports.importPreviewProspect('tenant','controlled@example.com',f.db)]);
- assert.equal(a.id,b.id);assert.equal(f.leads.length,1);assert.equal(f.user.leadsProcessed,1);assert.equal(f.leads[0].emailDraft,'');assert.equal(f.leads[0].linkedInDraft,'');assert.equal(f.memory.length,1);
+ assert.equal(a.id,b.id);assert.equal(f.leads.length,1);assert.equal(f.user.leadsProcessed,1);assert.equal(f.user.microPilotOutboundUsed,1);assert.equal(f.leads[0].emailDraft,'');assert.equal(f.leads[0].linkedInDraft,'');assert.equal(f.memory.length,1);
+ assert.deepEqual(f.outboundClaims,['email:controlled@example.com']);
 });
 test('quota, exhausted preview, invalid identity and self-contact fail closed',async()=>{
- const f=fixture();f.user.leadsProcessed=25;
+ const f=fixture();f.user.microPilotOutboundUsed=25;
  await assert.rejects(exports.importPreviewProspect('tenant','controlled@example.com',f.db),/QUOTA/);assert.equal(f.leads.length,0);
  await assert.rejects(exports.importPreviewProspect('tenant','owner@gmail.com',f.db),/DISTINCT/);
  assert.throws(()=>exports.controlledEmail('not an email'));

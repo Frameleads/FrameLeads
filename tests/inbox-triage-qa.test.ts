@@ -60,10 +60,10 @@ test('Re-analyze uses the canonical decision endpoint and creates a retry versio
   const service = source('src/lib/decision/triage.ts');
   assert.match(panel, /fetch\('\/api\/decisions\/triage'/);
   assert.match(panel, /retryOfDecisionId: retry \? packet\?\.id : undefined/);
-  assert.match(route, /triageInboundSignal\(\{ userId, signalId: body\.signalId\.trim\(\),\s*retryOfDecisionId: body\.retryOfDecisionId \|\| undefined \}\)/);
+  assert.match(route, /triageInboundSignal\(\{ userId, signalId: body\.signalId\.trim\(\),\s*retryOfDecisionId: body\.retryOfDecisionId \|\| undefined, microPilotReserved: isPilot \}/);
   assert.match(service, /if \(input\.retryOfDecisionId\)/);
   assert.match(service, /db\.decision\.update\(\{ where: \{ id: pending\.id/);
-  assert.match(panel, /disabled=\{running \|\| loading \|\| packet\?\.status === 'PENDING'\}/);
+  assert.match(panel, /disabled=\{\(!packet \? !canAnalyze : !canReanalyze\) \|\| running \|\| loading \|\| packet\?\.status === 'PENDING'\}/);
   assert.match(panel, /setError\('Decision analysis failed/);
 });
 

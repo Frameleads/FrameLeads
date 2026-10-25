@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     return NextResponse.json(await sendProspectToSandbox({ userId: user.id, prospectId }, prisma));
   } catch (error) {
     if (error instanceof SandboxHandoffError) return NextResponse.json({ error: error.message, reason: error.reason }, {
-      status: error.reason === 'NOT_FOUND' ? 404 : 409,
+      status: error.reason === 'NOT_FOUND' ? 404 : error.reason === 'OUTBOUND_LIMIT_REACHED' ? 403 : 409,
     });
     console.error('[SCOUT] Sandbox handoff failed:', error);
     return NextResponse.json({ error: 'Could not send this prospect to Sandbox. Please retry.' }, { status: 500 });

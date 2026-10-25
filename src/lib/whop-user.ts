@@ -35,6 +35,7 @@ export async function mergeWhopUserInTransaction(tx: WhopUserTransaction, {
   subscription,
 }: MergeWhopUserInput) {
   const normalizedEmail = email.trim().toLowerCase();
+  const entitlement = { tier: subscription.tier, monthlyQuota: subscription.monthlyQuota };
   const byWhopId = await tx.user.findUnique({ where: { whopId } });
   const byEmail = await tx.user.findUnique({ where: { email: normalizedEmail } });
 
@@ -47,12 +48,12 @@ export async function mergeWhopUserInTransaction(tx: WhopUserTransaction, {
   if (existingUser) {
     return tx.user.update({
       where: { id: existingUser.id },
-      data: { whopId, email: normalizedEmail, ...subscription },
+      data: { whopId, email: normalizedEmail, ...entitlement },
     });
   }
 
   return tx.user.create({
-    data: { whopId, email: normalizedEmail, ...subscription, leadsProcessed: 0 },
+    data: { whopId, email: normalizedEmail, ...entitlement, leadsProcessed: 0 },
   });
 }
 

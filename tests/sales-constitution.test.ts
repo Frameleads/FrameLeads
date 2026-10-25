@@ -31,11 +31,12 @@ test('Constitution rule presentation formats canonical conditions and secondary 
   assert.equal(formatConstitutionCategory('DISCOUNT'), 'Pricing Governance');
   assert.equal(formatConstitutionScope('PRICING', 'USER_ENTERED'), 'Pricing · User Entered');
 });
-function fixture() {
+function fixture(tier = 'CORE') {
   const roots: any[] = [], rules: any[] = [], events: any[] = [];
   let usage = 0;
   const tx: any = {
-    user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id } : null },
+    $queryRaw: async () => [],
+    user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id, tier } : null },
     salesConstitution: {
       findUnique: async ({ where }: any) => { const row = roots.find(p => p.userId === where.userId); return row ? { ...row } : null; },
       upsert: async ({ where, create }: any) => { let row = roots.find(p => p.userId === where.userId);
@@ -45,6 +46,8 @@ function fixture() {
         row.revision += data.revision.increment; return { ...row }; },
     },
     salesConstitutionRule: {
+      count: async ({ where }: any) => rules.filter(r => r.userId === where.userId && r.constitutionId === where.constitutionId &&
+        r.source === where.source && (where.archivedAt === undefined || r.archivedAt === where.archivedAt)).length,
       create: async ({ data }: any) => { const row = { id: `r${rules.length + 1}`, revision: 1, archivedAt: null,
         severity: 'MEDIUM', scope: 'GLOBAL',
         sourceKey: null, updatedAt: new Date(), ...data }; rules.push(row); return { ...row }; },
@@ -419,4 +422,12 @@ test('evaluation is read-only and suitable for synthetic dry-run inputs', async 
   const unknown = await evaluateSalesConstitution({ userId: 'b', action: { actionType: A.OUTREACH } }, empty.db);
   assert.equal(unknown.configurationMissing, true); assert.equal(unknown.allowed, false);
   assert.equal(empty.roots.length, 0); assert.equal(empty.events.length, 0);
+});
+
+test('Micro-Pilot allows one configurable Constitution rule while leaving system policy intact', async () => {
+  const f = fixture('MICRO_PILOT');
+  const custom = await createConstitutionRule({ userId: 'a', ...base }, f.db);
+  await assert.rejects(createConstitutionRule({ userId: 'a', ...base, name: 'Second' }, f.db), /Micro-Pilot supports one/);
+  assert.equal(custom.source, S.USER_ENTERED);
+  assert.equal(POLICY_AUTHORITY_ORDER[0], 'HARD_SAFETY_COMPLIANCE');
 });

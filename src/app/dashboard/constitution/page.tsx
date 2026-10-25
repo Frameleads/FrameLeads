@@ -20,7 +20,7 @@ export default async function ConstitutionPage() {
   const constitution = await getOrCreateSalesConstitution(user.id);
   const [page, conflictResult] = await Promise.all([listConstitutionRules({ userId: user.id, take: 51 }), detectConstitutionConflicts({ userId: user.id })]);
   const rules = page.slice(0, 50);
-  return <EnterprisePaywall userTier={tier} featureName="Sales Constitution"><ConstitutionEditor initial={{ name: constitution.name, revision: constitution.revision,
+  return <EnterprisePaywall userTier={tier} featureName="Sales Constitution"><ConstitutionEditor microPilot={tier === 'MICRO_PILOT'} initial={{ name: constitution.name, revision: constitution.revision,
     nextCursor: page.length > 50 ? rules[49].id : null, conflicts: conflictResult.conflicts,
     rules: rules.map(rule => ({ id: rule.id, name: rule.name, category: rule.category, effect: rule.effect,
       description: rule.description, constraint: rule.constraint, actionTypes: rule.actionTypes, severity: rule.severity,

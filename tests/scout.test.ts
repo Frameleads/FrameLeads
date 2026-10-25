@@ -93,7 +93,7 @@ test('source links require a safe URL and mobile cards are separate from desktop
   const detail = source('src/app/dashboard/scout/ScoutDetail.tsx');
   assert.match(detail, /\{url && <a href=\{url\}/);
   const workspace = source('src/app/dashboard/scout/ScoutWorkspace.tsx');
-  assert.match(workspace, /hidden overflow-hidden[^\n]*xl:block/);
+  assert.match(workspace, /hidden w-full min-w-0 overflow-x-auto[^\n]*xl:block/);
   assert.match(workspace, /grid gap-3 sm:grid-cols-2 xl:hidden/);
   assert.match(workspace, /<article key=\{item\.id\}/);
 });

@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
+    "build": "prisma generate && next build",
+    "build:preview": "npm run build",
+    "db:migrate:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "next lint",
     "test:prospects": "node scripts/run-prospect-tool.cjs test",
@@ -34,9 +36,17 @@
     "test:campaign-session": "node scripts/run-prospect-tool.cjs campaign-session-test",
     "test:entitlements": "node scripts/run-prospect-tool.cjs entitlements-test",
     "test:entitlement-routes": "node scripts/run-prospect-tool.cjs entitlement-routes-test",
+    "test:micro-pilot": "node scripts/run-prospect-tool.cjs micro-pilot-test",
+    "test:micro-pilot-inbox": "node scripts/run-prospect-tool.cjs micro-pilot-inbox-test",
+    "test:micro-pilot-decision": "node scripts/run-prospect-tool.cjs micro-pilot-decision-test",
     "test:whop-oauth": "node scripts/run-prospect-tool.cjs whop-oauth-test",
+    "test:whop-memberships": "node scripts/run-prospect-tool.cjs whop-memberships-test",
     "test:diagnostic": "node scripts/run-prospect-tool.cjs diagnostic-test",
-    "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill"
+    "backfill:prospects": "node scripts/run-prospect-tool.cjs backfill",
+    "test:micro-pilot-send": "node scripts/run-prospect-tool.cjs micro-pilot-send-test",
+    "test:micro-pilot-send-route": "node --test tests/micro-pilot-send-route.test.mjs",
+    "test:micro-pilot-deploy-preflight": "node --test tests/micro-pilot-deploy-preflight.test.mjs",
+    "test:micro-pilot-journey": "node --test tests/micro-pilot-journey.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",

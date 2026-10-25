@@ -11,7 +11,7 @@ export function controlledEmail(value: unknown) {
   return value.trim().toLowerCase();
 }
 async function lockPreviewUser(tx: any, userId: string) {
-  const users = await tx.$queryRaw`SELECT "tier", "email", "monthlyQuota", "leadsProcessed" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
+  const users = await tx.$queryRaw`SELECT "tier", "email", "monthlyQuota", "leadsProcessed", "microPilotOutboundUsed" FROM "User" WHERE "id" = ${userId} FOR UPDATE`;
   const user = users[0];
   if (user?.tier !== 'MICRO_PILOT') throw new Error('MICRO_PILOT_REQUIRED');
   if (await tx.decision.findFirst({ where: { userId }, select: { id: true } })) throw new Error('ACTIVATION_PREVIEW_EXHAUSTED');
@@ -28,7 +28,13 @@ export function importPreviewProspect(userId: string, suppliedEmail: unknown, db
     if (!resolution.prospectId) throw new Error('PROSPECT_IDENTITY_CONFLICT');
     const existing = await tx.generatedLead.findFirst({ where: { userId, prospectId: resolution.prospectId }, select: { id: true, prospectId: true } });
     if (existing) return existing;
-    if (user.leadsProcessed >= Math.min(25, user.monthlyQuota)) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
+    const identityKey = `email:${email}`;
+    const claim = await tx.microPilotOutboundClaim.findUnique({ where: { userId_identityKey: { userId, identityKey } } });
+    if (!claim) {
+      if (user.microPilotOutboundUsed >= 25) throw new Error('MICRO_PILOT_QUOTA_EXHAUSTED');
+      await tx.microPilotOutboundClaim.create({ data: { userId, identityKey, status: 'COMPLETED' } });
+      await tx.user.update({ where: { id: userId }, data: { microPilotOutboundUsed: { increment: 1 } } });
+    } else if (claim.status === 'RESERVED') throw new Error('MICRO_PILOT_OUTBOUND_RESERVED');
     const lead = await tx.generatedLead.create({ data: { userId, prospectId: resolution.prospectId, email,
       firstName: '', lastName: '', companyName: '', emailDraft: '', linkedInDraft: '' }, select: { id: true, prospectId: true } });
     await tx.user.update({ where: { id: userId }, data: { leadsProcessed: { increment: 1 } } });

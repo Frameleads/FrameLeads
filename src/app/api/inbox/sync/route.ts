@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { createInboundSignals } from '@/lib/prospects/persistence';
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
+import { requireFeatureAccess, getUserEntitlementTier } from "@/lib/auth-guard";
 import { DEFAULT_PIPELINE_VALUE } from "@/lib/pipeline-value";
 import { decrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
@@ -43,7 +43,7 @@ export async function POST() {
   let releaseMailboxLock: (() => void) | null = null;
 
   try {
-    const authError = await requireCoreOrEnterpriseTier();
+    const authError = await requireFeatureAccess('INBOX_TRIAGE');
     if (authError) return authError;
 
     const principal = await verifiedCustomerUser();
@@ -218,7 +218,10 @@ export async function POST() {
     }
 
     const insertedSignals = await createInboundSignals(prisma, signalsToCreate);
-    scheduleInboundDecisions(user.id, insertedSignals.map(signal => signal.id));
+    const tier = await getUserEntitlementTier(user.id);
+    // Micro-Pilot sync persists and exposes raw messages only. Paid AI classification
+    // and background decision scheduling consume a separate, bounded allowance.
+    if (tier !== 'MICRO_PILOT') scheduleInboundDecisions(user.id, insertedSignals.map(signal => signal.id));
 
     releaseMailboxLock?.();
     releaseMailboxLock = null;
@@ -228,7 +231,7 @@ export async function POST() {
       imapClient = null;
     }
 
-    await Promise.allSettled(
+    if (tier !== 'MICRO_PILOT') await Promise.allSettled(
       insertedSignals.map(async ({ id }) => {
         const classificationResponse = await classifyTriageSignal(
           new Request("http://frameleads.internal/api/triage", {

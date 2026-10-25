@@ -6,7 +6,7 @@ import { requireFeatureAccess } from '@/lib/auth-guard';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
-  const entitlementError = await requireFeatureAccess('DECISION_ENGINE');
+  const entitlementError = await requireFeatureAccess('DECISION_REPLAY');
   if (entitlementError) return entitlementError;
   const jar = await cookies();
   const userId = (await resolveScoutUser(prisma, jar.get('frameleads_session')?.value))?.id;

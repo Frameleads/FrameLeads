@@ -44,6 +44,7 @@ async function InboxTriageData() {
         { createdAt: "asc" },
       ],
     });
+  const pilotUsed = userTier === 'MICRO_PILOT' && user ? (await prisma.user.findUnique({ where: { id: user.id }, select: { microPilotDecisionsUsed: true } }))?.microPilotDecisionsUsed ?? 3 : 0;
   const decisionRows = triageSignals.length ? await prisma.decision.findMany({
     where: { userId: user!.id, inputMessage: { sourceType: 'INBOUND_SIGNAL',
       sourceId: { in: triageSignals.map(signal => signal.id) } } },
@@ -65,7 +66,7 @@ async function InboxTriageData() {
   const slaByDecision = new Map(slaRows.filter(row => row != null).map(row => [row!.decisionId, row!]));
 
   return (
-    <CorePaywall userTier={userTier} featureName="Inbox Triage">
+    <>
       <TriageCommandCenter
         initialData={triageSignals.map(signal => ({ ...signal,
           decisionStatus: latestBySignal.get(signal.id)?.status ?? null,
@@ -75,7 +76,8 @@ async function InboxTriageData() {
           responseSLA: latestBySignal.get(signal.id)?.id ? slaByDecision.get(latestBySignal.get(signal.id)!.id) ?? null : null }))}
         slaDueSoonPercent={slaPolicy?.dueSoonPercent ?? 75}
         userTier={userTier}
+        pilotDecisionsRemaining={Math.max(0, 3 - pilotUsed)}
       />
-    </CorePaywall>
+    </>
   );
 }

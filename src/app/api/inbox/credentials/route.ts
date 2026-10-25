@@ -1,7 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireCoreOrEnterpriseTier } from "@/lib/auth-guard";
+import { requireFeatureAccess } from "@/lib/auth-guard";
 import { encrypt } from "@/lib/encryption";
 import { resolvePublicImapHost } from "@/lib/imap-security";
 import { verifiedCustomerUser } from '@/lib/customer-session';
@@ -30,7 +30,7 @@ async function getCurrentUser() {
 }
 
 export async function GET() {
-  const authError = await requireCoreOrEnterpriseTier();
+  const authError = await requireFeatureAccess('INBOX_TRIAGE');
   if (authError) return authError;
 
   const user = await getCurrentUser();
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
   let imapClient: ImapFlow | null = null;
 
   try {
-    const authError = await requireCoreOrEnterpriseTier();
+    const authError = await requireFeatureAccess('INBOX_TRIAGE');
     if (authError) return authError;
 
     const requestOrigin = request.headers.get("origin");

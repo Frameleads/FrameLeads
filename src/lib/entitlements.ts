@@ -17,6 +17,10 @@ const ENTERPRISE_FEATURES = new Set<FeatureKey>([
   'CUSTOM_MARKET_PROFILES', 'GOVERNANCE', 'CONSTITUTION_MANAGEMENT', 'AUTOMATION',
   'REVENUE_RISK', 'RESPONSE_SLA', 'DECISION_SANDBOX', 'OUTCOME_LEARNING',
 ]);
+const MICRO_PILOT_FEATURES = new Set<FeatureKey>([
+  'BASE_OUTBOUND', 'BUILTIN_MARKET_MESSAGING', 'SCOUT', 'ICP', 'PROSPECT_RESEARCH',
+  'BRAIN', 'PLAYBOOK', 'INBOX_TRIAGE', 'DECISION_REPLAY', 'CONSTITUTION_MANAGEMENT',
+]);
 
 export function normalizeFrameLeadsTier(value: unknown): FrameLeadsTier {
   return value === 'MICRO_PILOT' || value === 'CORE' || value === 'ENTERPRISE' || value === 'INACTIVE'
@@ -29,13 +33,22 @@ export function requiredTierForFeature(feature: FeatureKey): 'MICRO_PILOT' | 'CO
   return 'MICRO_PILOT';
 }
 
+export function corePaywallFeatureForName(name: string): FeatureKey {
+  return ({
+    'Scout': 'SCOUT', 'ICP Profile': 'ICP', 'FrameLeads Brain': 'BRAIN',
+    'Revenue Playbook': 'PLAYBOOK', 'Inbox Triage': 'INBOX_TRIAGE', 'Decision Replay': 'DECISION_REPLAY',
+  } as Record<string, FeatureKey>)[name] ?? 'PROSPECT_MEMORY';
+}
+
 export function hasFeatureAccess(tierValue: unknown, feature: FeatureKey): boolean {
   const tier = normalizeFrameLeadsTier(tierValue);
   if (tier === 'INACTIVE') return false;
   if (tier === 'ENTERPRISE') return true;
+  if (tier === 'MICRO_PILOT') return MICRO_PILOT_FEATURES.has(feature);
   if (ENTERPRISE_FEATURES.has(feature)) return false;
+  if (feature === 'INBOX_TRIAGE' || feature === 'DECISION_REPLAY') return tier === 'CORE';
   if (CORE_FEATURES.has(feature)) return tier === 'CORE';
-  return tier === 'MICRO_PILOT' || tier === 'CORE';
+  return tier === 'CORE' && !ENTERPRISE_FEATURES.has(feature);
 }
 
 export function monthlyLeadQuotaForTier(tierValue: unknown): number {

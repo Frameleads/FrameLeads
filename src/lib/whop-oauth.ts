@@ -1,3 +1,5 @@
+import { getWhopApiOrigin } from "./whop-environment";
+
 const WHOP_CALLBACK_PATH = "/api/auth/callback";
 
 export const WHOP_OAUTH_COOKIES = {
@@ -78,7 +80,7 @@ export async function createWhopAuthorizationUrl(
   const verifier = randomString(32);
   const state = randomString(24);
   const nonce = randomString(24);
-  const authorizationUrl = new URL("https://api.whop.com/oauth/authorize");
+  const authorizationUrl = new URL(getWhopApiOrigin() + "/oauth/authorize");
 
   authorizationUrl.searchParams.set("response_type", "code");
   authorizationUrl.searchParams.set("client_id", clientId);

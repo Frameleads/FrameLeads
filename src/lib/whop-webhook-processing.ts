@@ -1,51 +1,50 @@
 import type { Prisma } from '@prisma/client';
-import { resolveWhopSubscription } from './whop-subscription';
-import { mergeWhopUserInTransaction } from './whop-user';
+import { invalidateWhopEntitlementCache } from './auth-guard';
+import { membershipSubject } from './whop-memberships';
+
+const MEMBERSHIP_EVENTS = new Set([
+  'membership.activated',
+  'membership.deactivated',
+  'membership.cancel_at_period_end_changed',
+  'membership.updated',
+  'membership.went_valid',
+  'membership.went_invalid',
+  'membership_activated',
+  'membership_cancelled',
+  'membership_updated',
+  'membership.cancelled',
+  'payment.succeeded',
+  'payment_succeeded',
+  'payment.failed',
+  'payment_failed',
+  'payment.refunded',
+  'payment_refunded',
+  'refund.created',
+  'refund.succeeded',
+  'refund.updated',
+]);
 
 export type VerifiedWhopPayload = {
-  id?: string;
-  data?: {
-    user?: { id?: string; email?: string };
-    member?: { user?: { id?: string; email?: string } };
-    membership?: { user?: { id?: string; email?: string } };
-    user_id?: string;
-    email?: string;
-  };
+  type?: string;
+  event?: string;
+  action?: string;
+  data?: Record<string, unknown>;
 };
 
-const ACTIVE_EVENTS = new Set([
-  'membership.activated', 'payment.succeeded', 'membership_activated',
-  'payment_succeeded', 'membership_updated', 'membership.went_valid',
-]);
-const INACTIVE_EVENTS = new Set([
-  'membership.deactivated', 'membership_cancelled', 'membership.went_invalid',
-]);
-
-function eventIdentity(payload: VerifiedWhopPayload) {
-  const user = payload.data?.user || payload.data?.member?.user || payload.data?.membership?.user;
-  return { whopId: user?.id || payload.data?.user_id, email: user?.email || payload.data?.email };
-}
-
-/** Claim the signed delivery and apply its entitlement update in one transaction. */
+/**
+ * Claim a signed delivery and force the next authenticated entitlement check
+ * to read Whop's complete current membership view. A single event is never
+ * enough to grant/revoke a user's tier: deliveries may be out of order and
+ * the same buyer may hold another valid membership.
+ */
 export async function applyVerifiedWhopEvent(
   tx: Prisma.TransactionClient,
   webhookId: string,
   eventType: string,
-  payload: VerifiedWhopPayload,
+  payload: unknown,
 ) {
   await tx.whopWebhookReceipt.create({ data: { webhookId, eventType } });
-  const { whopId, email } = eventIdentity(payload);
-  if (!whopId) return;
-
-  if (ACTIVE_EVENTS.has(eventType)) {
-    if (!email) return;
-    const subscription = resolveWhopSubscription(payload);
-    await mergeWhopUserInTransaction(tx, { whopId, email, subscription });
-  } else if (INACTIVE_EVENTS.has(eventType)) {
-    // Signed Whop subject, never payload email, selects the single tenant.
-    await tx.user.updateMany({
-      where: { whopId },
-      data: { tier: 'INACTIVE', monthlyQuota: 0 },
-    });
-  }
+  if (!MEMBERSHIP_EVENTS.has(eventType)) return;
+  const { whopId } = membershipSubject(payload);
+  if (whopId) invalidateWhopEntitlementCache(whopId);
 }

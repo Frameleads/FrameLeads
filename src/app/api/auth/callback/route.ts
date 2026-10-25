@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getWhopApiOrigin } from "@/lib/whop-environment";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
 import { verifyWhopSubscription } from "@/lib/whop-memberships";
 import {
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
   // 1. Exchange the single-use code using Whop's OAuth 2.1 PKCE contract.
   let data: { access_token?: string };
   try {
-    const tokenRes = await fetch("https://api.whop.com/oauth/token", {
+    const tokenRes = await fetch(getWhopApiOrigin() + "/oauth/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -92,13 +93,12 @@ export async function GET(request: NextRequest) {
       }),
       cache: "no-store",
     });
-    const rawResponse = await tokenRes.text();
+      const rawResponse = await tokenRes.text();
 
     if (!tokenRes.ok) {
       console.error("[WHOP OAUTH] Token exchange rejected by Whop:", {
         status: tokenRes.status,
         statusText: tokenRes.statusText,
-        rawResponse,
         redirectUri,
         hasBasicAuthentication: true,
         hasCodeVerifier: Boolean(codeVerifier),
@@ -113,18 +113,15 @@ export async function GET(request: NextRequest) {
     try {
       data = JSON.parse(rawResponse) as { access_token?: string };
     } catch (error) {
-      console.error("[WHOP OAUTH] Whop returned non-JSON token data:", {
-        rawResponse,
-        error,
-      });
+      console.error("[WHOP OAUTH] Whop returned a non-JSON token response.", { error });
       return clearOAuthCookies(
         NextResponse.redirect(
           new URL("/login?error=invalid_token_response", request.url),
         ),
       );
     }
-  } catch (error) {
-    console.error("[WHOP OAUTH] Token exchange request failed:", error);
+  } catch {
+    console.error("[WHOP OAUTH] Token exchange request failed.");
     return clearOAuthCookies(
       NextResponse.redirect(
         new URL("/login?error=token_exchange_unavailable", request.url),
@@ -142,15 +139,13 @@ export async function GET(request: NextRequest) {
   }
 
   // 2. Fetch User Profile
-  const profileRes = await fetch("https://api.whop.com/oauth/userinfo", {
+  const profileRes = await fetch(getWhopApiOrigin() + "/oauth/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
 
   if (!profileRes.ok) {
-    const rawResponse = await profileRes.text();
     console.error("[WHOP OAUTH] Userinfo request failed:", {
       status: profileRes.status,
-      rawResponse,
     });
     return clearOAuthCookies(
       NextResponse.redirect(new URL("/login?error=profile_fetch_failed", request.url)),

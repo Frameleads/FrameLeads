@@ -84,6 +84,16 @@ export async function POST(req: Request) {
       );
     }
 
+    // Micro-Pilot has one explicitly confirmed native Sandbox send path.
+    // This legacy endpoint only performs preflight/ledger writes (it does not
+    // dispatch email), so allowing it would create fake successes and bypass
+    // the lifetime prospect claims. Keep Core/Enterprise behavior unchanged.
+    if (user.tier === 'MICRO_PILOT') {
+      return NextResponse.json({ success: false,
+        error: 'Micro-Pilot outbound is available only as a confirmed send from Sandbox.',
+        code: 'MICRO_PILOT_SANDBOX_ONLY' }, { status: 403 });
+    }
+
     const inbox = await prisma.sendingInbox.findUnique({
       where: { id: inboxId },
     });

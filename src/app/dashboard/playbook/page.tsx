@@ -20,7 +20,7 @@ export default async function PlaybookPage() {
   const playbook = await getOrCreateRevenuePlaybook(user.id);
   const page = await listPlaybookRules({ userId: user.id, take: 51 });
   const rules = page.slice(0, 50);
-  return <CorePaywall userTier={tier} featureName="Revenue Playbook"><PlaybookEditor initial={{ name: playbook.name, revision: playbook.revision,
+  return <CorePaywall userTier={tier} featureName="Revenue Playbook"><PlaybookEditor microPilot={tier === 'MICRO_PILOT'} initial={{ name: playbook.name, revision: playbook.revision,
     nextCursor: page.length > 50 ? rules[49].id : null,
     rules: rules.map(rule => ({ id: rule.id, name: rule.name, scenario: rule.scenario, customScenario: rule.customScenario,
       objective: rule.objective, guidance: rule.guidance, nextAction: rule.nextAction,

@@ -9,16 +9,19 @@ import { archivePlaybookRule, createPlaybookRule, getOrCreateRevenuePlaybook, ge
 const base = { name: 'Price inquiry', scenario: S.PRICING, objective: 'Understand the pricing concern.',
   guidance: 'Answer the price question directly and connect it to the stated use case.',
   nextAction: 'Ask whether budget or timing is the main concern.' };
-function fixture() {
+function fixture(tier = 'CORE') {
   const roots: any[] = [], rules: any[] = [];
   let usage = 0;
   const tx: any = {
-    user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id } : null },
+    $queryRaw: async () => [],
+    user: { findUnique: async ({ where }: any) => ['a', 'b'].includes(where.id) ? { id: where.id, tier } : null },
     revenuePlaybook: {
       upsert: async ({ where, create }: any) => { let row = roots.find(p => p.userId === where.userId); if (!row) { row = { id: `p-${where.userId}`, revision: 0, name: 'Default Revenue Playbook', ...create }; roots.push(row); } return { ...row }; },
       update: async ({ where, data }: any) => { const row = roots.find(p => p.userId === where.userId); row.revision += data.revision.increment; return { ...row }; },
     },
     revenuePlaybookRule: {
+      count: async ({ where }: any) => rules.filter(r => r.userId === where.userId && r.source === where.source &&
+        (where.archivedAt === undefined || r.archivedAt === where.archivedAt)).length,
       create: async ({ data }: any) => { const row = { id: `r${rules.length + 1}`, revision: 1, archivedAt: null, updatedAt: new Date(),
         sourceKey: null, ...data }; rules.push(row); return { ...row }; },
       findFirst: async ({ where }: any) => rules.find(r => r.userId === where.userId && r.id === where.id &&
@@ -88,6 +91,13 @@ test('scenario and purpose selection are deterministic, bounded, and exclude ina
   assert.ok(!first.contextText.includes('Disabled'));
   const small = await getPlaybookContext({ userId: 'a', scenarios: [S.PRICING], maxRules: 1, maxCharacters: 200 }, f.db);
   assert.ok(small.rules.length <= 1 && small.contextText.length <= 200);
+});
+
+test('Micro-Pilot allows at most two active configurable Playbook rules', async () => {
+  const f = fixture('MICRO_PILOT');
+  await createPlaybookRule({ userId: 'a', ...base, scenario: S.PRICING }, f.db);
+  await createPlaybookRule({ userId: 'a', ...base, name: 'Timing', scenario: S.TIMING }, f.db);
+  await assert.rejects(createPlaybookRule({ userId: 'a', ...base, name: 'Budget', scenario: S.BUDGET }, f.db), /Micro-Pilot supports up to 2/);
 });
 
 test('conditional applicability is simple and source provenance cannot be forged from routes', async () => {

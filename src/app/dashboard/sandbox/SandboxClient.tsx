@@ -441,6 +441,7 @@ useEffect(() => {
       setEmailSendError("A recipient email and generated draft are required.");
       return;
     }
+    if (!window.confirm(`Send this email to ${recipientEmail}? This sends once for this prospect.`)) return;
 
     setIsSending(true);
     setEmailSendError("");
@@ -451,9 +452,11 @@ useEffect(() => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          leadId: selectedLead.id,
           to: recipientEmail,
           subject: emailSubject,
           htmlBody: formatEmailBodyAsHtml(parsedEmailDraft.body),
+          confirmSend: true,
         }),
       });
       const result = await response.json().catch(() => null);
@@ -841,8 +844,8 @@ useEffect(() => {
               <Shield className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-white">Monthly Quota</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{leadsProcessed} of {monthlyQuota} leads generated</p>
+              <p className="text-sm font-semibold text-white">{userTier === 'MICRO_PILOT' ? 'One-Time Allowance' : 'Monthly Quota'}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{leadsProcessed} of {monthlyQuota} {userTier === 'MICRO_PILOT' ? 'outbound prospects used total' : 'leads generated'}</p>
             </div>
           </div>
           <div className="text-right">
@@ -1166,8 +1169,8 @@ useEffect(() => {
                         <SetupNotice level="REQUIRED" title={mailboxStatus === 'disconnected' ? 'Connect your mailbox to send' : 'Mailbox status needs checking'} href="/dashboard/inbox-triage" linkLabel="Open Inbox Triage" tone="warning">
                           {mailboxStatus === 'disconnected'
                             ? 'Native Sandbox email requires a connected supported mailbox and a valid recipient. You do not need to sync Inbox Triage before sending.'
-                            : userTier !== 'CORE' && userTier !== 'ENTERPRISE'
-                              ? 'Native mailbox access is available on Core and Enterprise. See Inbox Triage for the account’s available options.'
+                            : userTier !== 'CORE' && userTier !== 'ENTERPRISE' && userTier !== 'MICRO_PILOT'
+                              ? 'Native mailbox access is available on Micro-Pilot, Core, and Enterprise. See Inbox Triage for the account’s available options.'
                               : 'The mailbox connection could not be confirmed. Check it in Inbox Triage before sending.'}
                         </SetupNotice>
                       )}

@@ -30,7 +30,7 @@ export function scheduleInboundDecisions(userId: string, signalIds: string[],
           catch { console.error('Post-ingestion decision triage failed; inbound remains saved'); }
         }
       }
-      await Promise.all([worker(), worker()]);
+      await worker();
     });
   } catch {
     // Scheduling support can be unavailable in non-Next callers; manual idempotent triage remains available.

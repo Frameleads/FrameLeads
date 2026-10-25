@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FEATURE_KEYS, hasFeatureAccess, monthlyLeadQuotaForTier, requiredTierForFeature } from '../src/lib/entitlements';
+import { corePaywallFeatureForName, FEATURE_KEYS, hasFeatureAccess, monthlyLeadQuotaForTier, requiredTierForFeature } from '../src/lib/entitlements';
 import { localDevelopmentTierFor } from '../src/lib/local-development-tier';
 
 test('local Enterprise tier applies only to development loopback hosts', () => {
@@ -12,10 +12,14 @@ test('local Enterprise tier applies only to development loopback hosts', () => {
   assert.equal(localDevelopmentTierFor(null, 'development'), null);
 });
 
-test('MICRO_PILOT includes only the base outbound and built-in market capabilities', () => {
+test('MICRO_PILOT includes inbox reading and replay while paid intelligence stays locked', () => {
   assert.equal(hasFeatureAccess('MICRO_PILOT', 'BASE_OUTBOUND'), true);
   assert.equal(hasFeatureAccess('MICRO_PILOT', 'BUILTIN_MARKET_MESSAGING'), true);
-  for (const feature of FEATURE_KEYS.filter(key => !['BASE_OUTBOUND', 'BUILTIN_MARKET_MESSAGING'].includes(key))) {
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'INBOX_TRIAGE'), true);
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'DECISION_REPLAY'), true);
+  for (const feature of ['SCOUT', 'ICP', 'PROSPECT_RESEARCH', 'BRAIN', 'PLAYBOOK', 'CONSTITUTION_MANAGEMENT'] as const)
+    assert.equal(hasFeatureAccess('MICRO_PILOT', feature), true, `${feature} is available with pilot limits`);
+  for (const feature of FEATURE_KEYS.filter(key => !['BASE_OUTBOUND', 'BUILTIN_MARKET_MESSAGING', 'SCOUT', 'ICP', 'PROSPECT_RESEARCH', 'BRAIN', 'PLAYBOOK', 'INBOX_TRIAGE', 'DECISION_REPLAY', 'CONSTITUTION_MANAGEMENT'].includes(key))) {
     assert.equal(hasFeatureAccess('MICRO_PILOT', feature), false, `${feature} should be locked`);
     assert.ok(['CORE', 'ENTERPRISE'].includes(requiredTierForFeature(feature)));
   }
@@ -43,4 +47,22 @@ test('tier quota values remain locked', () => {
   assert.equal(monthlyLeadQuotaForTier('CORE'), 500);
   assert.equal(monthlyLeadQuotaForTier('ENTERPRISE'), 20_000);
   assert.equal(monthlyLeadQuotaForTier('unknown'), 0);
+});
+
+test('Core paywall checks each named feature rather than borrowing the Scout entitlement', () => {
+  assert.equal(corePaywallFeatureForName('Scout'), 'SCOUT');
+  assert.equal(corePaywallFeatureForName('FrameLeads Brain'), 'BRAIN');
+  assert.equal(corePaywallFeatureForName('Revenue Playbook'), 'PLAYBOOK');
+  assert.equal(corePaywallFeatureForName('Inbox Triage'), 'INBOX_TRIAGE');
+  assert.equal(corePaywallFeatureForName('Decision Replay'), 'DECISION_REPLAY');
+  assert.equal(corePaywallFeatureForName('Prospect Memory'), 'PROSPECT_MEMORY');
+  assert.equal(hasFeatureAccess('MICRO_PILOT', corePaywallFeatureForName('Prospect Memory')), false);
+});
+
+test('upgrade transitions expand entitlements and a return to Micro-Pilot restores only its explicit allowlist', () => {
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'SCOUT'), true);
+  assert.equal(hasFeatureAccess('CORE', 'PROSPECT_MEMORY'), true);
+  assert.equal(hasFeatureAccess('ENTERPRISE', 'AUTOMATION'), true);
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'PROSPECT_MEMORY'), false);
+  assert.equal(hasFeatureAccess('MICRO_PILOT', 'AUTOMATION'), false);
 });
