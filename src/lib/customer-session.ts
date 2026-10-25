@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { prisma } from './prisma';
 import { isAuthSmokeSessionToken, verifyAuthSmokeSession } from './auth-smoke-session';
+import { getWhopApiOrigin } from './whop-environment';
 
 /** A Whop OAuth access token is the only browser credential accepted as identity. */
 export async function verifyCustomerSession(token: string | undefined, db = prisma, request = fetch) {
@@ -14,7 +15,7 @@ export async function verifyCustomerSession(token: string | undefined, db = pris
         select: { id: true, tier: true, email: true, whopId: true },
       });
     }
-    const response = await request('https://api.whop.com/oauth/userinfo', {
+    const response = await request(getWhopApiOrigin() + '/oauth/userinfo', {
       headers: { authorization: 'Bearer ' + token }, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(8000),
     });
     if (!response.ok) return null;
