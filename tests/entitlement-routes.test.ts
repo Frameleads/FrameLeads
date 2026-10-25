@@ -102,6 +102,9 @@ test('Micro-Pilot inbox routes authorize read/write mailbox access but skip all 
   assert.match(sync, /if \(tier !== 'MICRO_PILOT'\) await Promise\.allSettled/);
   assert.match(sync, /rawEmail: cleanBody/);
   assert.match(sync, /sourceMessageId: \{/);
+  const packetUi = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(packetUi, /reply: s\.rawEmail \|\| ''/);
+  assert.match(packetUi, /Your three Micro-Pilot decision analyses have been used\. This original reply remains available to read\./);
 });
 
 test('Micro-Pilot Sandbox sending is confined to the quota-backed native sender and paywall wrappers stay tier-specific', () => {
@@ -128,9 +131,11 @@ test('Decision upgrade CTA uses the existing Core Whop checkout and membership m
   assert.doesNotMatch(panel, /href="\/dashboard\/billing"/);
   assert.match(source('src/lib/checkout.ts'), /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_sAEhr77rTrhX4'/);
   const merge = source('src/lib/whop-user.ts');
-  assert.match(merge, /data: \{ whopId, email: normalizedEmail, \.\.\.subscription \}/);
+  assert.match(merge, /const entitlement = \{ tier: subscription\.tier, monthlyQuota: subscription\.monthlyQuota \}/);
+  assert.match(merge, /data: \{ whopId, email: normalizedEmail, \.\.\.entitlement \}/);
   const existingMembershipUpdate = merge.slice(merge.indexOf('if (existingUser)'), merge.indexOf('return tx.user.create'));
   assert.doesNotMatch(existingMembershipUpdate, /leadsProcessed|microPilot(?:Decisions|Outbound|Research)Used/);
+  assert.doesNotMatch(merge.slice(merge.indexOf('async function persist'), merge.indexOf('function remember')), /leadsProcessed|microPilot(?:Decisions|Outbound|Research)Used/);
   const scripts = JSON.parse(source('package.json')) as { scripts: Record<string, string> };
   assert.doesNotMatch(scripts.scripts.build, /migrate deploy/);
   assert.equal(scripts.scripts['build:preview'], 'npm run build');

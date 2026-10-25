@@ -14,8 +14,9 @@ Prospect requires an existing User. User and Prospect deletion is restricted whi
 Prospect data exists; no identity data is cascaded away. No tables/columns are removed.
 
 Deploy this migration through the normal reviewed deployment process before running the
-new application code. This coding task does not apply it. Do not run `npm run build`
-for validation: that script includes `prisma migrate deploy`.
+new application code. `npm run build` is migration-free and safe for local validation.
+Apply migrations separately with `npm run db:migrate:deploy` only after confirming the
+intended database and approved deployment window.
 
 ## Identity policy
 
