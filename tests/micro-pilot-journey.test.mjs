@@ -124,5 +124,5 @@ test('synthetic Micro-Pilot journey: native send, reply sync, 3 decisions, raw m
   const checkout = fs.readFileSync(new URL('../src/lib/checkout.ts', import.meta.url), 'utf8');
   assert.match(packetUi, /href=\{CORE_CHECKOUT_URL\}[\s\S]*?Upgrade to Core/);
   assert.match(packetUi, /Your three Micro-Pilot decision analyses have been used\. This original reply remains available to read\./);
-  assert.match(checkout, /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_sAEhr77rTrhX4'/);
+  assert.match(checkout, /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_GQTDPXnvijugf'/);
 });
