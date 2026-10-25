@@ -142,6 +142,39 @@ test('Decision upgrade CTA uses the existing Core Whop checkout and membership m
   assert.match(scripts.scripts['db:migrate:deploy'], /prisma migrate deploy/);
 });
 
+test('Inbox mailbox setup is full-width before the queue heading and follows the confirmed connection state', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const notice = panel.indexOf('{mailboxSetupNotice}', panel.indexOf('Mailbox notice precedes the queue heading'));
+  const heading = panel.indexOf('EXECUTIVE OVERRIDE QUEUE', notice);
+  const subtitle = panel.indexOf('High-Priority Events Require Judgment', heading);
+  const packet = panel.indexOf('<DecisionPacketPanel', subtitle);
+  assert.ok(notice >= 0 && notice < heading && heading < subtitle && subtitle < packet);
+  assert.match(panel, /<SetupNotice action=\{connectInboxButton\}/);
+  assert.match(panel, /setMailboxConnectionStatus\('connected'\)/);
+  assert.match(panel, /mailboxConnectionStatus !== 'connected'/);
+  assert.match(panel, /min-h-11 w-full[\s\S]*?sm:w-auto/);
+  assert.match(panel, /flex-col items-start gap-4 md:flex-row md:items-center md:justify-between/);
+  assert.match(panel, /Loading decision[\s\S]*?Analyzing[\s\S]*?Waiting for decision[\s\S]*?Not analyzed/);
+  assert.match(panel, /No Decision packet was found yet/);
+});
+
+test('upgrade destinations and visibility match quota tiers without upselling Enterprise users', () => {
+  const sandbox = source('src/app/dashboard/sandbox/SandboxClient.tsx');
+  assert.ok(sandbox.includes("const quotaUpgrade = userTier === 'MICRO_PILOT'"));
+  assert.ok(sandbox.includes("{ url: CORE_CHECKOUT_URL, label: 'Upgrade to Core' }"));
+  assert.ok(sandbox.includes("'MICRO-PILOT ALLOWANCE USED'"));
+  assert.ok(sandbox.includes("userTier === 'CORE'\n      ? { url: ENTERPRISE_CHECKOUT_URL, label: 'Upgrade to Enterprise' }"));
+  assert.ok(sandbox.includes(': null;'));
+  assert.ok(sandbox.includes('{quotaUpgrade && <a'));
+  assert.doesNotMatch(sandbox, /userTier === 'ENTERPRISE' ? ENTERPRISE_CHECKOUT_URL/);
+  const ingestion = source('src/app/dashboard/ingestion/IngestionClient.tsx');
+  assert.ok(ingestion.includes("userTier === 'MICRO_PILOT' ? 'Core' : 'Enterprise'"));
+  const entitlements = source('src/lib/entitlements.ts');
+  assert.match(entitlements, /'DECISION_ENGINE'/);
+  assert.match(entitlements, /'REVENUE_RISK', 'RESPONSE_SLA'/);
+  assert.match(source('src/lib/checkout.ts'), /ENTERPRISE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_uGDGf5WKW7hlE'/);
+});
+
 test('stalled Decision recovery is authenticated, tenant scoped, stale only, and requires explicit confirmation before a new version', () => {
   const recovery = source('src/app/api/decisions/recovery/route.ts');
   assert.match(recovery, /getAuthenticatedEntitlementUser\(\)/);
