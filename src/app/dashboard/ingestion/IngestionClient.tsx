@@ -394,7 +394,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         setError(
           `${userTier} tier limit: ${limit} leads. You've generated ${leadsGenerated} so far. ` +
           `This batch has ${validLeads.length} leads, but you only have ${remaining} remaining. ` +
-          `The remaining leads will be locked. Upgrade to unlock them.`
+          `The remaining leads will be locked. Upgrade to ${userTier === 'MICRO_PILOT' ? 'Core' : 'Enterprise'} for a higher allowance.`
         );
       }
     }

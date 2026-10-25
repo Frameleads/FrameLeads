@@ -143,7 +143,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
       if (requestInFlight) return;
       if (!packet && Date.now() - autoWaitStartedAt.current >= 60_000) {
         setAwaitingDecision(false);
-        setError('Decision analysis is taking longer than expected. Refresh to check again.');
+        setError('No Decision packet was found yet. Check again or analyze this reply manually.');
         return;
       }
       requestInFlight = true;
@@ -252,7 +252,8 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
     }
   }
   const statusPresentation = decisionStatusPresentation(packet?.status);
-  const label = packet?.status === 'PENDING' || loading || awaitingDecision ? 'Analyzing' : packet ? statusPresentation.label : 'Not analyzed';
+  const label = loading ? 'Loading decision' : packet?.status === 'PENDING' ? 'Analyzing' :
+    awaitingDecision ? 'Waiting for decision' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
   const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
   const intentLabel = packet?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent unresolved';
@@ -787,6 +788,7 @@ export default function TriageCommandCenter({
       }
 
       setImapForm((current) => ({ ...current, appPassword: '' }));
+      setMailboxConnectionStatus('connected');
       setIsConnectInboxOpen(false);
       setInboxConnectionMessage('Inbox connected successfully.');
     } catch (error) {
@@ -804,10 +806,10 @@ export default function TriageCommandCenter({
         setImapConnectionError('');
         setIsConnectInboxOpen(true);
       }}
-      className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#FF5A1F] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#FF5A1F]/90"
+      className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#FF5A1F] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#FF5A1F]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] sm:w-auto"
     >
       <Mail className="h-4 w-4" />
-      Connect Native Inbox
+      {mailboxConnectionStatus === 'connected' ? 'Manage Native Inbox' : 'Connect Native Inbox'}
     </button>
   );
 
@@ -817,7 +819,7 @@ export default function TriageCommandCenter({
     </div>
   );
   const mailboxSetupNotice = hasInboxAccess && mailboxConnectionStatus !== 'loading' && mailboxConnectionStatus !== 'connected' ? (
-    <SetupNotice level={mailboxConnectionStatus === 'disconnected' ? 'REQUIRED' : 'RECOMMENDED'} title={mailboxConnectionStatus === 'disconnected' ? 'Connect a mailbox to sync native inbox replies' : 'Mailbox connection could not be confirmed'} tone={mailboxConnectionStatus === 'disconnected' ? 'warning' : 'notice'}>
+    <SetupNotice action={connectInboxButton} level={mailboxConnectionStatus === 'disconnected' ? 'REQUIRED' : 'RECOMMENDED'} title={mailboxConnectionStatus === 'disconnected' ? 'Connect a mailbox to sync native inbox replies' : 'Mailbox connection could not be confirmed'} tone={mailboxConnectionStatus === 'disconnected' ? 'warning' : 'notice'}>
       {mailboxConnectionStatus === 'disconnected' ? 'Inbox Triage can synchronize replies only after a native mailbox is connected. This connection is separate from Sandbox sending eligibility.' : 'The account connection status endpoint did not confirm whether a mailbox is connected. Check the native mailbox settings before relying on inbox synchronization.'}
     </SetupNotice>
   ) : null;
@@ -1005,6 +1007,7 @@ export default function TriageCommandCenter({
   if (!activeLead) {
     return (
       <div className="min-h-[70vh] bg-[#0A0A0A] border border-[#242424] rounded-2xl p-6">
+          {mailboxSetupNotice && <div className="mb-6">{mailboxSetupNotice}</div>}
           <div className="mb-6 space-y-3">
             <span className="text-xs font-mono text-[#888888] uppercase tracking-widest">
               {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
@@ -1023,10 +1026,9 @@ export default function TriageCommandCenter({
                 ? 'Rejected inbound signals will remain here until you permanently delete them.'
                 : 'Awaiting campaign deployment and real inbound replies. New signals will appear here for review.'}
             </p>
-            <div className="mt-6 flex flex-col items-center gap-2">
-              {mailboxSetupNotice}
-              {inboxActions}
-              {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
+            <div className="mt-6 flex flex-col items-center gap-3">
+              {mailboxConnectionStatus === 'connected' && inboxActions}
+              {inboxConnectionMessage && <p role="status" className="break-words text-xs text-[#888888]">{inboxConnectionMessage}</p>}
             </div>
           </div>
           {connectInboxModal}
@@ -1094,8 +1096,10 @@ export default function TriageCommandCenter({
       <div className="box-border flex min-h-0 w-full max-w-full min-w-0 flex-1 flex-col overflow-y-auto p-4 md:p-8">
         <div key={activeLead?.id ?? 'empty'} className="lead-transition flex min-h-full w-full max-w-full min-w-0 flex-col">
         
-        {/* Top Navigation / Status Bar */}
-        <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center mb-6 border-b border-[#1A1A1A] pb-5 gap-4 md:gap-0 shrink-0">
+        {/* Mailbox notice precedes the queue heading and its decision packet. */}
+        <div className="mb-6 shrink-0 space-y-5 border-b border-[#1A1A1A] pb-5">
+          {mailboxSetupNotice}
+          <div className="flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="break-words text-xl font-bold tracking-wide text-white sm:text-2xl" style={{ fontFamily: 'Oxanium, sans-serif' }}>
               EXECUTIVE OVERRIDE QUEUE
@@ -1106,10 +1110,10 @@ export default function TriageCommandCenter({
                 : `${visibleLeads.length} High-Priority Events Require Judgment`}
             </p>
           </div>
-          <div className="flex flex-col items-start gap-2 md:items-end">
-            {mailboxSetupNotice}
+          {mailboxConnectionStatus === 'connected' && <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
             {inboxActions}
-            {inboxConnectionMessage && <p className="text-xs text-[#888888]">{inboxConnectionMessage}</p>}
+            {inboxConnectionMessage && <p role="status" className="break-words text-xs text-[#888888]">{inboxConnectionMessage}</p>}
+          </div>}
           </div>
         </div>
 

@@ -236,6 +236,11 @@ export default function SandboxClient({
   verifiedSandboxContextCount = null,
 }: SandboxClientProps) {
 
+  const quotaUpgrade = userTier === 'MICRO_PILOT'
+    ? { url: CORE_CHECKOUT_URL, label: 'Upgrade to Core' }
+    : userTier === 'CORE'
+      ? { url: ENTERPRISE_CHECKOUT_URL, label: 'Upgrade to Enterprise' }
+      : null;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -1331,17 +1336,21 @@ useEffect(() => {
                     <Lock className="w-6 h-6 text-[#FF5A1F]" />
                   </div>
                   <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">
-                    {userTier === 'MICRO_PILOT' ? 'CORE FEATURE LOCKED' : 'ENTERPRISE FEATURE LOCKED'}
+                    {userTier === 'MICRO_PILOT' ? 'CORE FEATURE LOCKED' : userTier === 'CORE' ? 'CORE QUOTA REACHED' : 'GENERATION ALLOWANCE USED'}
                   </h3>
-                  <p className="text-sm text-[#888888] mb-6">You've hit your generation quota. Upgrade to unlock these high-intent prospects.</p>
-                  <a 
-                    href={userTier === 'MICRO_PILOT' ? CORE_CHECKOUT_URL : ENTERPRISE_CHECKOUT_URL}
+                  <p className="text-sm text-[#888888] mb-6">{userTier === 'MICRO_PILOT'
+                    ? 'Your one-time Micro-Pilot outbound allowance is used. Core includes a larger monthly generation allowance.'
+                    : userTier === 'CORE'
+                      ? 'Your Core monthly generation allowance is used. Enterprise includes a larger monthly allowance.'
+                      : 'Your current Enterprise generation allowance is used.'}</p>
+                  {quotaUpgrade && <a
+                    href={quotaUpgrade.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="bg-[#FF5A1F] hover:bg-[#e5511c] text-white font-semibold px-6 py-3 rounded-lg transition-all shadow-[0_0_15px_rgba(255,90,31,0.4)] border-none"
                   >
-                    {userTier === 'MICRO_PILOT' ? 'Upgrade to Core' : 'Upgrade to Enterprise'}
-                  </a>
+                    {quotaUpgrade.label}
+                  </a>}
                   <button 
                     onClick={() => setSelectedId("")}
                     className="mt-3 text-sm text-[#888888] hover:text-[#FFFFFF] transition-colors"
