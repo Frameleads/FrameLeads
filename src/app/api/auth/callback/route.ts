@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getWhopApiOrigin } from "@/lib/whop-environment";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
 import { verifyWhopSubscription } from "@/lib/whop-memberships";
 import {
@@ -78,7 +79,7 @@ export async function GET(request: NextRequest) {
   // 1. Exchange the single-use code using Whop's OAuth 2.1 PKCE contract.
   let data: { access_token?: string };
   try {
-    const tokenRes = await fetch("https://api.whop.com/oauth/token", {
+    const tokenRes = await fetch(getWhopApiOrigin() + "/oauth/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -138,7 +139,7 @@ export async function GET(request: NextRequest) {
   }
 
   // 2. Fetch User Profile
-  const profileRes = await fetch("https://api.whop.com/oauth/userinfo", {
+  const profileRes = await fetch(getWhopApiOrigin() + "/oauth/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` }
   });
 

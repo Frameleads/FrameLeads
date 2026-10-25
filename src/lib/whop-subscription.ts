@@ -1,3 +1,5 @@
+import { isWhopSandbox } from "./whop-environment";
+
 export type WhopSubscription = {
   tier: "MICRO_PILOT" | "CORE" | "ENTERPRISE";
   monthlyQuota: number;
@@ -37,7 +39,7 @@ function configuredIds(name: string, defaults: readonly string[]) {
     .map((value) => value.trim())
     .filter(Boolean);
 
-  return [...new Set([...defaults, ...(values ?? [])])];
+  return isWhopSandbox() ? [...new Set(values ?? [])] : [...new Set([...defaults, ...(values ?? [])])];
 }
 
 function configuredPattern(name: string, fallback: RegExp) {
@@ -186,6 +188,9 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
       return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
     }
   }
+
+  // Sandbox must match exact configured plan IDs, never display names or live-plan defaults.
+  if (isWhopSandbox()) throw new UnrecognizedWhopProductError();
 
   for (const mapping of mappings) {
     if (mapping.namePattern.test(nameText)) {

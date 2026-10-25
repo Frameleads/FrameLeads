@@ -1,3 +1,4 @@
+import { getWhopApiOrigin } from "./whop-environment";
 import {
   MembershipFilteredOutError,
   resolveWhopSubscription,
@@ -74,7 +75,7 @@ export async function verifyWhopSubscription(
   request: typeof fetch = fetch,
 ): Promise<WhopSubscription> {
   const companyId = process.env.WHOP_COMPANY_ID || DEFAULT_COMPANY_ID;
-  const membershipsUrl = new URL("https://api.whop.com/api/v1/memberships");
+  const membershipsUrl = new URL(getWhopApiOrigin() + "/api/v1/memberships");
   membershipsUrl.searchParams.append("expand", "product");
   membershipsUrl.searchParams.append("expand", "plan");
   membershipsUrl.searchParams.set("account_id", companyId);

@@ -43,6 +43,31 @@ test('SaaS recognizes both legacy and newly priced Whop checkout plans for all t
   assert.deepEqual(resolveWhopSubscription({ product: { id: 'prod_bTf6npFBh6teM' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
 });
 
+
+test('Sandbox only recognizes explicit Sandbox plan IDs, never old production IDs or names', () => {
+  const names = ['WHOP_SANDBOX','VERCEL_ENV','WHOP_MICRO_IDS','WHOP_CORE_IDS','WHOP_ENTERPRISE_IDS'] as const;
+  const saved = names.map((name) => process.env[name]);
+  try {
+    process.env.WHOP_SANDBOX = 'true';
+    process.env.VERCEL_ENV = 'preview';
+    process.env.WHOP_MICRO_IDS = 'plan_kEqA9P0Tj0TBT';
+    process.env.WHOP_CORE_IDS = 'plan_B1F9owb9s65h0';
+    process.env.WHOP_ENTERPRISE_IDS = 'plan_YmOeElzhAHzjD';
+    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_kEqA9P0Tj0TBT' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
+    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_B1F9owb9s65h0' } }), { tier: 'CORE', monthlyQuota: 500 });
+    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_YmOeElzhAHzjD' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+    assert.throws(() => resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf', name: 'Core' } }), /Unrecognized Whop product/);
+    assert.throws(() => resolveWhopSubscription({ product: { name: 'Enterprise' } }), /Unrecognized Whop product/);
+    delete process.env.WHOP_CORE_IDS;
+    assert.throws(() => resolveWhopSubscription({ plan: { id: 'plan_B1F9owb9s65h0' } }), /Unrecognized Whop product/);
+  } finally {
+    for (let i = 0; i < names.length; i++) {
+      if (saved[i] === undefined) delete process.env[names[i]];
+      else process.env[names[i]] = saved[i];
+    }
+  }
+});
+
 test('membership verification follows bounded Whop cursors and selects the highest current membership for the exact buyer/company', async () => {
   const previousCompany = process.env.WHOP_COMPANY_ID;
   process.env.WHOP_COMPANY_ID = 'biz_test';
