@@ -129,7 +129,7 @@ test('Decision upgrade CTA uses the existing Core Whop checkout and membership m
   assert.match(panel, /import \{ CORE_CHECKOUT_URL \} from '@\/lib\/checkout'/);
   assert.match(panel, /href=\{CORE_CHECKOUT_URL\}[\s\S]*?Upgrade to Core/);
   assert.doesNotMatch(panel, /href="\/dashboard\/billing"/);
-  assert.match(source('src/lib/checkout.ts'), /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_sAEhr77rTrhX4'/);
+  assert.match(source('src/lib/checkout.ts'), /CORE_CHECKOUT_URL = 'https:\/\/whop\.com\/checkout\/plan_GQTDPXnvijugf'/);
   const merge = source('src/lib/whop-user.ts');
   assert.match(merge, /const entitlement = \{ tier: subscription\.tier, monthlyQuota: subscription\.monthlyQuota \}/);
   assert.match(merge, /data: \{ whopId, email: normalizedEmail, \.\.\.entitlement \}/);
