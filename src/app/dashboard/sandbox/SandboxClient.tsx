@@ -1336,7 +1336,7 @@ useEffect(() => {
                     <Lock className="w-6 h-6 text-[#FF5A1F]" />
                   </div>
                   <h3 className="text-xl font-bold font-heading mb-2 text-[#FFFFFF]">
-                    {userTier === 'MICRO_PILOT' ? 'CORE FEATURE LOCKED' : userTier === 'CORE' ? 'CORE QUOTA REACHED' : 'GENERATION ALLOWANCE USED'}
+                    {userTier === 'MICRO_PILOT' ? 'MICRO-PILOT ALLOWANCE USED' : userTier === 'CORE' ? 'CORE QUOTA REACHED' : 'GENERATION ALLOWANCE USED'}
                   </h3>
                   <p className="text-sm text-[#888888] mb-6">{userTier === 'MICRO_PILOT'
                     ? 'Your one-time Micro-Pilot outbound allowance is used. Core includes a larger monthly generation allowance.'
