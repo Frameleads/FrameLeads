@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { createWhopAuthorizationUrl, getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "../src/lib/whop-oauth";
+import { getWhopApiOrigin } from "../src/lib/whop-environment";
 
 const previousNodeEnv = process.env.NODE_ENV;
 const previousRedirectUri = process.env.WHOP_REDIRECT_URI;
@@ -67,7 +68,26 @@ async function main() {
   assert.equal(WHOP_OAUTH_COOKIES.state, "whop_oauth_state");
   assert.equal(WHOP_OAUTH_COOKIES.verifier, "whop_oauth_verifier");
 
-  console.log("PASS: Whop OAuth canonical callback configuration, authorize URI, token exchange, state, PKCE, and welcome redirect.");
+
+  const beforeSandbox = env.WHOP_SANDBOX;
+  const beforeVercel = env.VERCEL_ENV;
+  try {
+    delete env.WHOP_SANDBOX;
+    env.VERCEL_ENV = "production";
+    assert.equal(getWhopApiOrigin(), "https://api.whop.com");
+    env.WHOP_SANDBOX = "true";
+    env.VERCEL_ENV = "preview";
+    assert.equal(getWhopApiOrigin(), "https://sandbox-api.whop.com");
+    assert.equal((await createWhopAuthorizationUrl("app_test", "https://preview.example.com/api/auth/callback")).authorizationUrl.origin, "https://sandbox-api.whop.com");
+    env.VERCEL_ENV = "production";
+    assert.throws(() => getWhopApiOrigin(), /requires isolated Preview/);
+  } finally {
+    if (beforeSandbox === undefined) delete env.WHOP_SANDBOX;
+    else env.WHOP_SANDBOX = beforeSandbox;
+    if (beforeVercel === undefined) delete env.VERCEL_ENV;
+    else env.VERCEL_ENV = beforeVercel;
+  }
+  console.log("PASS: Whop OAuth canonical callback, PKCE and sandbox isolation.");
 }
 
 main().finally(() => {
