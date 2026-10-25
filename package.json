@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && prisma migrate deploy && next build",
-    "build:preview": "prisma generate && next build",
+    "build": "prisma generate && next build",
+    "build:preview": "npm run build",
+    "db:migrate:deploy": "prisma migrate deploy",
     "start": "next start",
     "lint": "next lint",
     "test:prospects": "node scripts/run-prospect-tool.cjs test",
