@@ -149,7 +149,30 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   let failureClass:TriageFailureClass|null=null;
   let providerPhase:'PROVIDER'|'VALIDATION'='PROVIDER';
   let providerStarted = false;
+  let providerRequests = 0;
   let usage: AIUsageTokens | null = null;
+  const observer = {
+    onRequestStart: () => {
+      providerStarted = true;
+      providerRequests++;
+      // Reservation is marked started once for the entire bounded analysis,
+      // including a corrective provider request.
+      if (providerRequests === 1) deps.onProviderRequestStart?.();
+    },
+    onResponse: (tokens: AIUsageTokens | null) => {
+      if (!tokens) return;
+      const before = usage;
+      const combine = (key: keyof AIUsageTokens) => {
+        const a = before?.[key], b = tokens[key];
+        return a == null && b == null ? null : (a ?? 0) + (b ?? 0);
+      };
+      usage = {
+        inputTokens: combine('inputTokens'), outputTokens: combine('outputTokens'),
+        totalTokens: combine('totalTokens'), cachedInputTokens: combine('cachedInputTokens'),
+        reasoningTokens: combine('reasoningTokens'),
+      };
+    },
+  };
   let latencyMs = 0;
   if (fast) {
     analysis = { primaryIntent: fast.intent, intents: [{ intent: fast.intent, confidence: 100,
@@ -158,10 +181,23 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   } else {
     const start = Date.now();
     try {
-      const raw = await provider.analyze({ contextText: context.contextText }, {
-        onRequestStart: () => { providerStarted = true; deps.onProviderRequestStart?.(); }, onResponse: tokens => { usage = tokens; } });
+      const request = { contextText: context.contextText, currentReply: context.currentReply };
+      const raw = await provider.analyze(request, observer);
       providerPhase='VALIDATION';
-      analysis = validateTriageOutput(raw, context.currentReply);
+      try {
+        analysis = validateTriageOutput(raw, context.currentReply);
+      } catch (validationError) {
+        // Only an ungrounded quote from a received, structured model response
+        // may get a single corrective provider request. Never silently accept
+        // unsupported evidence or retry network/timeout/unknown outcomes.
+        if (!(validationError instanceof TypeError) ||
+            validationError.message !== 'Intent evidence is not in the reply')
+          throw validationError;
+        providerPhase = 'PROVIDER';
+        const corrected = await provider.analyze({ ...request, evidenceCorrection: true }, observer);
+        providerPhase = 'VALIDATION';
+        analysis = validateTriageOutput(corrected, context.currentReply);
+      }
       source = providerName==='ANTHROPIC'?Source.ANTHROPIC:Source.GEMINI;
     } catch (error) {
       failureClass=classifyTriageFailure(error,providerPhase);
@@ -176,7 +212,9 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
       if (providerStarted) try { await (deps.recordUsage ?? recordAIUsage)({ userId: input.userId,
         prospectId: linked.signal.prospectId, companyKey: context.companyKey,
         feature: AIFeature.INBOX_TRIAGE, operation: AIOperation.TRIAGE_ANALYSIS,
-        provider: providerName==='ANTHROPIC'?AIProvider.ANTHROPIC:AIProvider.GEMINI, model, usage, status: failure ? AIUsageStatus.FAILED : AIUsageStatus.SUCCESS,
+        provider: providerName==='ANTHROPIC'?AIProvider.ANTHROPIC:AIProvider.GEMINI,
+        model, usage, attempt: Math.max(1, providerRequests),
+        status: failure ? AIUsageStatus.FAILED : AIUsageStatus.SUCCESS,
         latencyMs }, db); } catch {
         console.error('Inbox triage usage recording failed');
         failure = 'USAGE_RECORDING_FAILED';
