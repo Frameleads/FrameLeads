@@ -446,9 +446,9 @@ export default function TriageCommandCenter({
   const pilotInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
   const displayedIntentScore = getDisplayedIntentConfidence({ intentScore:
     userTier === 'MICRO_PILOT' ? pilotInterestScore : intentScore });
+  const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
   const displayedTemperature = userTier === 'MICRO_PILOT'
     ? formatIntentTemperature(displayedIntentScore) : temperature;
-  const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
   const [showInboundSignalToast, setShowInboundSignalToast] = useState(false);
