@@ -278,7 +278,17 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
     interrupted ? 'Review interrupted analysis' : packet?.status === 'PENDING' ? 'Analyzing' :
     awaitingDecision ? 'Waiting for decision' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
-  const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
+  const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as {
+    decision?: string; matchedRuleIds?: string[]; unresolvedRuleIds?: string[];
+  }[] : [];
+  const allowedChecks = policy.filter(item => item.decision === 'ALLOWED').length;
+  const unresolvedChecks = policy.filter(item => item.decision === 'REQUIRES_REVIEW').length;
+  const blockedChecks = policy.filter(item => item.decision === 'DENIED' || item.decision === 'BLOCKED').length;
+  const unresolvedRules = new Set(policy.flatMap(item => item.unresolvedRuleIds ?? [])).size;
+  const governanceNeedsReview = Boolean(packet?.reviewReasons.includes('POLICY_UNRESOLVED')) || unresolvedChecks > 0;
+  const governanceHeadline = blockedChecks ? 'Blocked by governance' :
+    governanceNeedsReview ? 'Human review required' : 'Governance checks passed';
+  const governanceDetail = `${allowedChecks} allowed · ${unresolvedChecks} need review${unresolvedRules ? ` · ${unresolvedRules} unresolved rule${unresolvedRules === 1 ? '' : 's'}` : ''}`;
   const intentLabel = packet?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent unresolved';
   const actionLabel = packet?.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually';
   const matchedRuleIds = [...new Set(policy.flatMap(item => item.matchedRuleIds ?? []))];
@@ -347,10 +357,13 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
 
       {completedInterpretation && <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
-        <SummaryCard label="Governance" value={policy.map(item => item.decision ?? 'Review').join(' · ') || 'Review required'} detail={matchedRuleIds.length ? `${matchedRuleIds.length} matched ${matchedRuleIds.length === 1 ? 'rule' : 'rules'}` : 'No matching rule recorded'} active={matchedRuleIds.length > 0} />
+        <SummaryCard label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
         <SummaryCard label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
       </div>}
 
+      {completedInterpretation && governanceNeedsReview && <p role="status" className="mt-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.04] px-4 py-3 text-xs leading-5 text-white/70">
+        A relevant Sales Constitution rule could not be resolved from the available facts. Human review is required before treating any response as governed or approved. No automatic reply has been authorized.
+      </p>}
       {isReview && !interrupted && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-start gap-3">
           <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#FF5A1F]" />
@@ -477,11 +490,13 @@ export default function TriageCommandCenter({
   const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
   // Score comes from the SAME completed, tenant-owned decision; never from model
   // confidence. A reply without decision evidence remains explicitly unassessed.
-  const pilotInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
+  const verifiedDecision = Boolean(activeLead?.decisionPacket?.trace?.intentOutput &&
+    (activeLead.decisionPacket.source === 'GEMINI' || activeLead.decisionPacket.source === 'ANTHROPIC'));
+  const governedInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
   const displayedIntentScore = getDisplayedIntentConfidence({ intentScore:
-    userTier === 'MICRO_PILOT' ? pilotInterestScore : intentScore });
+    verifiedDecision || userTier === 'MICRO_PILOT' ? governedInterestScore : intentScore });
   const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
-  const displayedTemperature = userTier === 'MICRO_PILOT'
+  const displayedTemperature = verifiedDecision || userTier === 'MICRO_PILOT'
     ? formatIntentTemperature(displayedIntentScore) : temperature;
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
@@ -717,13 +732,14 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
+  const isHotLead = hasDecisionEngineAccess &&
+    (verifiedDecision ? activeLead?.decisionPacket?.status === 'APPROVED' : true) &&
+    resolveIntentTemperature(displayedIntentScore, verifiedDecision ? null : activeLead?.status) === 'HOT';
   const legacyNeedsReview = userTier !== 'MICRO_PILOT' &&
     activeLead?.decisionPacket?.source === 'UNAVAILABLE';
-  const displayedSignals: string[] = userTier === 'MICRO_PILOT'
-    ? activeLead?.decisionPacket?.trace && activeLead.decisionPacket.source !== 'UNAVAILABLE'
-      ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
-      : []
+  const displayedSignals: string[] = verifiedDecision && activeLead?.decisionPacket
+    ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
+    : userTier === 'MICRO_PILOT' ? []
     : activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
   const pilotPacket: DecisionPacket | null = userTier === 'MICRO_PILOT' ? activeLead?.decisionPacket ?? null : null;
   const safePilotSuggestion = pilotPacket?.trace && pilotPacket.source !== 'UNAVAILABLE' &&
