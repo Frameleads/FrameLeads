@@ -519,7 +519,7 @@ test('same Decision provider result carries distinct evidence-grounded buying in
   assert.throws(() => validateTriageOutput({ ...answer, prospectInterestScore: 101 }, 'What is the price?'), /interest score/);
   assert.throws(() => validateTriageOutput({ ...answer, prospectInterestScore: '90' }, 'What is the price?'), /interest score/);
   assert.match(TRIAGE_SYSTEM_PROMPT, /NOT confidence or likelihood of closing/);
-  assert.ok(TRIAGE_RESPONSE_SCHEMA.required?.includes('prospectInterestScore'));
+  assert.ok((TRIAGE_RESPONSE_SCHEMA as { required?: string[] }).required?.includes('prospectInterestScore'));
   const f=fixture({answer: { ...answer, prospectInterestScore: 78 }});
   const result=await triageInboundSignal({userId:'tenant-a',signalId:'signal-1'},f.deps);
   assert.equal((result.decision?.trace?.intentOutput as {prospectInterestScore?:number})?.prospectInterestScore,78);
