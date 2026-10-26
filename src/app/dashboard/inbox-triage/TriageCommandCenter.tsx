@@ -97,14 +97,18 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
   escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
   riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, canAnalyze, canReanalyze }: { signalId: string;
+function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, isMicroPilot, hasSavedDecision, pilotDecisionsRemaining, canAnalyze, canReanalyze }: { signalId: string;
   reply: string;
   onDecision: (signalId: string, status: string, packet?: DecisionPacket) => void;
+  onNewPilotDecision: () => void;
+  isMicroPilot: boolean;
+  hasSavedDecision: boolean;
+  pilotDecisionsRemaining: number;
   onRisk: (signalId: string, risk: RevenueRiskView) => void;
   onSLA: (signalId: string, sla: ResponseSLAView | null) => void; dueSoonPercent: number; isEnterpriseTier: boolean; canAnalyze: boolean; canReanalyze: boolean }) {
   const [packet, setPacket] = useState<DecisionPacket | null>(null);
   const [loading, setLoading] = useState(true);
-  const [awaitingDecision, setAwaitingDecision] = useState(true);
+  const [awaitingDecision, setAwaitingDecision] = useState(!isMicroPilot);
   const autoWaitStartedAt = useRef(Date.now());
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
@@ -121,7 +125,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setAwaitingDecision(true);
+    setAwaitingDecision(!isMicroPilot);
     autoWaitStartedAt.current = Date.now();
     setPacket(null);
     setError('');
@@ -131,12 +135,14 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
         return response.json();
       })
       .then(data => { if (active) { setPacket(data.decision ?? null);
-        if (data.decision) { setAwaitingDecision(false); onDecision(signalId, data.decision.status, data.decision); } } })
+        if (data.decision) { setAwaitingDecision(false); onDecision(signalId, data.decision.status, data.decision); }
+        else if (isMicroPilot) setAwaitingDecision(false); } })
       .catch(() => { if (active) { setAwaitingDecision(false); setError('Could not load the decision packet.'); } })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [signalId, onDecision]);
+  }, [signalId, onDecision, isMicroPilot]);
   useEffect(() => {
+    if (isMicroPilot && !packet) return; // Micro-Pilot never schedules automatic decision analysis.
     if (packet?.status !== 'PENDING' && !awaitingDecision) return;
     let requestInFlight = false;
     const timer = window.setInterval(() => {
@@ -154,7 +160,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
         .finally(() => { requestInFlight = false; });
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [packet?.status, awaitingDecision, signalId, onDecision]);
+  }, [packet?.status, awaitingDecision, signalId, onDecision, isMicroPilot]);
   useEffect(() => {
     if (!isEnterpriseTier || !packet?.id) { setAutomation(null); return; }
     let active = true;
@@ -233,7 +239,11 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
           confirmProviderRequestEnded: uncertain ? true : undefined }) });
       if (!response.ok) throw new Error('Decision analysis failed. The reply is safely stored; retry when ready.');
       const result = await response.json();
-      if (result.decision) { setPacket(result.decision); onDecision(signalId, result.decision.status, result.decision); }
+      if (result.decision) {
+        setPacket(result.decision);
+        onDecision(signalId, result.decision.status, result.decision);
+        if (isMicroPilot && result.decision.source !== 'UNAVAILABLE') onNewPilotDecision();
+      }
       else setError('Prospect identity is unresolved. Review this reply manually.');
     } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
     finally { setRunning(false); }
@@ -273,18 +283,24 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onRisk, onSLA, dueSo
         {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`} className="inline-flex min-h-11 items-center rounded-lg border border-white/[0.1] px-3 py-2 text-xs text-white/65 transition-colors hover:border-white/25 hover:text-white focus-visible:outline">Replay</Link>}
         <button type="button" disabled={(!packet ? !canAnalyze : !canReanalyze) || running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
           className="min-h-11 rounded-lg border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.06] px-3 py-2 text-xs font-semibold text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.12] disabled:opacity-40">
-          {!canAnalyze && !packet ? 'Decision intelligence locked' : running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
+          {!canAnalyze && !packet ? hasSavedDecision ? 'Decision already recorded' : isMicroPilot && pilotDecisionsRemaining === 0 ? 'Decision allowance used' : 'Analysis unavailable' : running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
         </button>
         {packet?.status === 'PENDING' && packet.createdAt && Date.now() - new Date(packet.createdAt).getTime() >= 10 * 60 * 1000 &&
           <button type="button" onClick={() => void markStalledForReview()}
             className="min-h-11 rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-300">Mark outcome uncertain</button>}
       </div>
     </header>
-    {!canAnalyze && !packet && <div className="mt-5 rounded-xl border border-[#FF5A1F]/25 bg-[#1A1A1A] p-5">
+    {isMicroPilot && <p className="mt-4 text-xs text-white/60" role="status">
+      Micro-Pilot decision proof: {pilotDecisionsRemaining} of 3 first-time prospect analyses remaining. Original replies and completed replay stay readable.
+    </p>}
+    {!canAnalyze && !packet && !hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0 && <div className="mt-5 rounded-xl border border-[#FF5A1F]/25 bg-[#1A1A1A] p-5">
       <p className="font-mono text-xs font-bold tracking-widest text-[#FF5A1F]">🔒 DECISION INTELLIGENCE LOCKED</p>
       <p className="mt-2 text-sm text-white/65">Your three Micro-Pilot decision analyses have been used. This original reply remains available to read.</p>
       <Link href={CORE_CHECKOUT_URL} className="mt-4 inline-flex rounded-lg bg-[#FF5A1F] px-4 py-2 text-sm font-semibold text-black">Upgrade to Core</Link>
     </div>}
+    {!canAnalyze && !packet && hasSavedDecision && !loading && <p role="status" className="mt-4 text-sm text-white/65">
+      A previous decision was recorded for this reply. Its history is loading or temporarily unavailable; your original reply remains visible below.
+    </p>}
     {loading && <p role="status" className="mt-4 text-sm text-gray-400">Loading decision…</p>}
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
@@ -343,7 +359,9 @@ export default function TriageCommandCenter({
   const isCoreTier = !hasFeatureAccess(userTier, 'AUTOMATION');
   const hasInboxAccess = hasFeatureAccess(userTier, 'INBOX_TRIAGE');
   const isEnterpriseTier = hasFeatureAccess(userTier, 'REVENUE_RISK');
-  const hasDecisionEngineAccess = hasFeatureAccess(userTier, 'DECISION_ENGINE') || (userTier === 'MICRO_PILOT' && pilotDecisionsRemaining > 0);
+  const [pilotRemaining, setPilotRemaining] = useState(pilotDecisionsRemaining);
+  useEffect(() => setPilotRemaining(pilotDecisionsRemaining), [pilotDecisionsRemaining]);
+  const hasDecisionEngineAccess = hasFeatureAccess(userTier, 'DECISION_ENGINE') || (userTier === 'MICRO_PILOT' && pilotRemaining > 0);
   const canGenerateLegacyDraft = userTier !== 'MICRO_PILOT' && hasDecisionEngineAccess;
   const dbLeads = useMemo(() => Array.isArray(initialData) && initialData.length > 0
     ? initialData.map((s: any) => ({
@@ -1118,7 +1136,10 @@ export default function TriageCommandCenter({
         </div>
 
         <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} reply={activeLead.inboundSignal} onDecision={updateDecisionStatus}
+          onNewPilotDecision={() => setPilotRemaining(remaining => Math.max(0, remaining - 1))}
           onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier}
+          isMicroPilot={userTier === 'MICRO_PILOT'} hasSavedDecision={Boolean(activeLead.decisionId)}
+          pilotDecisionsRemaining={pilotRemaining}
           canAnalyze={hasDecisionEngineAccess && !activeLead.decisionId} canReanalyze={userTier !== 'MICRO_PILOT'} />
 
         <div className="mt-6 flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
