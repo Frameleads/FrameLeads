@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decisionStatusPresentation } from '../src/lib/decision/status-presentation';
 import { formatIntentTemperature, intentTemperature, isHighPriorityIntent, resolveIntentTemperature } from '../src/lib/intent-temperature';
+import { getDecisionProspectInterestScore } from '../src/lib/decision/intent-confidence';
 
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
@@ -106,8 +107,25 @@ test('Micro-Pilot keeps all raw replies and existing decision history visible, l
   assert.match(panel, /!hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0/);
   assert.match(panel, /hasSavedDecision \? 'Decision already recorded'/);
   assert.match(panel, /if \(isMicroPilot && !packet\) return;/);
-  assert.match(panel, /if \(isMicroPilot && result\.decision\.source !== 'UNAVAILABLE'\) onNewPilotDecision\(\)/);
+  assert.match(panel, /if \(isMicroPilot && !result\.reused && result\.decision\.source !== 'UNAVAILABLE'\) onNewPilotDecision\(\)/);
   assert.match(panel, /<Link href=\{\`\/dashboard\/decisions\/\$\{encodeURIComponent\(packet\.id\)\}\/replay\`\}/);
   assert.match(panel, /\{inboundSignal\}/);
   assert.match(panel, /canReanalyze=\{userTier !== 'MICRO_PILOT'\}/);
+});
+
+
+test('interest scores require validated persisted AI evidence, never decision confidence', () => {
+  const decision = { source: 'GEMINI', confidenceScore: 96,
+    trace: { intentOutput: { prospectInterestScore: 74, confidence: 96,
+      intents: [{ intent: 'PRICING_INQUIRY', evidence: 'What is your price?', confidence: 96 }] } } };
+  assert.equal(getDecisionProspectInterestScore(decision), 74);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { confidence: 96 } } }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, source: 'DETERMINISTIC' }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { prospectInterestScore: 101 } } }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { prospectInterestScore: 0 } } }), 0);
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /getDecisionProspectInterestScore\(activeLead\?\.decisionPacket\)/);
+  assert.match(panel, /'Not assessed'/);
+  assert.match(panel, /Prospect buying interest, based on reply evidence/);
+  assert.match(panel, /result\.reused/);
 });
