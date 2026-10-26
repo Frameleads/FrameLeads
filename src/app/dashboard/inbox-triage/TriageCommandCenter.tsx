@@ -759,7 +759,7 @@ export default function TriageCommandCenter({
     typeof decisionPacket?.suggestedReply === 'string' && decisionPacket.suggestedReply.trim()
     ? decisionPacket.suggestedReply.trim() : '';
   const liveDraft = governedDraftMode
-    ? pilotDraftOverrides[activeLead?.id ?? ''] ?? safeGovernedSuggestion
+    ? safeGovernedSuggestion ? pilotDraftOverrides[decisionPacket?.id ?? ''] ?? safeGovernedSuggestion : ''
     : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
   const governedDraftWithheld = governedDraftMode && !!decisionPacket && !safeGovernedSuggestion;
   const copyPilotDraft = async () => {
@@ -1346,7 +1346,7 @@ export default function TriageCommandCenter({
                 <button 
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
-                  disabled={isGenerating || isDispatching}
+                  disabled={isGenerating || isDispatching || (governedDraftMode && !safeGovernedSuggestion)}
                   className="inline-flex min-h-11 items-center px-3 py-2 text-xs bg-[#1A1A1A] text-white rounded hover:bg-[#222]"
                 >
                   {isEditing ? 'Lock Draft' : 'Unlock Edit Mode'}
@@ -1360,7 +1360,7 @@ export default function TriageCommandCenter({
                 readOnly={governedDraftMode && !isEditing}
                 onChange={(e) => {
                   if (governedDraftMode) {
-                    if (activeLead?.id && safeGovernedSuggestion) setPilotDraftOverrides(current => ({ ...current, [activeLead.id]: e.target.value }));
+                    if (decisionPacket?.id && safeGovernedSuggestion) setPilotDraftOverrides(current => ({ ...current, [decisionPacket.id]: e.target.value }));
                     setDraftCopied(false);
                   } else if (typeof draftText === 'object' && draftText !== null) {
                     setDraftText({ ...draftText, body: e.target.value });
