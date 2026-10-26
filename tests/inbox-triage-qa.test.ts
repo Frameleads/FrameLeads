@@ -64,7 +64,7 @@ test('Re-analyze uses the canonical decision endpoint and creates a retry versio
   assert.match(route, /triageInboundSignal\(\{ userId, signalId: body\.signalId\.trim\(\),\s*retryOfDecisionId: body\.retryOfDecisionId \|\| undefined, microPilotReserved: isPilot \}/);
   assert.match(service, /if \(input\.retryOfDecisionId\)/);
   assert.match(service, /db\.decision\.update\(\{ where: \{ id: pending\.id/);
-  assert.match(panel, /disabled=\{\(!packet \? !canAnalyze : !canReanalyze\) \|\| running \|\| loading \|\| packet\?\.status === 'PENDING'\}/);
+  assert.match(panel, /disabled=\{\(!packet \? !canAnalyze : !\(canReanalyze \|\| recoverablePilot\)\) \|\| running \|\| loading/);
   assert.match(panel, /setError\('Decision analysis failed/);
 });
 
@@ -74,7 +74,7 @@ test('Mobile and desktop layouts keep queues, packet, chips, details, and action
   assert.match(panel, /overflow-x-auto flex-nowrap/);
   assert.match(panel, /w-\[82vw\].*max-w-\[300px\].*sm:w-\[300px\]/);
   assert.match(panel, /min-h-\[18rem\]/);
-  assert.match(panel, /xl:whitespace-nowrap/);
+  assert.match(panel, /max-w-full break-words font-heading/);
   assert.match(panel, /sm:grid-cols-2 xl:grid-cols-3/);
   assert.match(panel, /flex flex-wrap gap-2/);
   assert.match(panel, /flex flex-col gap-3.*sm:flex-row/);
@@ -103,7 +103,7 @@ test('Micro-Pilot keeps all raw replies and existing decision history visible, l
   assert.match(page, /hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
   assert.match(panel, /const hasInboxAccess = hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
   assert.match(panel, /const \[pilotRemaining, setPilotRemaining\] = useState\(pilotDecisionsRemaining\)/);
-  assert.match(panel, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\} of 3 first-time prospect analyses remaining/);
+  assert.match(panel, /One-Time Decision Allowance/);
   assert.match(panel, /!hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0/);
   assert.match(panel, /hasSavedDecision \? 'Decision already recorded'/);
   assert.match(panel, /if \(isMicroPilot && !packet\) return;/);
