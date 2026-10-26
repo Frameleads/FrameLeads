@@ -229,7 +229,9 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
   async function run(retry: boolean) {
     if (running) return;
     const uncertain = Boolean(packet?.reviewReasons.includes('ANALYSIS_OUTCOME_UNCERTAIN'));
-    if (uncertain && !window.confirm('Confirm you verified that the previous provider request has ended. Re-analysis will create a new Decision version and preserve the uncertain record.')) return;
+    if (uncertain && !window.confirm(isMicroPilot
+      ? 'This old analysis never completed. Recovery makes one new AI attempt using the existing Micro-Pilot slot, preserves the interrupted record, and does not send a reply. Continue?'
+      : 'Confirm you verified that the previous provider request has ended. Re-analysis will create a new Decision version and preserve the uncertain record.')) return;
     setRunning(true);
     setError('');
     try {
@@ -263,7 +265,15 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
     }
   }
   const statusPresentation = decisionStatusPresentation(packet?.status);
-  const label = loading ? 'Loading decision' : packet?.status === 'PENDING' ? 'Analyzing' :
+  const stalled = Boolean(packet?.status === 'PENDING' && packet.createdAt &&
+    clock - new Date(packet.createdAt).getTime() >= 10 * 60 * 1000);
+  const interrupted = Boolean(packet?.reviewReasons.includes('ANALYSIS_OUTCOME_UNCERTAIN') &&
+    packet.source === 'UNAVAILABLE' && !packet.trace);
+  const recoverablePilot = Boolean(isMicroPilot && interrupted && packet?.createdAt &&
+    clock - new Date(packet.createdAt).getTime() >= 24 * 60 * 60 * 1000);
+  const completedInterpretation = Boolean(packet?.trace && packet.source !== 'UNAVAILABLE');
+  const label = loading ? 'Loading decision' : stalled ? 'Interrupted' :
+    interrupted ? 'Review interrupted analysis' : packet?.status === 'PENDING' ? 'Analyzing' :
     awaitingDecision ? 'Waiting for decision' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
   const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
@@ -273,6 +283,16 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
   const isReview = packet?.status === 'NEEDS_REVIEW';
   return <section aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 sm:p-7">
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_78%_0%,rgba(255,90,31,.075),transparent_35%)]" />
+    {isMicroPilot && <div role="status" aria-label="Micro-Pilot decision allowance" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.07] px-4 py-3 sm:px-5">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-white">One-Time Decision Allowance</p>
+        <p className="mt-1 text-[11px] text-white/50">{3 - pilotDecisionsRemaining} of 3 prospect slots claimed</p>
+      </div>
+      <div className="text-right font-mono text-[#FF5A1F]">
+        <span className="block text-3xl font-bold leading-none">{pilotDecisionsRemaining}</span>
+        <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider">Remaining</span>
+      </div>
+    </div>
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <h2 className="font-heading text-base font-semibold uppercase tracking-wide text-white">Decision Packet</h2>
@@ -282,18 +302,19 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         {packet && <Link href={`/dashboard/decisions/${encodeURIComponent(packet.id)}/replay`} className="inline-flex min-h-11 items-center rounded-lg border border-white/[0.1] px-3 py-2 text-xs text-white/65 transition-colors hover:border-white/25 hover:text-white focus-visible:outline">Replay</Link>}
-        <button type="button" disabled={(!packet ? !canAnalyze : !canReanalyze) || running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
+        <button type="button" disabled={(!packet ? !canAnalyze : !(canReanalyze || recoverablePilot)) || running || loading || packet?.status === 'PENDING'} onClick={() => void run(Boolean(packet))}
           className="min-h-11 rounded-lg border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.06] px-3 py-2 text-xs font-semibold text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.12] disabled:opacity-40">
-          {!canAnalyze && !packet ? hasSavedDecision ? 'Decision already recorded' : isMicroPilot && pilotDecisionsRemaining === 0 ? 'Decision allowance used' : 'Analysis unavailable' : running ? 'Analyzing…' : packet ? 'Re-analyze' : 'Analyze reply'}
+          {!canAnalyze && !packet ? hasSavedDecision ? 'Decision already recorded' : isMicroPilot && pilotDecisionsRemaining === 0 ? 'Decision allowance used' : 'Analysis unavailable' : running ? 'Analyzing…' : recoverablePilot ? 'Recover analysis' : packet ? 'Re-analyze' : 'Analyze reply'}
         </button>
-        {packet?.status === 'PENDING' && packet.createdAt && Date.now() - new Date(packet.createdAt).getTime() >= 10 * 60 * 1000 &&
+        {stalled &&
           <button type="button" onClick={() => void markStalledForReview()}
-            className="min-h-11 rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-300">Mark outcome uncertain</button>}
+            className="min-h-11 rounded-lg border border-amber-400/25 px-3 py-2 text-xs text-amber-300">Review interrupted analysis</button>}
       </div>
     </header>
-    {isMicroPilot && <p className="mt-4 text-xs text-white/60" role="status">
-      Micro-Pilot decision proof: {pilotDecisionsRemaining} of 3 first-time prospect analyses remaining. Original replies and completed replay stay readable.
-    </p>}
+    {(stalled || interrupted) && <div role="alert" className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] p-4 text-sm text-amber-100/85">
+      <p className="font-semibold">Analysis interrupted — no completed result was saved.</p>
+      <p className="mt-1 text-xs leading-5 text-white/60">Your reply is preserved. The previous AI request did not produce a usable interpretation, interest score, or verified draft. Review the interrupted attempt before retrying; the same Micro-Pilot prospect slot is retained.</p>
+    </div>}
     {!canAnalyze && !packet && !hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0 && <div className="mt-5 rounded-xl border border-[#FF5A1F]/25 bg-[#1A1A1A] p-5">
       <p className="font-mono text-xs font-bold tracking-widest text-[#FF5A1F]">🔒 DECISION INTELLIGENCE LOCKED</p>
       <p className="mt-2 text-sm text-white/65">Your three Micro-Pilot decision analyses have been used. This original reply remains available to read.</p>
@@ -310,17 +331,17 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
           <div className="min-w-0">
           <p className="font-mono text-[9px] uppercase tracking-[.18em] text-[#FF5A1F]">Incoming reply</p>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">“{reply}”</p>
-          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl xl:whitespace-nowrap">{packet.interpretation ?? 'Decision interpretation pending'}</h3>
+          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">{completedInterpretation ? packet.interpretation : 'No verified interpretation yet'}</h3>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {completedInterpretation && <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
         <SummaryCard label="Governance" value={policy.map(item => item.decision ?? 'Review').join(' · ') || 'Review required'} detail={matchedRuleIds.length ? `${matchedRuleIds.length} matched ${matchedRuleIds.length === 1 ? 'rule' : 'rules'}` : 'No matching rule recorded'} active={matchedRuleIds.length > 0} />
         <SummaryCard label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
-      </div>
+      </div>}
 
-      {isReview && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+      {isReview && !interrupted && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-start gap-3">
           <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#FF5A1F]" />
           <div className="min-w-0"><p className="font-mono text-[8px] uppercase tracking-[.16em] text-[#FF5A1F]">Why human review</p>
