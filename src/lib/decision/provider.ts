@@ -21,7 +21,7 @@ Use only supplied FrameLeads context for factual claims about the business. Your
 
 Allowed intent taxonomy: ${TRIAGE_INTENTS.join(', ')}. Never invent an intent label. If no taxonomy value fits, use OTHER. COMMITMENT is not a TriageIntent; a commercial commitment question never authorizes a COMMITMENT intent.
 
-Return strict JSON with exactly: primaryIntent (one allowed taxonomy value), intents (1-5 objects with intent, confidence 0-100, evidence as an exact short substring copied from CURRENT_REPLY), overallConfidence 0-100, prospectInterestScore (integer 0-100 or null), conciseInterpretation (<=350 characters), recommendedNextAction (REPLY_WITH_FACTS|ASK_CLARIFYING_QUESTION|OFFER_MEETING|ESCALATE_TO_HUMAN|NO_SALES_OUTREACH|REVIEW_MANUALLY), suggestedReply (string <=1000 or null), explanation (<=500 characters). Include every material intent, not just one. Do not output hidden reasoning or chain-of-thought. Do not invent facts to fill a draft. If information is insufficient, lower confidence and recommend review. ProspectInterestScore measures explicit buying interest in CURRENT_REPLY, NOT confidence or likelihood of closing. 0-19 explicit rejection/unsubscribe; 20-49 no expressed commercial interest; 50-69 cautious/tentative interest; 70-89 meaningful pricing/feature questions; 90-100 explicit next-step/meeting commitment. Use null for automated replies, ambiguity, or insufficient evidence. Ground any non-null score in exact reply evidence already returned in intents. Do not invent evidence or overstate certainty. No markdown.`;
+Return strict JSON with exactly: primaryIntent (one allowed taxonomy value), intents (1-5 objects with intent, confidence 0-100, evidence as a short verbatim span copied exclusively from the separate CURRENT_REPLY field (not recent conversation or notes)), overallConfidence 0-100, prospectInterestScore (integer 0-100 or null), conciseInterpretation (<=350 characters), recommendedNextAction (REPLY_WITH_FACTS|ASK_CLARIFYING_QUESTION|OFFER_MEETING|ESCALATE_TO_HUMAN|NO_SALES_OUTREACH|REVIEW_MANUALLY), suggestedReply (string <=1000 or null), explanation (<=500 characters). Include every material intent, not just one. Do not output hidden reasoning or chain-of-thought. Do not invent facts to fill a draft. If information is insufficient, lower confidence and recommend review. ProspectInterestScore measures explicit buying interest in CURRENT_REPLY, NOT confidence or likelihood of closing. 0-19 explicit rejection/unsubscribe; 20-49 no expressed commercial interest; 50-69 cautious/tentative interest; 70-89 meaningful pricing/feature questions; 90-100 explicit next-step/meeting commitment. Use null for automated replies, ambiguity, or insufficient evidence. Ground any non-null score in exact reply evidence already returned in intents. The user request includes a separate CURRENT_REPLY field: copy evidence literally from it, preserving wording and punctuation. Never use quotation marks or paraphrases from RECENT_CONVERSATION or other context as evidence. Do not invent evidence or overstate certainty. No markdown.`;
 
 const actions: TriageAction[] = ['REPLY_WITH_FACTS','ASK_CLARIFYING_QUESTION','OFFER_MEETING',
   'ESCALATE_TO_HUMAN','NO_SALES_OUTREACH','REVIEW_MANUALLY'];
@@ -120,6 +120,39 @@ const confidence = (value: unknown) => {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 100) throw new TypeError('Invalid confidence');
   return value;
 };
+/** Resolve only typographic and whitespace differences in quoted evidence to its
+ * exact original span. Never accept a paraphrase, a substring from other context,
+ * a case change, or a claim absent from CURRENT_REPLY. Returns source-owned text. */
+function canonicalEvidence(value: string) {
+  let normalized = '';
+  const starts: number[] = [];
+  const ends: number[] = [];
+  for (let index = 0; index < value.length; index++) {
+    const source = value[index];
+    const mapped = /[\u2018\u2019\u02BC]/.test(source) ? "'" :
+      /[\u201C\u201D]/.test(source) ? '"' :
+      /[\u2010\u2011\u2013\u2014]/.test(source) ? '-' :
+      /\s/.test(source) ? ' ' : source;
+    if (mapped === ' ' && normalized.endsWith(' ')) {
+      ends[ends.length - 1] = index + 1;
+      continue;
+    }
+    normalized += mapped;
+    starts.push(index);
+    ends.push(index + 1);
+  }
+  return { normalized, starts, ends };
+}
+export function resolveReplyEvidence(currentReply: string, quotedEvidence: string): string {
+  const evidence = bounded(quotedEvidence, 'intent evidence', 160);
+  if (currentReply.includes(evidence)) return evidence;
+  const reply = canonicalEvidence(currentReply);
+  const quote = canonicalEvidence(evidence).normalized;
+  const start = reply.normalized.indexOf(quote);
+  if (start < 0 || !quote.length) throw new TypeError('Intent evidence is not in the reply');
+  // Return the canonical persisted reply's original bytes, not model-supplied text.
+  return currentReply.slice(reply.starts[start], reply.ends[start + quote.length - 1]).trim();
+}
 export function validateTriageOutput(raw: unknown, currentReply: string): TriageAnalysis {
   if (!obj(raw)) throw new TypeError('Triage output must be an object');
   const keys = ['primaryIntent','intents','overallConfidence','prospectInterestScore','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'];
@@ -129,9 +162,9 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
   const intents = raw.intents.map(value => {
     if (!obj(value) || Object.keys(value).some(key => !['intent','confidence','evidence'].includes(key)) ||
       typeof value.intent !== 'string' || !Object.values(Intent).includes(value.intent as Intent)) throw new TypeError('Invalid intent');
-    const evidence = bounded(value.evidence, 'intent evidence', 160);
-    // Evidence is observable message text, not a free-form invented rationale.
-    if (!currentReply.includes(evidence)) throw new TypeError('Intent evidence is not in the reply');
+    // Strictly ground model evidence in the persisted reply. Normalize only
+    // typography/line breaks, then persist the literal source span.
+    const evidence = resolveReplyEvidence(currentReply, value.evidence);
     return { intent: value.intent as Intent, confidence: confidence(value.confidence), evidence };
   });
   if (new Set(intents.map(item => item.intent)).size !== intents.length ||
@@ -155,7 +188,7 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
 export interface TriageProvider {
   readonly provider?:'GEMINI'|'ANTHROPIC';
   readonly model?:string;
-  analyze(request: { contextText: string }, observer?: { onRequestStart(): void;
+  analyze(request: { contextText: string; currentReply?: string; evidenceCorrection?: boolean }, observer?: { onRequestStart(): void;
     onResponse(usage: AIUsageTokens | null): void }): Promise<unknown>;
 }
 export const geminiTriageProvider: TriageProvider = {
@@ -167,7 +200,11 @@ export const geminiTriageProvider: TriageProvider = {
       systemInstruction: TRIAGE_SYSTEM_PROMPT,
       generationConfig: { temperature: 0.1, maxOutputTokens: 1200, responseMimeType: 'application/json', responseSchema: TRIAGE_RESPONSE_SCHEMA } });
     observer?.onRequestStart();
-    const response = await model.generateContent(JSON.stringify({ task: 'Interpret this reply and return structured JSON only.',
+    const response = await model.generateContent(JSON.stringify({
+      task: request.evidenceCorrection
+        ? 'Reanalyze this reply with evidence copied literally from CURRENT_REPLY only. Prior output could not be grounded. Do not paraphrase or quote other context.'
+        : 'Interpret this reply and return structured JSON only. Every evidence span must be copied literally from CURRENT_REPLY.',
+      CURRENT_REPLY: request.currentReply?.slice(0, 4_000) ?? '',
       untrustedContext: request.contextText.slice(0, 12_000) }), {timeout:60_000});
     observer?.onResponse(geminiUsageTokens(response.response.usageMetadata));
     const text = response.response.text();
@@ -190,7 +227,12 @@ export function createAnthropicTriageProvider(model=process.env.TRIAGE_ANTHROPIC
   const client=new Anthropic({apiKey,maxRetries:0,timeout:60000});
   observer?.onRequestStart();
   const response=await client.messages.create({model,max_tokens:1600,temperature:0.1,system:TRIAGE_SYSTEM_PROMPT,
-   messages:[{role:'user',content:JSON.stringify({task:'Interpret this reply and return structured JSON only.',untrustedContext:request.contextText.slice(0,12000)})}],
+   messages:[{role:'user',content:JSON.stringify({
+     task:request.evidenceCorrection
+       ? 'Reanalyze with short verbatim evidence spans from CURRENT_REPLY only; previous output evidence was not a substring of that reply. Do not paraphrase or quote other context.'
+       : 'Interpret the current reply as structured JSON. Quote evidence literally from CURRENT_REPLY, never from other context.',
+     CURRENT_REPLY:request.currentReply?.slice(0,4000)??'',
+     untrustedContext:request.contextText.slice(0,12000)})}],
    output_config:{format:{type:'json_schema',schema:ANTHROPIC_TRIAGE_SCHEMA}}});
   if(typeof response.model==='string'&&/^claude-[a-zA-Z0-9._-]{1,100}$/.test(response.model))resolvedModel=response.model;
   const input=response.usage.input_tokens+(response.usage.cache_creation_input_tokens??0)+(response.usage.cache_read_input_tokens??0);
