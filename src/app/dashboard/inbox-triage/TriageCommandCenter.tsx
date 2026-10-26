@@ -1316,7 +1316,16 @@ export default function TriageCommandCenter({
               )}
 
               {/* 3. The CTA Text (Directly below textarea) */}
-              <p className="w-full text-[11px] leading-relaxed text-muted-foreground whitespace-normal break-words px-1">
+              {userTier === 'MICRO_PILOT' ? <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-white/55">
+                <span>{pilotDraftWithheld
+                  ? 'No safe automatic draft. Review the Decision reasoning and verify commitments before responding.'
+                  : safePilotSuggestion ? 'Governed suggestion · never sent automatically.' :
+                    'Waiting for a completed, evidence-based Decision analysis.'}</span>
+                {liveDraft.trim() && <button type="button" onClick={() => void copyPilotDraft()}
+                  className="rounded-lg border border-[#FF5A1F]/35 px-3 py-2 font-medium text-[#FF5A1F]">
+                  {draftCopied ? 'Copied' : 'Copy draft'}
+                </button>}
+              </div> : <p className="w-full text-[11px] leading-relaxed text-muted-foreground whitespace-normal break-words px-1">
                 <span className="text-[#FF4F00] mr-1">●</span> CTA defaults to your Campaign Context preference. Edit this draft anytime before approving.
               </p>
 
@@ -1344,17 +1353,21 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
-                      {!canGenerateLegacyDraft ? 'Use Decision analysis' : isGenerating ? 'Drafting...' : 'Regenerate Draft'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDispatch()}
-                      disabled={isGenerating || isDispatching || isBooking || isArchiving}
-                      className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]"
-                    >
-                      {isDispatching ? 'Sending...' : 'Approve & Send'}
-                    </button>
+                    {userTier === 'MICRO_PILOT' ? (
+                      <p className="rounded-xl border border-white/10 bg-[#1A1A1A] px-4 py-3 text-xs leading-5 text-white/65">
+                        Decision analysis proposes a response for human review, never an automatic send.
+                        Sandbox sending remains human-confirmed and subject to prospect and domain protections.
+                      </p>
+                    ) : <>
+                      <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
+                        {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                      </button>
+                      <button type="button" onClick={() => void handleDispatch()}
+                        disabled={isGenerating || isDispatching || isBooking || isArchiving}
+                        className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
+                        {isDispatching ? 'Sending...' : 'Approve & Send'}
+                      </button>
+                    </>
 
                     {isHotLead && (
                       <button type="button" onClick={() => setShowBookingModal(true)} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold border border-[#FF4F00] text-[#FF4F00] rounded-lg hover:bg-[#FF4F00]/10 flex items-center justify-center gap-2">
