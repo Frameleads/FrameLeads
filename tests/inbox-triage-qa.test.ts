@@ -129,3 +129,14 @@ test('interest scores require validated persisted AI evidence, never decision co
   assert.match(panel, /Prospect buying interest, based on reply evidence/);
   assert.match(panel, /result\.reused/);
 });
+
+
+test('Micro-Pilot Decision packet reflects the server-authoritative remaining balance', () => {
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const api = source('src/app/api/decisions/triage/route.ts');
+  assert.match(api, /select: \{ microPilotDecisionsUsed: true \}/);
+  assert.match(api, /Math\.max\(0, 3 - usage\.microPilotDecisionsUsed\)/);
+  assert.match(ui, /typeof result\.remaining === 'number'/);
+  assert.match(ui, /onNewPilotDecision\(result\.remaining\)/);
+  assert.match(ui, /typeof serverRemaining === 'number'/);
+});
