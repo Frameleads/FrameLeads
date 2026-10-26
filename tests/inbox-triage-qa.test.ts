@@ -151,7 +151,11 @@ test('Micro-Pilot shows a compact real decision allowance and honest interrupted
   assert.doesNotMatch(page, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\}/);
   assert.match(page, /Review interrupted analysis/);
   assert.match(page, /Recover analysis/);
-  assert.match(page, /No verified interpretation yet/);
+  assert.match(page, /AI response needs evidence verification/);
+  assert.doesNotMatch(page, /No verified interpretation yet/);
+  assert.match(page, /The model returned an unverified result/);
+  assert.match(page, /Previous inbox score — not verified by the governed Decision Engine/);
+  assert.match(page, /Previous triage draft — not verified by the Sales Constitution Decision/);
   assert.match(page, /completedInterpretation && <div/);
   assert.match(recoveryRoute, /entitlementError && user\.tier !== 'MICRO_PILOT'/);
 });
