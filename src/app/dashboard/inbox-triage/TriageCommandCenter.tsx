@@ -100,7 +100,7 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
 function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, isMicroPilot, hasSavedDecision, pilotDecisionsRemaining, canAnalyze, canReanalyze }: { signalId: string;
   reply: string;
   onDecision: (signalId: string, status: string, packet?: DecisionPacket) => void;
-  onNewPilotDecision: () => void;
+  onNewPilotDecision: (remaining?: number) => void;
   isMicroPilot: boolean;
   hasSavedDecision: boolean;
   pilotDecisionsRemaining: number;
@@ -242,7 +242,8 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
       if (result.decision) {
         setPacket(result.decision);
         onDecision(signalId, result.decision.status, result.decision);
-        if (isMicroPilot && !result.reused && result.decision.source !== 'UNAVAILABLE') onNewPilotDecision();
+        if (isMicroPilot && typeof result.remaining === 'number') onNewPilotDecision(result.remaining);
+        else if (isMicroPilot && !result.reused && result.decision.source !== 'UNAVAILABLE') onNewPilotDecision();
       }
       else setError('Prospect identity is unresolved. Review this reply manually.');
     } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
@@ -1142,7 +1143,8 @@ export default function TriageCommandCenter({
         </div>
 
         <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} reply={activeLead.inboundSignal} onDecision={updateDecisionStatus}
-          onNewPilotDecision={() => setPilotRemaining(remaining => Math.max(0, remaining - 1))}
+          onNewPilotDecision={(serverRemaining) => setPilotRemaining(remaining => typeof serverRemaining === 'number'
+            ? Math.min(3, Math.max(0, serverRemaining)) : Math.max(0, remaining - 1))}
           onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier}
           isMicroPilot={userTier === 'MICRO_PILOT'} hasSavedDecision={Boolean(activeLead.decisionId)}
           pilotDecisionsRemaining={pilotRemaining}
