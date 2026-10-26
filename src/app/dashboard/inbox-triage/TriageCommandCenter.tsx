@@ -462,6 +462,8 @@ export default function TriageCommandCenter({
   const [bookingSlotEnd, setBookingSlotEnd] = useState('');
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
+  const [pilotDraftOverrides, setPilotDraftOverrides] = useState<Record<string, string>>({});
+  const [draftCopied, setDraftCopied] = useState(false);
   const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
   // Score comes from the SAME completed, tenant-owned decision; never from model
   // confidence. A reply without decision evidence remains explicitly unassessed.
@@ -707,6 +709,19 @@ export default function TriageCommandCenter({
   const PROSPECT_COMPANY = activeLead?.company || '';
   const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
   const displayedSignals: string[] = activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
+  const pilotPacket: DecisionPacket | null = userTier === 'MICRO_PILOT' ? activeLead?.decisionPacket ?? null : null;
+  const safePilotSuggestion = pilotPacket?.trace && pilotPacket.source !== 'UNAVAILABLE' &&
+    typeof pilotPacket.suggestedReply === 'string' && pilotPacket.suggestedReply.trim()
+    ? pilotPacket.suggestedReply.trim() : '';
+  const liveDraft = userTier === 'MICRO_PILOT'
+    ? pilotDraftOverrides[activeLead?.id ?? ''] ?? safePilotSuggestion
+    : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
+  const pilotDraftWithheld = userTier === 'MICRO_PILOT' && !!pilotPacket?.trace && !safePilotSuggestion;
+  const copyPilotDraft = async () => {
+    if (!liveDraft.trim()) return;
+    try { await navigator.clipboard.writeText(liveDraft); setDraftCopied(true); }
+    catch { setDraftCopied(false); }
+  };
 
   const handleLockMeeting = async () => {
     if (!bookingSlotStart || !bookingSlotEnd) return;
@@ -1279,15 +1294,21 @@ export default function TriageCommandCenter({
               {/* 2. The Textarea (Unconstrained, fully visible) */}
               <textarea
                 className="w-full min-h-[180px] h-auto bg-transparent border border-[#1A1A1A] rounded-lg p-4 text-sm text-white resize-y focus:outline-none focus:border-[#FF4F00]"
-                value={typeof draftText === 'object' && draftText !== null ? draftText.body || '' : draftText || ''}
+                value={liveDraft}
+                readOnly={userTier === 'MICRO_PILOT' && !isEditing}
                 onChange={(e) => {
-                  if (typeof draftText === 'object' && draftText !== null) {
+                  if (userTier === 'MICRO_PILOT') {
+                    if (activeLead?.id) setPilotDraftOverrides(current => ({ ...current, [activeLead.id]: e.target.value }));
+                    setDraftCopied(false);
+                  } else if (typeof draftText === 'object' && draftText !== null) {
                     setDraftText({ ...draftText, body: e.target.value });
                   } else {
                     setDraftText(e.target.value);
                   }
                 }}
-                placeholder="Awaiting Triage Draft..."
+                placeholder={userTier === 'MICRO_PILOT'
+                  ? 'A safe, governed response will appear here after a completed Decision analysis.'
+                  : 'Awaiting Triage Draft...'}
               />
 
               {regenerateError && (
