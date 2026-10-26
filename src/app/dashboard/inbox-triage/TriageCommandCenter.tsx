@@ -14,7 +14,7 @@ import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/d
 import { deriveIntentSignals } from '@/lib/decision/intent-signals';
 import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
 import { getDisplayedIntentConfidence, getDecisionProspectInterestScore } from '@/lib/decision/intent-confidence';
-import { formatIntentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
+import { formatIntentTemperature, intentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 import { CORE_CHECKOUT_URL } from '@/lib/checkout';
 
 /**
@@ -88,6 +88,15 @@ type DecisionPacket = { id: string; status: string; primaryIntent: string | null
   recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
   reviewReasons: string[]; shadowMode: boolean; trace?: { icpState: unknown; policyResult: unknown;
     contextReferences: unknown; memoryState: unknown; intentOutput?: unknown } | null };
+function queueIntentCategory(lead: { decisionPacket?: DecisionPacket | null; status: string }) {
+  const decision = lead.decisionPacket;
+  if (decision?.trace?.intentOutput &&
+      (decision.source === 'GEMINI' || decision.source === 'ANTHROPIC')) {
+    // Do not revive a legacy COLD label when governed score is unknown.
+    return intentTemperature(getDecisionProspectInterestScore(decision)) ?? 'UNASSESSED';
+  }
+  return lead.status;
+}
 type AutomationPacket = { decisionId: string; resolvedMode: string; state: string; reasons: string[];
   ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
 type RevenueRiskView = { status: string; score: number | null; band: string | null;
@@ -278,7 +287,17 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
     interrupted ? 'Review interrupted analysis' : packet?.status === 'PENDING' ? 'Analyzing' :
     awaitingDecision ? 'Waiting for decision' : packet ? statusPresentation.label : 'Not analyzed';
   const icp = packet?.trace?.icpState as { qualification?: string; fitTier?: string; valueBand?: string } | undefined;
-  const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as { decision?: string; matchedRuleIds?: string[] }[] : [];
+  const policy = Array.isArray(packet?.trace?.policyResult) ? packet.trace.policyResult as {
+    decision?: string; matchedRuleIds?: string[]; unresolvedRuleIds?: string[];
+  }[] : [];
+  const allowedChecks = policy.filter(item => item.decision === 'ALLOWED').length;
+  const unresolvedChecks = policy.filter(item => item.decision === 'REQUIRES_REVIEW').length;
+  const blockedChecks = policy.filter(item => item.decision === 'DENIED' || item.decision === 'BLOCKED').length;
+  const unresolvedRules = new Set(policy.flatMap(item => item.unresolvedRuleIds ?? [])).size;
+  const governanceNeedsReview = Boolean(packet?.reviewReasons.includes('POLICY_UNRESOLVED')) || unresolvedChecks > 0;
+  const governanceHeadline = blockedChecks ? 'Blocked by governance' :
+    governanceNeedsReview ? 'Human review required' : 'Governance checks passed';
+  const governanceDetail = `${allowedChecks} allowed · ${unresolvedChecks} need review${unresolvedRules ? ` · ${unresolvedRules} unresolved rule${unresolvedRules === 1 ? '' : 's'}` : ''}`;
   const intentLabel = packet?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent unresolved';
   const actionLabel = packet?.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually';
   const matchedRuleIds = [...new Set(policy.flatMap(item => item.matchedRuleIds ?? []))];
@@ -347,10 +366,13 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
 
       {completedInterpretation && <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <SummaryCard label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
-        <SummaryCard label="Governance" value={policy.map(item => item.decision ?? 'Review').join(' · ') || 'Review required'} detail={matchedRuleIds.length ? `${matchedRuleIds.length} matched ${matchedRuleIds.length === 1 ? 'rule' : 'rules'}` : 'No matching rule recorded'} active={matchedRuleIds.length > 0} />
+        <SummaryCard label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
         <SummaryCard label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
       </div>}
 
+      {completedInterpretation && governanceNeedsReview && <p role="status" className="mt-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.04] px-4 py-3 text-xs leading-5 text-white/70">
+        A relevant Sales Constitution rule could not be resolved from the available facts. Human review is required before treating any response as governed or approved. No automatic reply has been authorized.
+      </p>}
       {isReview && !interrupted && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex min-w-0 items-start gap-3">
           <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#FF5A1F]" />
@@ -477,11 +499,13 @@ export default function TriageCommandCenter({
   const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
   // Score comes from the SAME completed, tenant-owned decision; never from model
   // confidence. A reply without decision evidence remains explicitly unassessed.
-  const pilotInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
+  const verifiedDecision = Boolean(activeLead?.decisionPacket?.trace?.intentOutput &&
+    (activeLead.decisionPacket.source === 'GEMINI' || activeLead.decisionPacket.source === 'ANTHROPIC'));
+  const governedInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
   const displayedIntentScore = getDisplayedIntentConfidence({ intentScore:
-    userTier === 'MICRO_PILOT' ? pilotInterestScore : intentScore });
+    verifiedDecision || userTier === 'MICRO_PILOT' ? governedInterestScore : intentScore });
   const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
-  const displayedTemperature = userTier === 'MICRO_PILOT'
+  const displayedTemperature = verifiedDecision || userTier === 'MICRO_PILOT'
     ? formatIntentTemperature(displayedIntentScore) : temperature;
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
@@ -717,22 +741,27 @@ export default function TriageCommandCenter({
   const PROSPECT_NAME = activeLead?.name || '';
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
-  const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
+  const isHotLead = hasDecisionEngineAccess &&
+    (verifiedDecision ? activeLead?.decisionPacket?.status === 'APPROVED' : true) &&
+    resolveIntentTemperature(displayedIntentScore, verifiedDecision ? null : activeLead?.status) === 'HOT';
   const legacyNeedsReview = userTier !== 'MICRO_PILOT' &&
     activeLead?.decisionPacket?.source === 'UNAVAILABLE';
-  const displayedSignals: string[] = userTier === 'MICRO_PILOT'
-    ? activeLead?.decisionPacket?.trace && activeLead.decisionPacket.source !== 'UNAVAILABLE'
-      ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
-      : []
+  const displayedSignals: string[] = verifiedDecision && activeLead?.decisionPacket
+    ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
+    : userTier === 'MICRO_PILOT' ? []
     : activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
-  const pilotPacket: DecisionPacket | null = userTier === 'MICRO_PILOT' ? activeLead?.decisionPacket ?? null : null;
-  const safePilotSuggestion = pilotPacket?.trace && pilotPacket.source !== 'UNAVAILABLE' &&
-    typeof pilotPacket.suggestedReply === 'string' && pilotPacket.suggestedReply.trim()
-    ? pilotPacket.suggestedReply.trim() : '';
-  const liveDraft = userTier === 'MICRO_PILOT'
-    ? pilotDraftOverrides[activeLead?.id ?? ''] ?? safePilotSuggestion
+  const decisionPacket: DecisionPacket | null = activeLead?.decisionPacket ?? null;
+  const governedDraftMode = userTier === 'MICRO_PILOT' || Boolean(activeLead?.decisionId || decisionPacket);
+  const unresolvedPolicy = Boolean(decisionPacket?.reviewReasons.includes('POLICY_UNRESOLVED'));
+  // A recorded Decision is the single source of truth for governed drafts.
+  // Never fall back to pre-governance copy when its policy outcome is unresolved.
+  const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy &&
+    typeof decisionPacket?.suggestedReply === 'string' && decisionPacket.suggestedReply.trim()
+    ? decisionPacket.suggestedReply.trim() : '';
+  const liveDraft = governedDraftMode
+    ? safeGovernedSuggestion ? pilotDraftOverrides[decisionPacket?.id ?? ''] ?? safeGovernedSuggestion : ''
     : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
-  const pilotDraftWithheld = userTier === 'MICRO_PILOT' && !!pilotPacket?.trace && !safePilotSuggestion;
+  const governedDraftWithheld = governedDraftMode && !!decisionPacket && !safeGovernedSuggestion;
   const copyPilotDraft = async () => {
     if (!liveDraft.trim()) return;
     try { await navigator.clipboard.writeText(liveDraft); setDraftCopied(true); }
@@ -1147,10 +1176,10 @@ export default function TriageCommandCenter({
               <span className="min-w-0 break-words font-semibold text-sm" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
               <span className={`shrink-0 font-mono text-[10px] px-2 py-0.5 rounded-sm ${
                 isCoreTier ? 'bg-[#242424] text-gray-400' :
-                lead.status === 'HOT' ? 'bg-[#FF5A1F]/10 text-[#FF5A1F]' : 
-                lead.status === 'WARM' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-[#242424] text-gray-400'
+                queueIntentCategory(lead) === 'HOT' ? 'bg-[#FF5A1F]/10 text-[#FF5A1F]' :
+                queueIntentCategory(lead) === 'WARM' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-[#242424] text-gray-400'
               }`}>
-                {isCoreTier ? 'REPLY' : lead.status}
+                {isCoreTier ? 'REPLY' : queueIntentCategory(lead)}
               </span>
             </div>
             <p className="line-clamp-2 break-words text-xs text-muted-foreground" title={lead.inboundSignal}>{lead.inboundSignal}</p>
@@ -1259,14 +1288,18 @@ export default function TriageCommandCenter({
                       {displayedIntentScore !== null && <span className="text-sm font-medium text-gray-400">/ 100</span>}
                     </div>
                   </div>
-                  <div className={`text-sm font-bold tracking-widest uppercase ${resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'HOT' ? 'text-green-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'WARM' ? 'text-yellow-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'COLD' ? 'text-red-500' : 'text-gray-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
+                  <div className={`text-sm font-bold tracking-widest uppercase ${resolveIntentTemperature(displayedIntentScore, verifiedDecision ? null : activeLead?.status) === 'HOT' ? 'text-green-500' : resolveIntentTemperature(displayedIntentScore, verifiedDecision ? null : activeLead?.status) === 'WARM' ? 'text-yellow-500' : resolveIntentTemperature(displayedIntentScore, verifiedDecision ? null : activeLead?.status) === 'COLD' ? 'text-red-500' : 'text-gray-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
                     {displayedTemperature}
                   </div>
                 </div>
                 {legacyNeedsReview && <p className="mb-3 text-xs text-amber-300/80">
                   Previous inbox score — not verified by the governed Decision Engine.
                 </p>}
-                {userTier === 'MICRO_PILOT' && <p className="mb-3 text-xs text-gray-400">
+                {verifiedDecision && <p className="mb-3 text-xs text-white/60">
+                  Verified prospect interest from the Decision analysis · {activeLead?.decisionPacket?.primaryIntent?.replaceAll('_', ' ') ?? 'Intent under review'}.
+                  Score measures expressed interest, not the likelihood of closing.
+                </p>}
+                {userTier === 'MICRO_PILOT' && !verifiedDecision && <p className="mb-3 text-xs text-gray-400">
                   {displayedIntentScore === null ? 'Analyze a qualifying reply to assess buying interest; no score is invented.'
                     : 'Prospect buying interest, based on reply evidence. Not analysis confidence or a conversion prediction.'}
                 </p>}
@@ -1277,7 +1310,7 @@ export default function TriageCommandCenter({
                 <div>
                   <h4 className="text-[10px] text-gray-500 uppercase tracking-widest mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>Why Now / Signals</h4>
                   <div className="flex flex-wrap gap-2">
-                    {userTier === 'MICRO_PILOT' && displayedSignals.length === 0 && (
+                    {(userTier === 'MICRO_PILOT' || verifiedDecision) && displayedSignals.length === 0 && (
                       <p className="text-xs leading-5 text-gray-500">Validated signals appear after the Decision analysis completes.</p>
                     )}
                     {displayedSignals.map((signal, index) => (
@@ -1304,14 +1337,16 @@ export default function TriageCommandCenter({
               <div className="flex items-center justify-between w-full">
                 <div>
                   <h3 className="text-[10px] font-bold text-white/50 tracking-widest uppercase">Draft Response</h3>
-                  {legacyNeedsReview && <p className="mt-1 text-xs text-amber-300/80">
-                    Previous triage draft — not verified by the Sales Constitution Decision.
+                  {governedDraftMode && <p className="mt-1 text-xs text-white/55">
+                    {unresolvedPolicy ? 'Policy review required · no governed reply has been approved.' :
+                      safeGovernedSuggestion ? 'Verified Decision suggestion · human approval required before sending.' :
+                        'Awaiting a policy-allowed Decision suggestion.'}
                   </p>}
                 </div>
                 <button 
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
-                  disabled={isGenerating || isDispatching}
+                  disabled={isGenerating || isDispatching || (governedDraftMode && !safeGovernedSuggestion)}
                   className="inline-flex min-h-11 items-center px-3 py-2 text-xs bg-[#1A1A1A] text-white rounded hover:bg-[#222]"
                 >
                   {isEditing ? 'Lock Draft' : 'Unlock Edit Mode'}
@@ -1322,10 +1357,10 @@ export default function TriageCommandCenter({
               <textarea
                 className="w-full min-h-[180px] h-auto bg-transparent border border-[#1A1A1A] rounded-lg p-4 text-sm text-white resize-y focus:outline-none focus:border-[#FF4F00]"
                 value={liveDraft}
-                readOnly={userTier === 'MICRO_PILOT' && !isEditing}
+                readOnly={governedDraftMode && !isEditing}
                 onChange={(e) => {
-                  if (userTier === 'MICRO_PILOT') {
-                    if (activeLead?.id) setPilotDraftOverrides(current => ({ ...current, [activeLead.id]: e.target.value }));
+                  if (governedDraftMode) {
+                    if (decisionPacket?.id && safeGovernedSuggestion) setPilotDraftOverrides(current => ({ ...current, [decisionPacket.id]: e.target.value }));
                     setDraftCopied(false);
                   } else if (typeof draftText === 'object' && draftText !== null) {
                     setDraftText({ ...draftText, body: e.target.value });
@@ -1333,8 +1368,9 @@ export default function TriageCommandCenter({
                     setDraftText(e.target.value);
                   }
                 }}
-                placeholder={userTier === 'MICRO_PILOT'
-                  ? 'A safe, governed response will appear here after a completed Decision analysis.'
+                placeholder={governedDraftMode
+                  ? unresolvedPolicy ? 'Human review required. No governed response is approved for sending.' :
+                    'A policy-allowed draft will appear here after a completed Decision analysis.'
                   : 'Awaiting Triage Draft...'}
               />
 
@@ -1343,10 +1379,10 @@ export default function TriageCommandCenter({
               )}
 
               {/* 3. The CTA Text (Directly below textarea) */}
-              {userTier === 'MICRO_PILOT' ? <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-white/55">
-                <span>{pilotDraftWithheld
-                  ? 'No safe automatic draft. Review the Decision reasoning and verify commitments before responding.'
-                  : safePilotSuggestion ? 'Governed suggestion · never sent automatically.' :
+              {governedDraftMode ? <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-white/55">
+                <span>{governedDraftWithheld
+                  ? 'A governed draft is withheld until the necessary policy review is resolved.'
+                  : safeGovernedSuggestion ? 'Governed suggestion for review · not automatically sent.' :
                     'Waiting for a completed, evidence-based Decision analysis.'}</span>
                 {liveDraft.trim() && <button type="button" onClick={() => void copyPilotDraft()}
                   className="rounded-lg border border-[#FF5A1F]/35 px-3 py-2 font-medium text-[#FF5A1F]">
@@ -1380,10 +1416,10 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    {userTier === 'MICRO_PILOT' ? (
+                    {governedDraftMode ? (
                       <p className="rounded-xl border border-white/10 bg-[#1A1A1A] px-4 py-3 text-xs leading-5 text-white/65">
-                        Decision analysis proposes a response for human review, never an automatic send.
-                        Sandbox sending remains human-confirmed and subject to prospect and domain protections.
+                        {unresolvedPolicy ? 'Sales Constitution review is required before any reply is approved. Review the Decision Packet; the legacy send buttons are intentionally unavailable.' :
+                          'Decisions can propose a reply for human review, never an automatic send. Use the governed approval workflow or the separately protected Sandbox sending path.'}
                       </p>
                     ) : <>
                       <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
