@@ -272,6 +272,8 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
   const recoverablePilot = Boolean(isMicroPilot && interrupted && packet?.createdAt &&
     clock - new Date(packet.createdAt).getTime() >= 24 * 60 * 60 * 1000);
   const completedInterpretation = Boolean(packet?.trace && packet.source !== 'UNAVAILABLE');
+  const unverifiedModelOutput = Boolean(packet?.source === 'UNAVAILABLE' &&
+    packet?.reviewReasons.includes('INVALID_MODEL_OUTPUT'));
   const label = loading ? 'Loading decision' : stalled ? 'Interrupted' :
     interrupted ? 'Review interrupted analysis' : packet?.status === 'PENDING' ? 'Analyzing' :
     awaitingDecision ? 'Waiting for decision' : packet ? statusPresentation.label : 'Not analyzed';
@@ -331,7 +333,15 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
           <div className="min-w-0">
           <p className="font-mono text-[9px] uppercase tracking-[.18em] text-[#FF5A1F]">Incoming reply</p>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">“{reply}”</p>
-          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">{completedInterpretation ? packet.interpretation : 'No verified interpretation yet'}</h3>
+          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">
+            {completedInterpretation ? packet.interpretation :
+              unverifiedModelOutput ? 'AI response needs evidence verification' :
+              packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}
+          </h3>
+          {unverifiedModelOutput && <p role="status" className="mt-2 max-w-3xl text-xs leading-5 text-white/55">
+            The model returned an unverified result. No governed recommendation was accepted.
+            The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
+          </p>
         </div>
       </div>
 
@@ -708,6 +718,8 @@ export default function TriageCommandCenter({
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
   const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
+  const legacyNeedsReview = userTier !== 'MICRO_PILOT' &&
+    activeLead?.decisionPacket?.source === 'UNAVAILABLE';
   const displayedSignals: string[] = userTier === 'MICRO_PILOT'
     ? activeLead?.decisionPacket?.trace && activeLead.decisionPacket.source !== 'UNAVAILABLE'
       ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
@@ -1251,6 +1263,9 @@ export default function TriageCommandCenter({
                     {displayedTemperature}
                   </div>
                 </div>
+                {legacyNeedsReview && <p className="mb-3 text-xs text-amber-300/80">
+                  Previous inbox score — not verified by the governed Decision Engine.
+                </p>}
                 {userTier === 'MICRO_PILOT' && <p className="mb-3 text-xs text-gray-400">
                   {displayedIntentScore === null ? 'Analyze a qualifying reply to assess buying interest; no score is invented.'
                     : 'Prospect buying interest, based on reply evidence. Not analysis confidence or a conversion prediction.'}
@@ -1287,7 +1302,12 @@ export default function TriageCommandCenter({
               
               {/* 1. Header */}
               <div className="flex items-center justify-between w-full">
-                <h3 className="text-[10px] font-bold text-white/50 tracking-widest uppercase">Draft Response</h3>
+                <div>
+                  <h3 className="text-[10px] font-bold text-white/50 tracking-widest uppercase">Draft Response</h3>
+                  {legacyNeedsReview && <p className="mt-1 text-xs text-amber-300/80">
+                    Previous triage draft — not verified by the Sales Constitution Decision.
+                  </p>}
+                </div>
                 <button 
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
