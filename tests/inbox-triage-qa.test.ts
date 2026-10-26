@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { decisionStatusPresentation } from '../src/lib/decision/status-presentation';
 import { formatIntentTemperature, intentTemperature, isHighPriorityIntent, resolveIntentTemperature } from '../src/lib/intent-temperature';
+import { getDecisionProspectInterestScore } from '../src/lib/decision/intent-confidence';
 
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
@@ -91,4 +92,51 @@ test('lower controls stay wired to their real handlers without invoking them in 
   assert.match(panel, /onClick=\{\(\) => setShowBookingModal\(true\)\}/);
   assert.match(panel, /onClick=\{handleArchive\}/);
   assert.match(panel, /onClick=\{handlePermanentDelete\}/);
+});
+
+
+test('Micro-Pilot keeps all raw replies and existing decision history visible, locking only additional analysis', () => {
+  const entitlements = source('src/lib/entitlements.ts');
+  const page = source('src/app/dashboard/inbox-triage/page.tsx');
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(entitlements, /'INBOX_TRIAGE', 'DECISION_REPLAY'/);
+  assert.match(page, /hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
+  assert.match(panel, /const hasInboxAccess = hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
+  assert.match(panel, /const \[pilotRemaining, setPilotRemaining\] = useState\(pilotDecisionsRemaining\)/);
+  assert.match(panel, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\} of 3 first-time prospect analyses remaining/);
+  assert.match(panel, /!hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0/);
+  assert.match(panel, /hasSavedDecision \? 'Decision already recorded'/);
+  assert.match(panel, /if \(isMicroPilot && !packet\) return;/);
+  assert.match(panel, /if \(isMicroPilot && !result\.reused && result\.decision\.source !== 'UNAVAILABLE'\) onNewPilotDecision\(\)/);
+  assert.match(panel, /<Link href=\{\`\/dashboard\/decisions\/\$\{encodeURIComponent\(packet\.id\)\}\/replay\`\}/);
+  assert.match(panel, /\{inboundSignal\}/);
+  assert.match(panel, /canReanalyze=\{userTier !== 'MICRO_PILOT'\}/);
+});
+
+
+test('interest scores require validated persisted AI evidence, never decision confidence', () => {
+  const decision = { source: 'GEMINI', confidenceScore: 96,
+    trace: { intentOutput: { prospectInterestScore: 74, confidence: 96,
+      intents: [{ intent: 'PRICING_INQUIRY', evidence: 'What is your price?', confidence: 96 }] } } };
+  assert.equal(getDecisionProspectInterestScore(decision), 74);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { confidence: 96 } } }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, source: 'DETERMINISTIC' }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { prospectInterestScore: 101 } } }), null);
+  assert.equal(getDecisionProspectInterestScore({ ...decision, trace: { intentOutput: { prospectInterestScore: 0 } } }), 0);
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /getDecisionProspectInterestScore\(activeLead\?\.decisionPacket\)/);
+  assert.match(panel, /'Not assessed'/);
+  assert.match(panel, /Prospect buying interest, based on reply evidence/);
+  assert.match(panel, /result\.reused/);
+});
+
+
+test('Micro-Pilot Decision packet reflects the server-authoritative remaining balance', () => {
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const api = source('src/app/api/decisions/triage/route.ts');
+  assert.match(api, /select: \{ microPilotDecisionsUsed: true \}/);
+  assert.match(api, /Math\.max\(0, 3 - usage\.microPilotDecisionsUsed\)/);
+  assert.match(ui, /typeof result\.remaining === 'number'/);
+  assert.match(ui, /onNewPilotDecision\(result\.remaining\)/);
+  assert.match(ui, /typeof serverRemaining === 'number'/);
 });

@@ -10,6 +10,8 @@ export type TriageAction = 'REPLY_WITH_FACTS' | 'ASK_CLARIFYING_QUESTION' | 'OFF
   'ESCALATE_TO_HUMAN' | 'NO_SALES_OUTREACH' | 'REVIEW_MANUALLY';
 export type IntentSignal = { intent: Intent; confidence: number; evidence: string };
 export type TriageAnalysis = { primaryIntent: Intent; intents: IntentSignal[]; overallConfidence: number;
+  /** Interest expressed by the prospect; never model classification confidence. */
+  prospectInterestScore?: number | null;
   conciseInterpretation: string; recommendedNextAction: TriageAction; suggestedReply: string | null;
   explanation: string };
 
@@ -19,13 +21,13 @@ Use only supplied FrameLeads context for factual claims about the business. Your
 
 Allowed intent taxonomy: ${TRIAGE_INTENTS.join(', ')}. Never invent an intent label. If no taxonomy value fits, use OTHER. COMMITMENT is not a TriageIntent; a commercial commitment question never authorizes a COMMITMENT intent.
 
-Return strict JSON with exactly: primaryIntent (one allowed taxonomy value), intents (1-5 objects with intent, confidence 0-100, evidence as an exact short substring copied from CURRENT_REPLY), overallConfidence 0-100, conciseInterpretation (<=350 characters), recommendedNextAction (REPLY_WITH_FACTS|ASK_CLARIFYING_QUESTION|OFFER_MEETING|ESCALATE_TO_HUMAN|NO_SALES_OUTREACH|REVIEW_MANUALLY), suggestedReply (string <=1000 or null), explanation (<=500 characters). Include every material intent, not just one. Do not output hidden reasoning or chain-of-thought. Do not invent facts to fill a draft. If information is insufficient, lower confidence and recommend review. No markdown.`;
+Return strict JSON with exactly: primaryIntent (one allowed taxonomy value), intents (1-5 objects with intent, confidence 0-100, evidence as an exact short substring copied from CURRENT_REPLY), overallConfidence 0-100, prospectInterestScore (integer 0-100 or null), conciseInterpretation (<=350 characters), recommendedNextAction (REPLY_WITH_FACTS|ASK_CLARIFYING_QUESTION|OFFER_MEETING|ESCALATE_TO_HUMAN|NO_SALES_OUTREACH|REVIEW_MANUALLY), suggestedReply (string <=1000 or null), explanation (<=500 characters). Include every material intent, not just one. Do not output hidden reasoning or chain-of-thought. Do not invent facts to fill a draft. If information is insufficient, lower confidence and recommend review. ProspectInterestScore measures explicit buying interest in CURRENT_REPLY, NOT confidence or likelihood of closing. 0-19 explicit rejection/unsubscribe; 20-49 no expressed commercial interest; 50-69 cautious/tentative interest; 70-89 meaningful pricing/feature questions; 90-100 explicit next-step/meeting commitment. Use null for automated replies, ambiguity, or insufficient evidence. Ground any non-null score in exact reply evidence already returned in intents. Do not invent evidence or overstate certainty. No markdown.`;
 
 const actions: TriageAction[] = ['REPLY_WITH_FACTS','ASK_CLARIFYING_QUESTION','OFFER_MEETING',
   'ESCALATE_TO_HUMAN','NO_SALES_OUTREACH','REVIEW_MANUALLY'];
 export const TRIAGE_RESPONSE_SCHEMA: ResponseSchema = {
   type: SchemaType.OBJECT,
-  required: ['primaryIntent','intents','overallConfidence','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'],
+  required: ['primaryIntent','intents','overallConfidence','prospectInterestScore','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'],
   properties: {
     primaryIntent: {type: SchemaType.STRING, format:'enum', enum: TRIAGE_INTENTS},
     intents: {type: SchemaType.ARRAY, minItems: 1, maxItems: 5, items: {
@@ -35,6 +37,7 @@ export const TRIAGE_RESPONSE_SCHEMA: ResponseSchema = {
         evidence: {type: SchemaType.STRING, description: 'Exact short substring copied from CURRENT_REPLY.'},
       }}},
     overallConfidence: {type: SchemaType.INTEGER},
+    prospectInterestScore: {type: SchemaType.INTEGER, nullable: true},
     conciseInterpretation: {type: SchemaType.STRING},
     recommendedNextAction: {type: SchemaType.STRING, format:'enum', enum: actions},
     suggestedReply: {type: SchemaType.STRING, nullable: true},
@@ -119,7 +122,7 @@ const confidence = (value: unknown) => {
 };
 export function validateTriageOutput(raw: unknown, currentReply: string): TriageAnalysis {
   if (!obj(raw)) throw new TypeError('Triage output must be an object');
-  const keys = ['primaryIntent','intents','overallConfidence','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'];
+  const keys = ['primaryIntent','intents','overallConfidence','prospectInterestScore','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'];
   if (Object.keys(raw).some(key => !keys.includes(key))) throw new TypeError('Unexpected triage output field');
   if (typeof raw.primaryIntent !== 'string' || !Object.values(Intent).includes(raw.primaryIntent as Intent)) throw new TypeError('Invalid primary intent');
   if (!Array.isArray(raw.intents) || !raw.intents.length || raw.intents.length > 5) throw new TypeError('Invalid intent list');
@@ -135,8 +138,14 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
     !intents.some(item => item.intent === raw.primaryIntent)) throw new TypeError('Primary intent must appear once in intents');
   if (typeof raw.recommendedNextAction !== 'string' || !actions.includes(raw.recommendedNextAction as TriageAction)) throw new TypeError('Invalid next action');
   if (raw.suggestedReply != null && (typeof raw.suggestedReply !== 'string' || raw.suggestedReply.length > 1000)) throw new TypeError('Invalid suggested reply');
+  // Older persisted decisions and fixtures may not have this field.
+  const interest = raw.prospectInterestScore;
+  if (interest !== undefined && interest !== null &&
+    (typeof interest !== 'number' || !Number.isInteger(interest) || interest < 0 || interest > 100))
+    throw new TypeError('Invalid prospect interest score');
   return { primaryIntent: raw.primaryIntent as Intent, intents,
     overallConfidence: confidence(raw.overallConfidence),
+    prospectInterestScore: interest === undefined ? null : interest as number | null,
     conciseInterpretation: bounded(raw.conciseInterpretation, 'interpretation', 350),
     recommendedNextAction: raw.recommendedNextAction as TriageAction,
     suggestedReply: raw.suggestedReply?.trim() || null,
@@ -168,11 +177,11 @@ export const geminiTriageProvider: TriageProvider = {
 };
 
 export const ANTHROPIC_TRIAGE_SCHEMA={type:'object',additionalProperties:false,
- required:['primaryIntent','intents','overallConfidence','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'],
+ required:['primaryIntent','intents','overallConfidence','prospectInterestScore','conciseInterpretation','recommendedNextAction','suggestedReply','explanation'],
  properties:{primaryIntent:{type:'string',enum:TRIAGE_INTENTS},
   intents:{type:'array',items:{type:'object',additionalProperties:false,required:['intent','confidence','evidence'],
    properties:{intent:{type:'string',enum:TRIAGE_INTENTS},confidence:{type:'integer'},evidence:{type:'string'}}}},
-  overallConfidence:{type:'integer'},conciseInterpretation:{type:'string'},recommendedNextAction:{type:'string',enum:actions},
+  overallConfidence:{type:'integer'},prospectInterestScore:{type:['integer','null']},conciseInterpretation:{type:'string'},recommendedNextAction:{type:'string',enum:actions},
   suggestedReply:{type:['string','null']},explanation:{type:'string'}}};
 export function createAnthropicTriageProvider(model=process.env.TRIAGE_ANTHROPIC_MODEL||'claude-haiku-4-5'):TriageProvider {
  let resolvedModel=model;
