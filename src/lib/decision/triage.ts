@@ -251,7 +251,8 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
       eventIds: context.references.memoryEventIds }, icpState: context.icp,
     brainRevision: context.brain.revision, playbookRevision: context.playbook.revision,
     constitutionRevision: context.constitution.revision, intentOutput: analysis ? {
-      primaryIntent: analysis.primaryIntent, intents: analysis.intents, confidence: analysis.overallConfidence } : null,
+      primaryIntent: analysis.primaryIntent, intents: analysis.intents, confidence: analysis.overallConfidence,
+       prospectInterestScore: analysis.prospectInterestScore ?? null } : null,
     policyResult: policy, playbookRuleIds: context.references.playbookRuleIds,
     brainEntryIds: context.references.brainEntryIds, contextReferences: context.references,
     engineVersion: DECISION_ENGINE_VERSION, explanation };
