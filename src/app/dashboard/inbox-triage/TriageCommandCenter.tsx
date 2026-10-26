@@ -292,7 +292,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
         <span className="block text-3xl font-bold leading-none">{pilotDecisionsRemaining}</span>
         <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wider">Remaining</span>
       </div>
-    </div>
+    </div>}
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <h2 className="font-heading text-base font-semibold uppercase tracking-wide text-white">Decision Packet</h2>
@@ -1327,7 +1327,7 @@ export default function TriageCommandCenter({
                 </button>}
               </div> : <p className="w-full text-[11px] leading-relaxed text-muted-foreground whitespace-normal break-words px-1">
                 <span className="text-[#FF4F00] mr-1">●</span> CTA defaults to your Campaign Context preference. Edit this draft anytime before approving.
-              </p>
+              </p>}
 
               {/* 4. The Separator Line */}
               <div className="w-full h-px bg-[#1A1A1A] my-2"></div>
@@ -1367,7 +1367,7 @@ export default function TriageCommandCenter({
                         className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
                         {isDispatching ? 'Sending...' : 'Approve & Send'}
                       </button>
-                    </>
+                    </>}
 
                     {isHotLead && (
                       <button type="button" onClick={() => setShowBookingModal(true)} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold border border-[#FF4F00] text-[#FF4F00] rounded-lg hover:bg-[#FF4F00]/10 flex items-center justify-center gap-2">
