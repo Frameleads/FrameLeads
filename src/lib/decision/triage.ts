@@ -99,7 +99,12 @@ export async function triageInboundSignal(input: { userId: string; signalId: str
       inputMessageId: linked.message.id, decisionType: DecisionType.INBOUND_TRIAGE } });
     if (!prior || prior.status === Status.PENDING) throw new Error('Retry source not found or still pending');
     supersedesDecisionId = prior.id;
-    fingerprint = createHash('sha256').update(`${context.contextFingerprint}:retry:${prior.id}`).digest('hex');
+    // Micro-Pilot recovery must be idempotent even if Brain/Playbook context
+    // changes between two concurrent clicks. Bind its unique key to the
+    // original failed reservation; normal tier retries retain versioning.
+    fingerprint = createHash('sha256').update(input.microPilotReserved
+      ? `${prior.contextFingerprint}:micro-recovery:${prior.id}`
+      : `${context.contextFingerprint}:retry:${prior.id}`).digest('hex');
   }
   const key = { userId: input.userId, inputMessageId: linked.message.id,
     decisionType: DecisionType.INBOUND_TRIAGE, contextFingerprint: fingerprint };

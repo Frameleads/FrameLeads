@@ -64,7 +64,7 @@ test('Re-analyze uses the canonical decision endpoint and creates a retry versio
   assert.match(route, /triageInboundSignal\(\{ userId, signalId: body\.signalId\.trim\(\),\s*retryOfDecisionId: body\.retryOfDecisionId \|\| undefined, microPilotReserved: isPilot \}/);
   assert.match(service, /if \(input\.retryOfDecisionId\)/);
   assert.match(service, /db\.decision\.update\(\{ where: \{ id: pending\.id/);
-  assert.match(panel, /disabled=\{\(!packet \? !canAnalyze : !canReanalyze\) \|\| running \|\| loading \|\| packet\?\.status === 'PENDING'\}/);
+  assert.match(panel, /disabled=\{\(!packet \? !canAnalyze : !\(canReanalyze \|\| recoverablePilot\)\) \|\| running \|\| loading/);
   assert.match(panel, /setError\('Decision analysis failed/);
 });
 
@@ -74,7 +74,7 @@ test('Mobile and desktop layouts keep queues, packet, chips, details, and action
   assert.match(panel, /overflow-x-auto flex-nowrap/);
   assert.match(panel, /w-\[82vw\].*max-w-\[300px\].*sm:w-\[300px\]/);
   assert.match(panel, /min-h-\[18rem\]/);
-  assert.match(panel, /xl:whitespace-nowrap/);
+  assert.match(panel, /max-w-full break-words font-heading/);
   assert.match(panel, /sm:grid-cols-2 xl:grid-cols-3/);
   assert.match(panel, /flex flex-wrap gap-2/);
   assert.match(panel, /flex flex-col gap-3.*sm:flex-row/);
@@ -103,7 +103,7 @@ test('Micro-Pilot keeps all raw replies and existing decision history visible, l
   assert.match(page, /hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
   assert.match(panel, /const hasInboxAccess = hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
   assert.match(panel, /const \[pilotRemaining, setPilotRemaining\] = useState\(pilotDecisionsRemaining\)/);
-  assert.match(panel, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\} of 3 first-time prospect analyses remaining/);
+  assert.match(panel, /One-Time Decision Allowance/);
   assert.match(panel, /!hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0/);
   assert.match(panel, /hasSavedDecision \? 'Decision already recorded'/);
   assert.match(panel, /if \(isMicroPilot && !packet\) return;/);
@@ -139,4 +139,31 @@ test('Micro-Pilot Decision packet reflects the server-authoritative remaining ba
   assert.match(ui, /typeof result\.remaining === 'number'/);
   assert.match(ui, /onNewPilotDecision\(result\.remaining\)/);
   assert.match(ui, /typeof serverRemaining === 'number'/);
+});
+
+
+test('Micro-Pilot shows a compact real decision allowance and honest interrupted state', () => {
+  const page = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const recoveryRoute = source('src/app/api/decisions/recovery/route.ts');
+  assert.match(page, /One-Time Decision Allowance/);
+  assert.match(page, /\{pilotDecisionsRemaining\}/);
+  assert.match(page, /of 3 prospect slots claimed/);
+  assert.doesNotMatch(page, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\}/);
+  assert.match(page, /Review interrupted analysis/);
+  assert.match(page, /Recover analysis/);
+  assert.match(page, /No verified interpretation yet/);
+  assert.match(page, /completedInterpretation && <div/);
+  assert.match(recoveryRoute, /entitlementError && user\.tier !== 'MICRO_PILOT'/);
+});
+
+test('Micro-Pilot draft displays only the governed saved suggestion; cannot use legacy approve/send route', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /pilotPacket\?\.trace && pilotPacket\.source !== 'UNAVAILABLE'/);
+  assert.match(panel, /typeof pilotPacket\.suggestedReply === 'string'/);
+  assert.match(panel, /pilotDraftOverrides/);
+  assert.match(panel, /Governed suggestion · never sent automatically/);
+  assert.match(panel, /No safe automatic draft/);
+  assert.match(panel, /userTier === 'MICRO_PILOT' \? \(/);
+  assert.match(panel, /Sandbox sending remains human-confirmed/);
+  assert.match(panel, /Copy draft/);
 });

@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   const user = await getAuthenticatedEntitlementUser();
   if (!user) return NextResponse.json({ error: 'UNAUTHORIZED' }, { status: 401 });
   const entitlementError = featureAccessErrorForTier(user.tier, 'DECISION_ENGINE');
-  if (entitlementError) return entitlementError;
+  if (entitlementError && user.tier !== 'MICRO_PILOT') return entitlementError; // Recovery only closes stale claims; it never calls AI.
   const body = await request.json().catch(() => null);
   if (!body || typeof body.decisionId !== 'string' || !body.decisionId.trim() || body.decisionId.length > 100)
     return NextResponse.json({ error: 'Valid decision ID required.' }, { status: 400 });

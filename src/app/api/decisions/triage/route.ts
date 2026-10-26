@@ -29,19 +29,44 @@ export async function POST(request: Request) {
   let providerRequestStarted = false;
   try {
     if (isPilot) {
-      if (body.retryOfDecisionId) return NextResponse.json({ error: 'Micro-Pilot decisions allow one initial analysis per prospect. Re-analysis is locked.' }, { status: 403 });
       const signal = await prisma.inboundSignal.findFirst({ where: { id: body.signalId.trim(), userId }, select: { id: true, prospectId: true, generatedLeadId: true } });
       if (!signal) return NextResponse.json({ error: 'Signal not found.' }, { status: 404 });
       if (!signal.prospectId) return NextResponse.json({ error: 'A verified tenant-owned prospect is required for trial analysis.' }, { status: 403 });
-      const existing = await prisma.decision.findFirst({ where: { userId, prospectId: signal.prospectId }, select: { id: true } });
-      if (existing) return NextResponse.json({ error: 'This prospect already has a trial decision. Re-analysis is locked.' }, { status: 403 });
-      try { await reserveMicroPilotDecision(userId, signal.prospectId); }
-      catch (error) {
-        if (error instanceof MicroPilotLimitError) return NextResponse.json({ error: error.limit,
-          remaining: error.limit === 'DECISIONS_EXHAUSTED' ? 0 : undefined }, { status: 403 });
-        throw error;
+      if (body.retryOfDecisionId) {
+        // One bounded recovery of a very old, uncompleted request, never a
+        // second analysis of a completed trial prospect. No quota increment.
+        const prior = await prisma.decision.findFirst({ where: {
+          id: body.retryOfDecisionId, userId, prospectId: signal.prospectId,
+          inputMessage: { sourceType: 'INBOUND_SIGNAL', sourceId: signal.id },
+        }, select: { id: true, status: true, source: true, createdAt: true,
+          reviewReasons: true, trace: { select: { id: true } } } });
+        const oldEnough = Boolean(prior && prior.createdAt.getTime() <= Date.now() - 24 * 60 * 60 * 1000);
+        if (!prior || !oldEnough || prior.status !== 'NEEDS_REVIEW' ||
+          prior.source !== 'UNAVAILABLE' || prior.trace ||
+          !prior.reviewReasons.includes(UNCERTAIN_ANALYSIS_REASON) ||
+          body.confirmProviderRequestEnded !== true)
+          return NextResponse.json({ error: 'Only a confirmed, stale and unfinished analysis may be recovered.' }, { status: 409 });
+        const [otherDecision, successfulUsage, alreadyRecovered, account] = await Promise.all([
+          prisma.decision.findFirst({ where: { userId, prospectId: signal.prospectId, id: { not: prior.id } }, select: { id: true } }),
+          prisma.aIUsageEvent.findFirst({ where: { userId, prospectId: signal.prospectId,
+            feature: 'INBOX_TRIAGE', operation: 'TRIAGE_ANALYSIS', status: 'SUCCESS' }, select: { id: true } }),
+          prisma.decision.findFirst({ where: { userId, supersedesDecisionId: prior.id }, select: { id: true } }),
+          prisma.user.findUnique({ where: { id: userId }, select: { tier: true, microPilotDecisionsUsed: true } }),
+        ]);
+        if (otherDecision || successfulUsage || alreadyRecovered || account?.tier !== 'MICRO_PILOT' ||
+          !account.microPilotDecisionsUsed)
+          return NextResponse.json({ error: 'A subsequent or completed decision already exists. Recovery is unavailable.' }, { status: 409 });
+      } else {
+        const existing = await prisma.decision.findFirst({ where: { userId, prospectId: signal.prospectId }, select: { id: true } });
+        if (existing) return NextResponse.json({ error: 'This prospect already has a trial decision. Re-analysis is locked.' }, { status: 403 });
+        try { await reserveMicroPilotDecision(userId, signal.prospectId); }
+        catch (error) {
+          if (error instanceof MicroPilotLimitError) return NextResponse.json({ error: error.limit,
+            remaining: error.limit === 'DECISIONS_EXHAUSTED' ? 0 : undefined }, { status: 403 });
+          throw error;
+        }
+        reservedProspectId = signal.prospectId;
       }
-      reservedProspectId = signal.prospectId;
     }
     if (body.retryOfDecisionId) {
       const prior = await prisma.decision.findFirst({ where: { id: body.retryOfDecisionId, userId,
