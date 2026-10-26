@@ -708,7 +708,11 @@ export default function TriageCommandCenter({
   const PROSPECT_EMAIL = activeLead?.email || '';
   const PROSPECT_COMPANY = activeLead?.company || '';
   const isHotLead = hasDecisionEngineAccess && resolveIntentTemperature(intentScore, activeLead?.status) === 'HOT';
-  const displayedSignals: string[] = activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
+  const displayedSignals: string[] = userTier === 'MICRO_PILOT'
+    ? activeLead?.decisionPacket?.trace && activeLead.decisionPacket.source !== 'UNAVAILABLE'
+      ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
+      : []
+    : activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
   const pilotPacket: DecisionPacket | null = userTier === 'MICRO_PILOT' ? activeLead?.decisionPacket ?? null : null;
   const safePilotSuggestion = pilotPacket?.trace && pilotPacket.source !== 'UNAVAILABLE' &&
     typeof pilotPacket.suggestedReply === 'string' && pilotPacket.suggestedReply.trim()
@@ -1240,7 +1244,7 @@ export default function TriageCommandCenter({
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
                     <div className="flex items-baseline gap-2">
                       <span className="text-4xl font-bold text-white">{displayedIntentScore === null ? 'Not assessed' : displayedIntentScore}</span>
-                      <span className="text-sm font-medium text-gray-400">/ 100</span>
+                      {displayedIntentScore !== null && <span className="text-sm font-medium text-gray-400">/ 100</span>}
                     </div>
                   </div>
                   <div className={`text-sm font-bold tracking-widest uppercase ${resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'HOT' ? 'text-green-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'WARM' ? 'text-yellow-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'COLD' ? 'text-red-500' : 'text-gray-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
@@ -1258,6 +1262,9 @@ export default function TriageCommandCenter({
                 <div>
                   <h4 className="text-[10px] text-gray-500 uppercase tracking-widest mb-3" style={{ fontFamily: 'Oxanium, sans-serif' }}>Why Now / Signals</h4>
                   <div className="flex flex-wrap gap-2">
+                    {userTier === 'MICRO_PILOT' && displayedSignals.length === 0 && (
+                      <p className="text-xs leading-5 text-gray-500">Validated signals appear after the Decision analysis completes.</p>
+                    )}
                     {displayedSignals.map((signal, index) => (
                       <span key={`${activeLead?.id ?? 'lead'}-${signal}-${index}`} className={`rounded-full border px-3 py-1 text-xs ${
                         signal.toLowerCase() === 'pricing inquiry'
