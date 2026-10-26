@@ -297,7 +297,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
       <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
         <h2 className="font-heading text-base font-semibold uppercase tracking-wide text-white">Decision Packet</h2>
         <span className={`rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider ${packet ? statusPresentation.badgeTone : 'border-white/[0.12] bg-white/[0.03] text-white/65'}`}>{label}</span>
-        <span className="rounded-full border border-white/[0.09] bg-black/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-white/45">{packet?.source === 'GEMINI' ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'}</span>
+        <span className="rounded-full border border-white/[0.09] bg-black/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-white/45">{(packet?.source === 'GEMINI' || packet?.source === 'ANTHROPIC') ? 'AI-assisted' : packet?.source === 'DETERMINISTIC' ? 'Deterministic' : 'Unresolved'}</span>
         {automation && <span className="rounded-full border border-white/[0.09] bg-black/15 px-2.5 py-1 font-mono text-[9px] uppercase tracking-wider text-white/45">Governed execution</span>}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
