@@ -13,7 +13,7 @@ import { hasFeatureAccess } from '@/lib/entitlements';
 import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/deadline';
 import { deriveIntentSignals } from '@/lib/decision/intent-signals';
 import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
-import { getDisplayedIntentConfidence } from '@/lib/decision/intent-confidence';
+import { getDisplayedIntentConfidence, getDecisionProspectInterestScore } from '@/lib/decision/intent-confidence';
 import { formatIntentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 import { CORE_CHECKOUT_URL } from '@/lib/checkout';
 
@@ -242,7 +242,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
       if (result.decision) {
         setPacket(result.decision);
         onDecision(signalId, result.decision.status, result.decision);
-        if (isMicroPilot && result.decision.source !== 'UNAVAILABLE') onNewPilotDecision();
+        if (isMicroPilot && !result.reused && result.decision.source !== 'UNAVAILABLE') onNewPilotDecision();
       }
       else setError('Prospect identity is unresolved. Review this reply manually.');
     } catch { setError('Decision analysis failed. The reply is safely stored; retry when ready.'); }
@@ -441,7 +441,13 @@ export default function TriageCommandCenter({
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
   const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
-  const displayedIntentScore = getDisplayedIntentConfidence({ intentScore });
+  // Score comes from the SAME completed, tenant-owned decision; never from model
+  // confidence. A reply without decision evidence remains explicitly unassessed.
+  const pilotInterestScore = getDecisionProspectInterestScore(activeLead?.decisionPacket);
+  const displayedIntentScore = getDisplayedIntentConfidence({ intentScore:
+    userTier === 'MICRO_PILOT' ? pilotInterestScore : intentScore });
+  const displayedTemperature = userTier === 'MICRO_PILOT'
+    ? formatIntentTemperature(displayedIntentScore) : temperature;
   const [temperature, setTemperature] = useState(formatIntentTemperature(activeLead?.intentScore, activeLead?.status));
   const [signals, setSignals] = useState<string[]>(activeLead ? activeLead.signals : []);
   const [inboxConnectionMessage, setInboxConnectionMessage] = useState('');
@@ -1195,14 +1201,18 @@ export default function TriageCommandCenter({
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-bold text-white">{displayedIntentScore === null ? '?' : displayedIntentScore}</span>
+                      <span className="text-4xl font-bold text-white">{displayedIntentScore === null ? 'Not assessed' : displayedIntentScore}</span>
                       <span className="text-sm font-medium text-gray-400">/ 100</span>
                     </div>
                   </div>
                   <div className={`text-sm font-bold tracking-widest uppercase ${resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'HOT' ? 'text-green-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'WARM' ? 'text-yellow-500' : resolveIntentTemperature(displayedIntentScore, activeLead?.status) === 'COLD' ? 'text-red-500' : 'text-gray-500'}`} style={{ fontFamily: 'Oxanium, sans-serif' }}>
-                    {temperature}
+                    {displayedTemperature}
                   </div>
                 </div>
+                {userTier === 'MICRO_PILOT' && <p className="mb-3 text-xs text-gray-400">
+                  {displayedIntentScore === null ? 'Analyze a qualifying reply to assess buying interest; no score is invented.'
+                    : 'Prospect buying interest, based on reply evidence. Not analysis confidence or a conversion prediction.'}
+                </p>}
                 <div className="w-full bg-gray-800 rounded-full h-1.5 mb-6">
                   <div className={`h-1.5 rounded-full transition-all duration-1000 ${getProgressBarColor(displayedIntentScore, activeLead?.status)}`} style={{ width: `${displayedIntentScore ?? 0}%` }}></div>
                 </div>
