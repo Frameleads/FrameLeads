@@ -162,12 +162,41 @@ test('Micro-Pilot shows a compact real decision allowance and honest interrupted
 
 test('Micro-Pilot draft displays only the governed saved suggestion; cannot use legacy approve/send route', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.match(panel, /pilotPacket\?\.trace && pilotPacket\.source !== 'UNAVAILABLE'/);
-  assert.match(panel, /typeof pilotPacket\.suggestedReply === 'string'/);
+  assert.match(panel, /const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy/);
+  assert.match(panel, /typeof decisionPacket\?\.suggestedReply === 'string'/);
   assert.match(panel, /pilotDraftOverrides/);
-  assert.match(panel, /Governed suggestion · never sent automatically/);
-  assert.match(panel, /No safe automatic draft/);
-  assert.match(panel, /userTier === 'MICRO_PILOT' \? \(/);
-  assert.match(panel, /Sandbox sending remains human-confirmed/);
+  assert.match(panel, /Governed suggestion for review · not automatically sent/);
+  assert.match(panel, /A governed draft is withheld until the necessary policy review is resolved/);
+  assert.match(panel, /governedDraftMode \? \(/);
+  assert.match(panel, /separately protected Sandbox sending path/);
   assert.match(panel, /Copy draft/);
+});
+
+
+test('Enterprise uses verified 65/100 interest instead of the older 52/100 COLD assessment', () => {
+  const validated = { source: 'ANTHROPIC', primaryIntent: 'POSITIVE_INTEREST',
+    trace: { intentOutput: { prospectInterestScore: 65, intents: [] } } };
+  assert.equal(getDecisionProspectInterestScore(validated), 65);
+  assert.equal(intentTemperature(65), 'WARM');
+  assert.equal(intentTemperature(52), 'COLD');
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(ui, /const verifiedDecision = Boolean\(activeLead\?\.decisionPacket\?\.trace\?\.intentOutput/);
+  assert.match(ui, /verifiedDecision \|\| userTier === 'MICRO_PILOT' \? governedInterestScore : intentScore/);
+  assert.match(ui, /formatIntentTemperature\(displayedIntentScore\)/);
+  assert.match(ui, /queueIntentCategory\(lead\)/);
+  assert.match(ui, /verifiedDecision && activeLead\?\.decisionPacket/);
+  assert.match(ui, /Score measures expressed interest, not the likelihood of closing/);
+});
+
+test('unresolved policy explains withheld draft without reviving legacy send actions', () => {
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(ui, /const unresolvedPolicy = Boolean\(decisionPacket\?\.reviewReasons\.includes\('POLICY_UNRESOLVED'\)\)/);
+  assert.match(ui, /const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy/);
+  assert.match(ui, /safeGovernedSuggestion \? pilotDraftOverrides\[decisionPacket\?\.id \?\? ''\]/);
+  assert.match(ui, /governedDraftMode \? \(/);
+  assert.match(ui, /legacy send buttons are intentionally unavailable/);
+  assert.match(ui, /Human review required before treating any response as governed or approved/);
+  assert.match(ui, /unresolvedRules/);
+  assert.match(ui, /governanceHeadline/);
+  assert.match(ui, /getDecisionProspectInterestScore\(decision\)/);
 });
