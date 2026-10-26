@@ -71,7 +71,7 @@ export async function POST(request: Request) {
     }
     // Read the authoritative lifetime count after reservation/release rather than
     // estimating from UI clicks. A failure to read must never discard a persisted Decision.
-    const usage = isPilot ? await prisma.user.findUnique({
+    const usage = isPilot && prisma.user?.findUnique ? await prisma.user.findUnique({
       where: { id: userId }, select: { microPilotDecisionsUsed: true },
     }).catch(() => null) : null;
     const remaining = usage ? Math.max(0, 3 - usage.microPilotDecisionsUsed) : undefined;
