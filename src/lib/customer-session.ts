@@ -14,10 +14,21 @@ export async function verifyCustomerSession(token: string | undefined, db = pris
         select: { id: true, tier: true, email: true, whopId: true },
       });
     }
-    const response = await request('https://api.whop.com/oauth/userinfo', {
-      headers: { authorization: 'Bearer ' + token }, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(8000),
-    });
-    if (!response.ok) return null;
+    // Temporary Whop outages must not be mistaken for an expired login.
+    // Retry only provider/network failures, never invalid credentials (401/403).
+    let response: Response | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        response = await request('https://api.whop.com/oauth/userinfo', {
+          headers: { authorization: 'Bearer ' + token }, redirect: 'error',
+          cache: 'no-store', signal: AbortSignal.timeout(5000),
+        });
+        if (response.ok || ![429, 500, 502, 503, 504].includes(response.status)) break;
+      } catch {
+        if (attempt === 1) return null;
+      }
+    }
+    if (!response?.ok) return null;
     const raw = await response.text();
     if (raw.length > 8000) return null;
     const profile = JSON.parse(raw);
