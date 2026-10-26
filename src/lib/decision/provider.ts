@@ -143,7 +143,7 @@ function canonicalEvidence(value: string) {
   }
   return { normalized, starts, ends };
 }
-export function resolveReplyEvidence(currentReply: string, quotedEvidence: string): string {
+export function resolveReplyEvidence(currentReply: string, quotedEvidence: unknown): string {
   const evidence = bounded(quotedEvidence, 'intent evidence', 160);
   if (currentReply.includes(evidence)) return evidence;
   const reply = canonicalEvidence(currentReply);
