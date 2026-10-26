@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TriageIntent } from '@prisma/client';
-import { validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic,safeTriageOutputDiagnostic,selectTriageProvider,createAnthropicTriageProvider } from '../src/lib/decision/provider';
+import { resolveReplyEvidence, validateTriageOutput, TRIAGE_SYSTEM_PROMPT,TRIAGE_RESPONSE_SCHEMA,TRIAGE_INTENTS,classifyTriageFailure,TriageProviderFailure,safeGoogleDiagnostic,safeTriageOutputDiagnostic,selectTriageProvider,createAnthropicTriageProvider } from '../src/lib/decision/provider';
 import { decideReview, deterministicTriageSignal, triageInboundSignal,analyzeAndFinalizeReservedTriage } from '../src/lib/decision/triage';
 import { materializeMessageInTransaction } from '../src/lib/decision/conversation';
 import { canAutomaticallyTriage, canManuallyAnalyze, getDecisionRolloutMode } from '../src/lib/decision/rollout';
@@ -525,4 +525,71 @@ test('same Decision provider result carries distinct evidence-grounded buying in
   assert.equal((result.decision?.trace?.intentOutput as {prospectInterestScore?:number})?.prospectInterestScore,78);
   assert.equal(result.decision?.confidenceScore,84);
   assert.equal(f.calls(),1,'no extra provider call');
+});
+
+
+test('grounded evidence tolerates only typography and line wrapping and retains the true source span', () => {
+  const reply = "Thanks. We’re an 11-person team running multiple\n\toutbound campaigns.";
+  const modelQuote = "We're an 11-person team running multiple outbound campaigns.";
+  assert.equal(resolveReplyEvidence(reply, modelQuote),
+    "We’re an 11-person team running multiple\n\toutbound campaigns.");
+  assert.equal(resolveReplyEvidence("She said “hello” to the agency.", 'She said "hello" to the agency.'),
+    'She said “hello” to the agency.');
+  assert.equal(resolveReplyEvidence('Our launch is next-week.', 'Our launch is next‑week.'),
+    'Our launch is next-week.');
+  assert.throws(() => resolveReplyEvidence(reply, 'The prospect approved the purchase'), /evidence is not in the reply/);
+  assert.throws(() => resolveReplyEvidence(reply, 'we’re an 11-person team'), /evidence is not in the reply/);
+});
+
+test('one bounded provider correction repairs invalid evidence without another Decision or allowance', async () => {
+  const reply = 'Thanks for reaching out. This looks relevant to our agency.';
+  const f = fixture({ reply }); let providerCalls = 0, starts = 0;
+  f.deps.onProviderRequestStart = () => { starts++; };
+  const base = { ...answer, primaryIntent: TriageIntent.POSITIVE_INTEREST,
+    intents: [{ intent: TriageIntent.POSITIVE_INTEREST, confidence: 85,
+      evidence: 'This looks relevant to our agency.' }],
+    conciseInterpretation: 'The agency shows interest but has not committed.' };
+  f.deps.provider.analyze = async (request: any, observer: any) => {
+    providerCalls++;observer.onRequestStart();
+    observer.onResponse({inputTokens:300,outputTokens:110,totalTokens:410});
+    return request.evidenceCorrection ? base : { ...base,
+      intents: [{ ...base.intents[0], evidence: 'The agency promises to buy.' }] };
+  };
+  const result=await triageInboundSignal({ userId:'tenant-a', signalId:'signal-1' },f.deps);
+  assert.equal(providerCalls,2);
+  assert.equal(starts,1,'one claimed analysis has at most one on-start reservation callback');
+  assert.equal(f.rows.length,1,'do not create duplicate Decisions for corrective evidence');
+  assert.equal(result.decision?.source,'GEMINI');
+  assert.equal(result.decision?.interpretation,base.conciseInterpretation);
+  assert.equal((result.decision?.intentSignals as any)?.[0]?.evidence,base.intents[0].evidence);
+  assert.equal(f.usage.length,1);
+  assert.equal(f.usage[0].attempt,2);
+  assert.equal(f.usage[0].usage.totalTokens,820,'aggregate usage of both real provider requests');
+  assert.equal(f.usage[0].status,'SUCCESS');
+});
+
+test('second unsupported quote fails closed, records both provider attempts and invents nothing',async()=>{
+  const reply='Thanks for reaching out. This looks relevant to our agency.';
+  const f=fixture({reply});let calls=0;
+  f.deps.provider.analyze=async (_request:any, observer:any)=>{
+    calls++;observer.onRequestStart();observer.onResponse({inputTokens:250,outputTokens:70,totalTokens:320});
+    return {...answer,intents:[{...answer.intents[0],evidence:'Approved the sale and signed a contract.'}]};
+  };
+  const result=await triageInboundSignal({userId:'tenant-a',signalId:'signal-1'},f.deps);
+  assert.equal(calls,2);
+  assert.equal(result.decision?.source,'UNAVAILABLE');
+  assert.equal(result.decision?.interpretation,null);
+  assert.equal(result.decision?.suggestedReply,null);
+  assert.ok(result.decision?.reviewReasons.includes('INVALID_MODEL_OUTPUT'));
+  assert.equal(f.usage[0].attempt,2);
+  assert.equal(f.usage[0].usage.totalTokens,640);
+  assert.equal(f.usage[0].status,'FAILED');
+});
+
+test('non-evidence validation failures do not trigger a second provider attempt',async()=>{
+  const f=fixture({answer:{...answer,primaryIntent:'NONEXISTENT_INTENT'}});let calls=0;
+  f.deps.provider.analyze=async (_request:any,observer:any)=>{calls++;observer.onRequestStart();return {...answer,primaryIntent:'NONEXISTENT_INTENT'};};
+  const result=await triageInboundSignal({userId:'tenant-a',signalId:'signal-1'},f.deps);
+  assert.equal(calls,1);
+  assert.equal(result.decision?.source,'UNAVAILABLE');
 });
