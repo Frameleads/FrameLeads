@@ -109,16 +109,16 @@ test('very old interrupted Micro-Pilot decision can be recovered once with exist
   f.state.decisions.push({ id: 'old-pending', prospectId: 'prospect-1',
     status: 'NEEDS_REVIEW', source: 'UNAVAILABLE', createdAt: new Date('2026-10-07'),
     reviewReasons: ['ANALYSIS_OUTCOME_UNCERTAIN'], trace: null });
-  const recovered = new Request('https://app.example/api/decisions/triage', {
+  const recovered = () => new Request('https://app.example/api/decisions/triage', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ signalId: 'signal-1', retryOfDecisionId: 'old-pending',
       confirmProviderRequestEnded: true }),
   });
-  const first = await f.route.POST(recovered);
+  const first = await f.route.POST(recovered());
   assert.equal(first.status, 200);
   assert.equal(f.state.providerCalls, 1);
   assert.equal(f.state.used, 1, 'prior trial slot remains claimed, no new charge');
-  const second = await f.route.POST(recovered);
+  const second = await f.route.POST(recovered());
   assert.equal(second.status, 409, 'repeat recovery cannot call provider again');
   assert.equal(f.state.providerCalls, 1);
 });
