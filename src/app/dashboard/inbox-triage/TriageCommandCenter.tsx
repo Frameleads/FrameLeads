@@ -341,7 +341,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
           {unverifiedModelOutput && <p role="status" className="mt-2 max-w-3xl text-xs leading-5 text-white/55">
             The model returned an unverified result. No governed recommendation was accepted.
             The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
-          </p>
+          </p>}
         </div>
       </div>
 
