@@ -1,3 +1,4 @@
+import { verifyCustomerSession } from '../src/lib/customer-session';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createWhopEntitlementRefresher } from '../src/lib/whop-entitlement-refresh';
@@ -73,4 +74,36 @@ test('authoritative no-membership and unknown-plan results revoke stale tier, wh
   assert.equal(await refresher.refresh(input('CORE')), 'INACTIVE');
   assert.equal(checks, 2);
   assert.deepEqual(persisted.at(-1), { tier: 'INACTIVE', monthlyQuota: 0 });
+});
+
+
+test('transient Whop userinfo failure retries without authenticating an unverified user', async () => {
+  let attempts = 0;
+  const db: any = { user: { findUnique: async ({ where }: any) => where.whopId === 'whop-test-1'
+    ? { id: 'tenant-1', tier: 'MICRO_PILOT', whopId: 'whop-test-1', email: 'demo@example.test' } : null } };
+  const request = (async () => {
+    attempts++;
+    return attempts === 1 ? new Response('', { status: 503 }) :
+      new Response(JSON.stringify({ sub: 'whop-test-1', email: 'demo@example.test' }), {status: 200});
+  }) as typeof fetch;
+  const user = await verifyCustomerSession('valid-oauth-test-token', db, request);
+  assert.equal(user?.id, 'tenant-1');
+  assert.equal(attempts, 2);
+});
+
+test('Whop identity 401 never retries, never trusts email, and never grants access', async () => {
+  let attempts = 0, queries = 0;
+  const db: any = { user: { findUnique: async () => {queries++;return { id: 'should-not-happen' };} } };
+  const request = (async () => {attempts++;return new Response('', {status:401});}) as typeof fetch;
+  assert.equal(await verifyCustomerSession('invalid-oauth-token',db,request),null);
+  assert.equal(attempts,1);
+  assert.equal(queries,0);
+});
+
+test('network verification failure does not create a customer session', async () => {
+  let attempts = 0;
+  const db: any = { user: { findUnique: async () => {throw Error('Must not query tenant');} } };
+  const request = (async () => {attempts++;throw new Error('temporary upstream network error');}) as typeof fetch;
+  assert.equal(await verifyCustomerSession('opaque-token',db,request),null);
+  assert.equal(attempts,2);
 });
