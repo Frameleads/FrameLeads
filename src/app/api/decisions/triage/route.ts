@@ -69,7 +69,13 @@ export async function POST(request: Request) {
         catch { console.error('[RESPONSE_SLA] Materialization failed after Decision persistence'); }
       }
     }
-    return NextResponse.json({ ...result, automation });
+    // Read the authoritative lifetime count after reservation/release rather than
+    // estimating from UI clicks. A failure to read must never discard a persisted Decision.
+    const usage = isPilot ? await prisma.user.findUnique({
+      where: { id: userId }, select: { microPilotDecisionsUsed: true },
+    }).catch(() => null) : null;
+    const remaining = usage ? Math.max(0, 3 - usage.microPilotDecisionsUsed) : undefined;
+    return NextResponse.json({ ...result, automation, ...(isPilot ? { remaining } : {}) });
   } catch (error) {
     // A provider request that started may have incurred cost even if the result
     // was lost or persistence failed. Retain that reservation to prevent an unsafe retry.
