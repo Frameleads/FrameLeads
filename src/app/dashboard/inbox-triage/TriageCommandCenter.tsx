@@ -14,7 +14,7 @@ import { displayResponseSLA, sortInboxByResponseSLA } from '@/lib/response-sla/d
 import { deriveIntentSignals } from '@/lib/decision/intent-signals';
 import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
 import { getDisplayedIntentConfidence, getDecisionProspectInterestScore } from '@/lib/decision/intent-confidence';
-import { formatIntentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
+import { formatIntentTemperature, intentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 import { CORE_CHECKOUT_URL } from '@/lib/checkout';
 
 /**
@@ -88,6 +88,15 @@ type DecisionPacket = { id: string; status: string; primaryIntent: string | null
   recommendedNextAction: string | null; suggestedReply: string | null; explanation: string | null;
   reviewReasons: string[]; shadowMode: boolean; trace?: { icpState: unknown; policyResult: unknown;
     contextReferences: unknown; memoryState: unknown; intentOutput?: unknown } | null };
+function queueIntentCategory(lead: { decisionPacket?: DecisionPacket | null; status: string }) {
+  const decision = lead.decisionPacket;
+  if (decision?.trace?.intentOutput &&
+      (decision.source === 'GEMINI' || decision.source === 'ANTHROPIC')) {
+    // Do not revive a legacy COLD label when governed score is unknown.
+    return intentTemperature(getDecisionProspectInterestScore(decision)) ?? 'UNASSESSED';
+  }
+  return lead.status;
+}
 type AutomationPacket = { decisionId: string; resolvedMode: string; state: string; reasons: string[];
   ruleIds: string[]; prospectId: string; assignment: { queue: string } | null; hold: { reason: string } | null };
 type RevenueRiskView = { status: string; score: number | null; band: string | null;
@@ -741,14 +750,18 @@ export default function TriageCommandCenter({
     ? deriveIntentSignals({ decision: activeLead.decisionPacket, reply: activeLead.inboundSignal })
     : userTier === 'MICRO_PILOT' ? []
     : activeLead?.whyNowSignals?.length ? activeLead.whyNowSignals : signals;
-  const pilotPacket: DecisionPacket | null = userTier === 'MICRO_PILOT' ? activeLead?.decisionPacket ?? null : null;
-  const safePilotSuggestion = pilotPacket?.trace && pilotPacket.source !== 'UNAVAILABLE' &&
-    typeof pilotPacket.suggestedReply === 'string' && pilotPacket.suggestedReply.trim()
-    ? pilotPacket.suggestedReply.trim() : '';
-  const liveDraft = userTier === 'MICRO_PILOT'
-    ? pilotDraftOverrides[activeLead?.id ?? ''] ?? safePilotSuggestion
+  const decisionPacket: DecisionPacket | null = activeLead?.decisionPacket ?? null;
+  const governedDraftMode = userTier === 'MICRO_PILOT' || Boolean(activeLead?.decisionId || decisionPacket);
+  const unresolvedPolicy = Boolean(decisionPacket?.reviewReasons.includes('POLICY_UNRESOLVED'));
+  // A recorded Decision is the single source of truth for governed drafts.
+  // Never fall back to pre-governance copy when its policy outcome is unresolved.
+  const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy &&
+    typeof decisionPacket?.suggestedReply === 'string' && decisionPacket.suggestedReply.trim()
+    ? decisionPacket.suggestedReply.trim() : '';
+  const liveDraft = governedDraftMode
+    ? pilotDraftOverrides[activeLead?.id ?? ''] ?? safeGovernedSuggestion
     : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
-  const pilotDraftWithheld = userTier === 'MICRO_PILOT' && !!pilotPacket?.trace && !safePilotSuggestion;
+  const governedDraftWithheld = governedDraftMode && !!decisionPacket && !safeGovernedSuggestion;
   const copyPilotDraft = async () => {
     if (!liveDraft.trim()) return;
     try { await navigator.clipboard.writeText(liveDraft); setDraftCopied(true); }
