@@ -72,14 +72,14 @@ export async function POST(req: Request) {
 
         if (status === 'active' || status === 'trialing' || status === 'completed' || status === 'valid') {
           let assignedTier: 'MICRO_PILOT' | 'CORE' | 'ENTERPRISE' | null = null;
-          let assignedQuota: 25 | 500 | 20000 | null = null;
+          let assignedQuota: 25 | 500 | 10000 | null = null;
           
           if (/\bmicro\b/.test(stringified)) { 
               assignedTier = 'MICRO_PILOT'; 
               assignedQuota = 25; 
           } else if (/\benterprise\b/.test(stringified)) { 
               assignedTier = 'ENTERPRISE'; 
-              assignedQuota = 20000; 
+              assignedQuota = 10000; 
           } else if (/\bcore\b/.test(stringified)) { 
               assignedTier = 'CORE'; 
               assignedQuota = 500; 
