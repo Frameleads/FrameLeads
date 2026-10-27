@@ -29,7 +29,7 @@ export class UnrecognizedWhopProductError extends Error {
 
 const LEGACY_ENTERPRISE_PLAN_IDS = new Set([
   "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz",
-]);
+].map(id => id.toLowerCase()));
 
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
