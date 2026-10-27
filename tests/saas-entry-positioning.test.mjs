@@ -12,6 +12,7 @@ test("Login keeps Whop authentication unchanged and uses approved charcoal surfa
   assert.match(login, /Log in with Whop/);
   assert.match(login, /bg-\[#1A1A1A\]/);
   assert.match(login, /bg-\[#242424\]/);
+  assert.match(login, /bg-\[#242424\] border border-white\/10 p-2 rounded-xl/);
   assert.match(login, /The governed decision layer for outbound replies/);
   assert.match(login, /Review prospect replies, next actions, and decisions that need you/);
   assert.match(login, /Terms of Service and Privacy/);
@@ -27,6 +28,7 @@ test("Welcome message sells post-reply decisions without claiming active setup",
   assert.match(welcome, /router\.push\('\/dashboard\/campaign'\)/);
   assert.match(welcome, /GOVERNED REPLY DECISIONS/);
   assert.match(welcome, /PROSPECT CONTEXT • SALES RULES • HUMAN CONTROL/);
+  assert.match(welcome, /text-\[#A0A0A0\]/);
   assert.doesNotMatch(welcome, /architecture is live|whale replies|endless follow-ups|ZERO-CODE DEPLOYMENT|ALL LOGIC ENGINES OPERATIONAL/);
 });
 
