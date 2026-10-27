@@ -46,9 +46,13 @@ export async function mergeWhopUserInTransaction(tx: WhopUserTransaction, {
 
   const existingUser = byWhopId || byEmail;
   if (existingUser) {
+    // This persisted grandfather marker is set only by the reviewed
+    // historical-cohort migration; it is never inferred from email or UI.
+    const monthlyQuota = subscription.tier === "ENTERPRISE" && existingUser.enterpriseLegacyQuota
+      ? 20_000 : entitlement.monthlyQuota;
     return tx.user.update({
       where: { id: existingUser.id },
-      data: { whopId, email: normalizedEmail, ...entitlement },
+      data: { whopId, email: normalizedEmail, ...entitlement, monthlyQuota },
     });
   }
 
