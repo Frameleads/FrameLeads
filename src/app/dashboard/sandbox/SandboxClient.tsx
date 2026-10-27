@@ -855,7 +855,7 @@ useEffect(() => {
           </div>
           <div className="text-right">
             <p className="text-xl font-bold text-primary font-heading">
-              {monthlyQuota - leadsProcessed}
+              {Math.max(0, monthlyQuota - leadsProcessed)}
             </p>
             <p className="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">REMAINING</p>
           </div>

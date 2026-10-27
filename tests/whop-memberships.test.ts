@@ -37,8 +37,8 @@ test('Micro-Pilot one-time membership follows Whop expiration and non-expiring c
 test('SaaS recognizes both legacy and newly priced Whop checkout plans for all three tiers', () => {
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_sAEhr77rTrhX4' } }), { tier: 'CORE', monthlyQuota: 500 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf' } }), { tier: 'CORE', monthlyQuota: 500 });
-  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_jdy5Z44fMKMAz' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
-  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_jdy5Z44fMKMAz' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
+  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_8qLWfJZHQUYZf' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
   assert.deepEqual(resolveWhopSubscription({ product: { id: 'prod_bTf6npFBh6teM' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
 });
@@ -55,7 +55,7 @@ test('Sandbox only recognizes explicit Sandbox plan IDs, never old production ID
     process.env.WHOP_ENTERPRISE_IDS = 'plan_YmOeElzhAHzjD';
     assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_kEqA9P0Tj0TBT' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
     assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_B1F9owb9s65h0' } }), { tier: 'CORE', monthlyQuota: 500 });
-    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_YmOeElzhAHzjD' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_YmOeElzhAHzjD' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
     assert.throws(() => resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf', name: 'Core' } }), /Unrecognized Whop product/);
     assert.throws(() => resolveWhopSubscription({ product: { name: 'Enterprise' } }), /Unrecognized Whop product/);
     delete process.env.WHOP_CORE_IDS;
@@ -88,7 +88,7 @@ test('membership verification follows bounded Whop cursors and selects the highe
         : { data: second, page_info: { has_next_page: false, end_cursor: null } }), { status: 200 });
     });
     assert.equal(result.tier, 'ENTERPRISE');
-    assert.equal(result.monthlyQuota, 20_000);
+    assert.equal(result.monthlyQuota, 10_000);
     assert.equal(result.validUntil, Date.parse('2030-01-01T00:00:00.000Z'));
     assert.equal(requests.length, 2);
     assert.equal(requests[0].searchParams.get('account_id'), 'biz_test');

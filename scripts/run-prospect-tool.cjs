@@ -22,7 +22,7 @@ if (tool === 'inbox-triage-qa-test') { require(path.join(__dirname, '../tests/in
 if (tool === 'diagnostic-test') { require(path.join(__dirname, '../tests/diagnostic.test.ts')); return; }
 if (tool === 'market-messaging-test') { require(path.join(__dirname, '../tests/market-messaging.test.ts')); return; }
 if (tool === 'campaign-session-test') { require(path.join(__dirname, '../tests/campaign-session.test.ts')); return; }
-if (tool === 'entitlements-test') { require(path.join(__dirname, '../tests/entitlements.test.ts')); return; }
+if (tool === 'entitlements-test') { require(path.join(__dirname, '../tests/entitlements.test.ts')); require(path.join(__dirname, '../tests/enterprise-quota.test.ts')); return; }
 if (tool === 'entitlement-routes-test') { require(path.join(__dirname, '../tests/entitlement-routes.test.ts')); return; }
 if (tool === 'micro-pilot-test') { require(path.join(__dirname, '../tests/micro-pilot-limits.test.ts')); return; }
 if (tool === 'micro-pilot-inbox-test') { require(path.join(__dirname, '../tests/micro-pilot-inbox.test.mjs')); return; }

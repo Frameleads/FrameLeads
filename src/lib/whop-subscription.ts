@@ -1,3 +1,4 @@
+import { monthlyLeadQuotaForTier } from './entitlements';
 import { isWhopSandbox } from "./whop-environment";
 
 export type WhopSubscription = {
@@ -148,7 +149,7 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
   }> = [
     {
       tier: "ENTERPRISE",
-      monthlyQuota: 20_000,
+      monthlyQuota: monthlyLeadQuotaForTier('ENTERPRISE'),
       ids: configuredIds("WHOP_ENTERPRISE_IDS", DEFAULT_TIER_IDS.ENTERPRISE),
       idsEnvironmentVariable: "WHOP_ENTERPRISE_IDS",
       namePattern: configuredPattern(
