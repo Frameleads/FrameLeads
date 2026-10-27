@@ -104,6 +104,7 @@ conservative seeding still requires explicit per-account review.
 - Approval of the exact migration and release commit, current Neon restore point,
   migration history/checksums and release target.
 - Normal authenticated desktop/mobile verification after the reviewed release.
+- If future-account auto-enrollment is included, separate approval of the UTC cutover and exact plan policy; otherwise leave both settings absent.
 
 ## Isolated PostgreSQL and migration validation
 
