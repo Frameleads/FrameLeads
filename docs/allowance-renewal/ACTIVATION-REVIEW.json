@@ -65,6 +65,36 @@
         "creationPerformed": false,
         "preservationConstraint": "Existing snapshot must remain unchanged"
       },
+      "noCostRecoveryAlternatives": {
+        "status": "BLOCKED_NO_VERIFIED_FRESH_RECOVERY_POINT",
+        "evaluationDate": "2026-10-27",
+        "externalPgDump": {
+          "providerPostgresVersion": 18,
+          "requiredClientVersion": 18,
+          "pgDumpAvailableInTaskRuntime": false,
+          "pgRestoreAvailableInTaskRuntime": false,
+          "directProductionDnsTcpConnectivity": "FAILED_DNS_TEMPORARY_FAILURE",
+          "productionRolesVisible": ["neondb_owner"],
+          "dedicatedReadOnlyRoleVerified": false,
+          "candidateOwnerOnlyDriveFolderExists": true,
+          "candidateFolderShared": false,
+          "clientSideEncryptionKeyVerified": false,
+          "approvedStorageDestination": false,
+          "availableCapacityAndCostVerified": false,
+          "nonproductionRestoreTested": false,
+          "backupCreated": false
+        },
+        "neonBranch": {
+          "plan": "free_v3",
+          "branchLimit": 10,
+          "branchesListed": 10,
+          "archivedBranchesCountTowardLimit": true,
+          "archivedBranchStorageFree": false,
+          "freePlanExtraBranchAvailable": false,
+          "branchCreatedOrDeleted": false
+        },
+        "nextOwnerAction": "Designate an owner-controlled machine, approved client-side encryption key, no-cost storage with sufficient verified capacity and retention, and an isolated PostgreSQL 18 restore target; arrange an approved least-privilege read-only DB role if absent"
+      },
       "restorationProcedure": "After a separately approved suitable recovery point exists, restore to a new candidate branch with finalization disabled; validate and reconcile post-snapshot writes; production branch cutover requires separate explicit recovery approval"
     }
   },

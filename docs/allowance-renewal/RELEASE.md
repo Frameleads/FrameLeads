@@ -208,6 +208,31 @@ on production database `neondb`, branch `br-calm-meadow-atgqqrhf`. Reconfirm
 immediately before release. A fresh pre-release snapshot remains blocked by the
 Free plan's occupied manual-snapshot allowance and snapshot storage billing.
 
+### No-cost recovery alternatives — 2026-10-27
+
+- Neon Free lists 10/10 project branches. Archived branches count toward the
+  limit and continue to incur storage costs; extra branches are unavailable on
+  Free. No existing branch may be removed under the owner constraint, so a
+  no-compute recovery branch is not currently available.
+- Neon reports PostgreSQL 18. The task runtime has no `pg_dump`/`pg_restore`,
+  and a direct endpoint DNS lookup failed before authentication. Only
+  `neondb_owner` appears in the production role inventory; no least-privilege
+  dump role was verified.
+- An owner-only, unshared Drive folder `FrameLeads-Private-Backups` exists, but
+  encryption key custody, free available quota, retention, restore target, and
+  owner approval as production database storage are not evidenced. No database
+  dump was created or uploaded, and no restore was attempted. Do not call an
+  untested archive verified.
+- Candidate zero-extra-cost process: use an owner-controlled machine with
+  PostgreSQL 18 clients and direct TLS, a DBA-approved SELECT-only role, and a
+  confirmed no-cost storage destination. Stream `pg_dump -Fc` through
+  client-side encryption, keep its key separately, verify SHA-256 and archive
+  listing after transfer, then restore into isolated PostgreSQL 18 and validate
+  schema, sequences, constraints, indexes, row counts, and application checks.
+  Recovery must reconcile all production writes since dump start; any writer
+  freeze or production cutover needs separate approval. Until those steps are
+  completed and evidenced, the migration remains blocked on recovery readiness.
+
 ## Isolated PostgreSQL and migration validation
 
 A fresh local PostgreSQL **17.11** instance was unpacked from official Debian
