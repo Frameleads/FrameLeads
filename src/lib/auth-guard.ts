@@ -26,7 +26,8 @@ function isSystemAdmin(email: string) {
 }
 
 async function refreshedTier(input: {
-  id: string; whopId: string; email: string; tier: string; monthlyQuota: number; accessToken?: string;
+  id: string; whopId: string; email: string; tier: string; monthlyQuota: number;
+  enterpriseLegacyQuota: boolean; accessToken?: string;
 }) {
   if (await localDevelopmentTier()) return 'ENTERPRISE' as FrameLeadsTier;
   if (isSystemAdmin(input.email)) return 'ENTERPRISE' as FrameLeadsTier;
@@ -34,6 +35,7 @@ async function refreshedTier(input: {
   return normalizeFrameLeadsTier(await whopEntitlementRefresher.refresh({
     userId: input.id, whopUserId: input.whopId, accessToken: input.accessToken,
     currentTier: input.tier, currentMonthlyQuota: input.monthlyQuota,
+    enterpriseLegacyQuota: input.enterpriseLegacyQuota,
   }));
 }
 
@@ -46,7 +48,7 @@ export async function getAuthenticatedEntitlementUser() {
   const jar = await cookies();
   const user = await resolveScoutUser(prisma, jar.get('frameleads_session')?.value);
   if (!user) return null;
-  const row = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true, email: true, whopId: true, monthlyQuota: true } });
+  const row = await prisma.user.findUnique({ where: { id: user.id }, select: { tier: true, email: true, whopId: true, monthlyQuota: true, enterpriseLegacyQuota: true } });
   if (!row) return null;
   const tier = await refreshedTier({ ...row, id: user.id, accessToken: jar.get('frameleads_session')?.value });
   return { id: user.id, tier };
@@ -54,7 +56,7 @@ export async function getAuthenticatedEntitlementUser() {
 
 export async function getUserEntitlementTier(userId: string): Promise<FrameLeadsTier> {
   if (await localDevelopmentTier()) return 'ENTERPRISE';
-  const row = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true, email: true, whopId: true, monthlyQuota: true } });
+  const row = await prisma.user.findUnique({ where: { id: userId }, select: { tier: true, email: true, whopId: true, monthlyQuota: true, enterpriseLegacyQuota: true } });
   if (!row) return 'INACTIVE';
   if (isSystemAdmin(row.email)) return 'ENTERPRISE';
   const token = (await cookies()).get('frameleads_session')?.value;
