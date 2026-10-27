@@ -95,6 +95,8 @@ model User {
   email          String   @unique
   tier           String   @default("INACTIVE")
   monthlyQuota   Int      @default(0)
+  // Preserves verified pre-offer Enterprise allocation; never set by checkout callbacks.
+  enterpriseLegacyQuota Boolean @default(false)
   leadsProcessed Int      @default(0)
   // One-time Micro-Pilot decision allowance, bound to this purchased tenant.
   microPilotDecisionsUsed Int @default(0)
