@@ -1,3 +1,4 @@
+import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -72,14 +73,14 @@ export async function POST(req: Request) {
 
         if (status === 'active' || status === 'trialing' || status === 'completed' || status === 'valid') {
           let assignedTier: 'MICRO_PILOT' | 'CORE' | 'ENTERPRISE' | null = null;
-          let assignedQuota: 25 | 500 | 20000 | null = null;
+          let assignedQuota: number | null = null;
           
           if (/\bmicro\b/.test(stringified)) { 
               assignedTier = 'MICRO_PILOT'; 
               assignedQuota = 25; 
           } else if (/\benterprise\b/.test(stringified)) { 
               assignedTier = 'ENTERPRISE'; 
-              assignedQuota = 20000; 
+              assignedQuota = monthlyLeadQuotaForTier('ENTERPRISE');
           } else if (/\bcore\b/.test(stringified)) { 
               assignedTier = 'CORE'; 
               assignedQuota = 500; 

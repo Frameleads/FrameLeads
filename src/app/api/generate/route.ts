@@ -12,6 +12,7 @@ import { getSalesConstitutionContext } from '@/lib/sales-constitution';
 import { BUILT_IN_MARKET_PROFILES, buildMarketAwareGenerationPrompt, listMarketProfiles, resolveMarketProfile } from '@/lib/market-messaging';
 import { getUserEntitlementTier } from '@/lib/auth-guard';
 import { hasFeatureAccess, monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { reserveEnterpriseProspects } from '@/lib/enterprise-quota';
 import { completeMicroPilotOutbound, MicroPilotLimitError, microPilotOutboundIdentityKey, releaseUnstartedMicroPilotOutbound, reserveMicroPilotOutbound } from '@/lib/micro-pilot-limits';
 import { verifiedCustomerUser } from '@/lib/customer-session';
 import { normalizeOutboundCopy } from '@/lib/outbound-copy';
@@ -290,6 +291,12 @@ export async function POST(req: Request) {
       const requestStarted = new Set<string>();
       const completedIdentities = new Set<string>();
 
+      if (tier === 'ENTERPRISE') {
+        const allocated = await reserveEnterpriseProspects(prisma, currentUserId, allowedLeads.length);
+        lockedLeads = [...allowedLeads.slice(allocated), ...lockedLeads];
+        allowedLeads = allowedLeads.slice(0, allocated);
+      }
+
       const generationResults = await Promise.allSettled(
         allowedLeads.map(async (lead: any, index: number) => {
           try {
@@ -520,7 +527,7 @@ export async function POST(req: Request) {
 
     processedLeads = [...processedLeads, ...ghostLeads];
 
-    if (allowedLeads.length > 0) {
+    if (allowedLeads.length > 0 && tier !== 'ENTERPRISE') {
       await prisma.user.update({
         where: { id: currentUserId },
         data: { leadsProcessed: { increment: allowedLeads.length } }

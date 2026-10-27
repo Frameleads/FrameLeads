@@ -1,3 +1,4 @@
+import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
 import { NextRequest, NextResponse } from "next/server";
 import { getWhopApiOrigin } from "@/lib/whop-environment";
 import { getWhopRedirectUri, WHOP_OAUTH_COOKIES } from "@/lib/whop-oauth";
@@ -186,7 +187,7 @@ export async function GET(request: NextRequest) {
           ? 25
           : testTier === 'CORE'
             ? 500
-            : 20_000;
+            : monthlyLeadQuotaForTier('ENTERPRISE');
 
         subscription = { tier: testTier, monthlyQuota };
       } else if (email !== "akramwmm@gmail.com") {
@@ -196,7 +197,7 @@ export async function GET(request: NextRequest) {
           ),
         );
       } else {
-        subscription = { tier: "ENTERPRISE", monthlyQuota: 20_000 };
+        subscription = { tier: "ENTERPRISE", monthlyQuota: monthlyLeadQuotaForTier('ENTERPRISE') };
       }
     } else if (error instanceof UnrecognizedWhopProductError) {
       return clearOAuthCookies(

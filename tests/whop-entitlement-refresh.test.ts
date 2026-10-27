@@ -27,7 +27,7 @@ test('paid feature freshness checks cache briefly and refresh to the current pro
   assert.equal(await refresher.refresh(input('CORE')), 'CORE');
   assert.equal(checks, 1, 'fresh response is reused for at most the short cache interval');
   clock = 31_000;
-  provider = async () => ({ tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+  provider = async () => ({ tier: 'ENTERPRISE', monthlyQuota: 10_000 });
   assert.equal(await refresher.refresh(input('CORE')), 'ENTERPRISE');
   assert.equal(checks, 2);
 });

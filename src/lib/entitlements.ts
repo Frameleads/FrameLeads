@@ -53,5 +53,5 @@ export function hasFeatureAccess(tierValue: unknown, feature: FeatureKey): boole
 
 export function monthlyLeadQuotaForTier(tierValue: unknown): number {
   const tier = normalizeFrameLeadsTier(tierValue);
-  return tier === 'ENTERPRISE' ? 20_000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
+  return tier === 'ENTERPRISE' ? 10_000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
 }

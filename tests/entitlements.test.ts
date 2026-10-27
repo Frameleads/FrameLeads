@@ -45,7 +45,7 @@ test('ENTERPRISE inherits all capabilities; inactive and unknown tiers fail clos
 test('tier quota values remain locked', () => {
   assert.equal(monthlyLeadQuotaForTier('MICRO_PILOT'), 25);
   assert.equal(monthlyLeadQuotaForTier('CORE'), 500);
-  assert.equal(monthlyLeadQuotaForTier('ENTERPRISE'), 20_000);
+  assert.equal(monthlyLeadQuotaForTier('ENTERPRISE'), 10_000);
   assert.equal(monthlyLeadQuotaForTier('unknown'), 0);
 });
 

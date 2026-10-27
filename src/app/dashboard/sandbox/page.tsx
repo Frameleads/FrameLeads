@@ -1,3 +1,4 @@
+import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
 export const dynamic = 'force-dynamic';
 
 import { cookies } from "next/headers";
@@ -118,7 +119,7 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
   return (
     <SandboxClient
       leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed}
-      monthlyQuota={user.monthlyQuota}
+      monthlyQuota={monthlyLeadQuotaForTier(user.tier)}
       userTier={user.tier}
       initialLeads={initialLeads}
       currentPage={currentPage}

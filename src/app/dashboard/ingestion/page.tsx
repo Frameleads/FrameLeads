@@ -1,3 +1,4 @@
+import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
 export const dynamic = 'force-dynamic';
 
 import { prisma } from "@/lib/prisma";
@@ -29,6 +30,6 @@ export default async function IngestionPage() {
     return <div>User not found</div>;
   }
 
-  return <IngestionClient userTier={user.tier} monthlyQuota={user.monthlyQuota}
+  return <IngestionClient userTier={user.tier} monthlyQuota={monthlyLeadQuotaForTier(user.tier)}
     leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed} />;
 }
