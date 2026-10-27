@@ -10,6 +10,7 @@ type RefreshInput = {
   accessToken: string;
   currentTier: string;
   currentMonthlyQuota: number;
+  enterpriseLegacyQuota?: boolean;
 };
 type CacheEntry = {
   tier: WhopSubscription["tier"] | "INACTIVE";
@@ -57,7 +58,11 @@ export function createWhopEntitlementRefresher(dependencies: Dependencies) {
 
       try {
         const subscription = await dependencies.verify(input.accessToken, input.whopUserId);
-        const entitlement = { tier: subscription.tier, monthlyQuota: subscription.monthlyQuota };
+        const entitlement = {
+          tier: subscription.tier,
+          monthlyQuota: subscription.tier === "ENTERPRISE" && input.enterpriseLegacyQuota
+            ? 20_000 : subscription.monthlyQuota,
+        };
         if (input.currentTier !== entitlement.tier || input.currentMonthlyQuota !== entitlement.monthlyQuota) {
           await persist(input.userId, entitlement.tier, entitlement.monthlyQuota);
         }
