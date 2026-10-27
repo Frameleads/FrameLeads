@@ -32,6 +32,25 @@ test('paid feature freshness checks cache briefly and refresh to the current pro
   assert.equal(checks, 2);
 });
 
+test('only marked legacy Enterprise accounts retain 20k on verified refresh; downgrade loses Enterprise quota', async () => {
+  const persisted: Array<{ tier: string; monthlyQuota: number }> = [];
+  let provider: WhopSubscription = { tier: 'ENTERPRISE', monthlyQuota: 10_000 };
+  const refresher = createWhopEntitlementRefresher({
+    verify: async () => provider,
+    persist: async (_id, ent) => { persisted.push(ent); },
+  });
+  const oldBuyer = { ...input(), whopUserId: 'old_enterprise', enterpriseLegacyQuota: true };
+  const newBuyer = { ...input(), whopUserId: 'new_enterprise', enterpriseLegacyQuota: false };
+  assert.equal(await refresher.refresh(oldBuyer), 'ENTERPRISE');
+  assert.deepEqual(persisted.at(-1), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+  assert.equal(await refresher.refresh(newBuyer), 'ENTERPRISE');
+  assert.deepEqual(persisted.at(-1), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
+  refresher.invalidate('old_enterprise');
+  provider = { tier: 'CORE', monthlyQuota: 500 };
+  assert.equal(await refresher.refresh({ ...oldBuyer, currentTier: 'ENTERPRISE', currentMonthlyQuota: 20_000 }), 'CORE');
+  assert.deepEqual(persisted.at(-1), { tier: 'CORE', monthlyQuota: 500 });
+});
+
 test('provider outage uses only recent verified access and never crosses a known renewal boundary', async () => {
   let clock = 0;
   let offline = false;
