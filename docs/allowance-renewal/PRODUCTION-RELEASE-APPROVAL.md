@@ -1,8 +1,10 @@
 # PR #18 production release approval packet
 
-**Status: proposed only.** No snapshot, production migration, deployment,
-enrollment, or activation has been performed. PR #18 remains draft and monthly
-renewal remains disabled.
+**Status: blocked on a fresh recovery point.** Snapshot creation was authorized
+only if the existing plan allowed it without upgrade or unexpected charges.
+That condition is not met, so no new snapshot was created. No production
+migration, deployment, enrollment, or activation has been performed. PR #18
+remains draft and monthly renewal remains disabled.
 
 ## Exact reviewed target
 
@@ -24,12 +26,28 @@ attempts, 0 unresolved attempts, and no row for the PR #18 migration. The
 database identity returned by the same query was `neondb` on the specified
 production branch.
 
-Neon reports 21,600 seconds (6 hours) of project history retention. The
-production branch has no automatic snapshot schedule, and the snapshot-list API
-returned no snapshot objects. The existing October 25 manual recovery point is
-represented by branch `br-ancient-rice-at9d6eqj`, created from production at
-`2026-10-25T13:01:04Z` (parent LSN `0/6380AD8`). It is not a fresh pre-release
-restore point and does not cover later production writes.
+The project is on Neon Free (`free_v3`). Neon documentation says Free includes
+one manual snapshot and snapshot storage is billed at **$0.09/GB-month**. One
+manual snapshot already exists and occupies that allowance:
+
+- Snapshot: `snap-soft-queen-atszi746`
+- Name: `pre-micro-pilot-whop-release-2026-10-25`
+- Source branch: `br-calm-meadow-atgqqrhf`
+- Created: `2026-10-25T11:19:55Z`
+- Expires: `2026-11-08T00:00:00Z`
+- Provider-reported full size: 36,347,904 bytes
+- Provider marks it manual: `true`
+
+The authoritative snapshot list now returns this one object. Creating another
+while preserving it exceeds the Free manual-snapshot limit; any stored snapshot
+also incurs the documented storage charge. This fails the no-upgrade/no-
+unexpected-charge condition. Do not delete, modify, or extend the existing
+snapshot. Neon reports 21,600 seconds (6 hours) of project history retention
+and no automatic snapshot schedule. A separate historical recovery branch
+`br-ancient-rice-at9d6eqj` exists at parent timestamp `2026-10-25T13:01:04Z`
+(LSN `0/6380AD8`); it is not a fresh pre-release point.
+
+Neon documentation references: [plans and snapshot limits](https://neon.com/docs/introduction/plans), [backup and restore pricing](https://neon.com/docs/guides/backup-restore), [snapshot storage FAQ](https://neon.com/faqs/managed-postgres-platforms-test-migration-snapshots).
 
 Read-only Vercel environment metadata contained no `PROSPECT_ALLOWANCE_*`
 variables. The application defaults `PROSPECT_ALLOWANCE_MODE` to `disabled`;
@@ -49,21 +67,19 @@ mode disabled, no cursor rows, no manifest, and no future-account settings.
 Keep all eight historical accounts excluded and their usage unchanged. Preserve
 Micro-Pilot’s existing one-time allowance.
 
-## Snapshot and restoration procedure
+## Recovery procedure when an approved recovery point is available
 
-Snapshot creation is **not authorized yet**. After explicit authorization:
+No fresh pre-release point can be created under the current plan without
+exceeding the one-manual-snapshot limit or incurring snapshot storage charges.
+Do not alter the existing snapshot or the Neon plan. If the owner later provides
+an approved no-cost recovery path, record and verify its ID, branch, creation
+point, and availability before any schema release.
 
-1. Create a named snapshot from production branch `br-calm-meadow-atgqqrhf` at
-   the current pre-migration point, for example
-   `pr18-pre-migration-20261027`.
-2. Verify its snapshot ID, source branch, creation point, and availability by
-   listing snapshots. Record these with the migration/release record.
-3. Before any recovery, freeze renewal allocation using a separately approved
-   application/environment action. Restore the snapshot to a new candidate
-   branch with finalization disabled. Validate schema, data, lifetime counters,
-   and any allowance ledger there; reconcile writes made after the snapshot.
-4. Do not restore over or rename the production branch without a separate
-   explicit recovery approval. A snapshot restore can discard all later writes.
+For recovery, restore to a new candidate branch with finalization disabled.
+Validate schema, data, lifetime counters, and any allowance ledger there;
+reconcile writes made after the recovery point. Do not restore over or rename
+the production branch without separate explicit recovery approval. A restore
+can discard later writes.
 
 For this additive migration while enrollment is empty, the first rollback choice
 is to roll back the application while leaving the empty additive tables in
@@ -73,10 +89,12 @@ freeze procedure and preserve all usage/receipt records.
 
 ## Approval sequence
 
-1. **Snapshot only:** authorize creation of the named pre-release snapshot on
-   the production branch. This authorization does not approve migration,
-   deployment, or activation.
-2. **Schema:** after the snapshot is verified, approve applying only the exact
+1. **Recovery point:** blocked until a fresh pre-release recovery point can be
+   made available without deleting/modifying the existing snapshot, changing
+   the plan, or incurring unapproved storage charges. Snapshot-only authorization
+   was given, but the preconditions were not met and no snapshot was created.
+2. **Schema:** after a suitable recovery point is available and verified,
+   approve applying only the exact
    migration above to `neondb` on `br-calm-meadow-atgqqrhf`; reconfirm migration
    history, checksum, target, and snapshot immediately before execution.
 3. **Application:** separately approve deployment of the exact reviewed PR

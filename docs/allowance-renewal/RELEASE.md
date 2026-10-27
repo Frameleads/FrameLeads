@@ -173,10 +173,11 @@ conservative seeding still requires explicit per-account review.
   `br-calm-meadow-atgqqrhf`, database `neondb`: 29 complete, 3 rolled back, 0
   unresolved, and the PR #18 migration absent. The SQL checksum matches this
   packet. Recheck immediately before any execution.
-- Neon history retention is six hours; there is no automatic snapshot schedule.
-  Snapshot listing returned no Neon snapshot objects. The Oct 25 recovery branch
-  is a historical point only; create and verify a fresh pre-release snapshot
-  after explicit owner authorization. See
+- Neon history retention is six hours with no automatic snapshot schedule. One
+  existing manual snapshot occupies the Free plan's single-snapshot limit, and
+  snapshot storage is billed. The authorized creation request was not executed
+  because it would exceed the plan limit or incur charges. Preserve the existing
+  snapshot; see
   [PRODUCTION-RELEASE-APPROVAL.md](PRODUCTION-RELEASE-APPROVAL.md).
 - Complete authenticated desktop/mobile verification after the app is deployed
   with renewal mode disabled.
@@ -204,8 +205,8 @@ The migration SHA-256 is
 The authorized read-only Neon SQL check on 2026-10-27 confirmed 29 completed
 rows, 3 rolled-back attempts, 0 unresolved attempts, and no PR #18 migration row
 on production database `neondb`, branch `br-calm-meadow-atgqqrhf`. Reconfirm
-immediately before release. The fresh pre-release snapshot is not yet created;
-explicit owner authorization is required first.
+immediately before release. A fresh pre-release snapshot remains blocked by the
+Free plan's occupied manual-snapshot allowance and snapshot storage billing.
 
 ## Isolated PostgreSQL and migration validation
 
@@ -294,8 +295,9 @@ recovery plan preserving post-restore-point usage; it is not routine rollback.
 
 ## Owner decisions required before activation
 
-- Explicitly authorize creation of the named pre-release snapshot on the
-  production branch. No snapshot has been created.
+- Resolve the backup blocker without deleting/modifying the existing snapshot or
+  changing the Neon plan. Current Free plan has its one manual snapshot in use,
+  and snapshot storage incurs a charge; no new snapshot was created.
 - Provide/approve redacted authenticated period evidence from genuine paid
   memberships on both current plans, or keep renewal disabled if Whop does not
   provide both boundaries.

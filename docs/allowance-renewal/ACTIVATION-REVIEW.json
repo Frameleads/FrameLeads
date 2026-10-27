@@ -1,6 +1,6 @@
 {
   "reviewId": "frameleads-pr18-activation-review-20261027",
-  "status": "BLOCKED_PROVIDER_PERIOD_CONTRACT_AND_OWNER_APPROVAL",
+  "status": "BLOCKED_PROVIDER_PERIOD_CONTRACT_AND_FREE_PLAN_SNAPSHOT_LIMIT",
   "implementationCommit": "13c4ec51cf9e57105e91df73ba173e2339f03b6f",
   "releaseCommit": null,
   "migration": {
@@ -32,7 +32,25 @@
     "restoreReadiness": {
       "historyRetentionSeconds": 21600,
       "automaticSnapshotSchedule": [],
-      "listedSnapshotObjects": 0,
+      "plan": {
+        "subscriptionType": "free_v3",
+        "manualSnapshotLimit": 1,
+        "manualSnapshotsAllowedByOfficialDocs": true,
+        "snapshotStoragePriceUsdPerGBMonth": 0.09,
+        "officialPlanDocs": "https://neon.com/docs/introduction/plans",
+        "officialBackupDocs": "https://neon.com/docs/guides/backup-restore"
+      },
+      "listedSnapshotObjects": 1,
+      "existingManualSnapshot": {
+        "id": "snap-soft-queen-atszi746",
+        "name": "pre-micro-pilot-whop-release-2026-10-25",
+        "sourceBranchId": "br-calm-meadow-atgqqrhf",
+        "createdAt": "2026-10-25T11:19:55Z",
+        "expiresAt": "2026-11-08T00:00:00Z",
+        "fullSizeBytes": 36347904,
+        "manual": true,
+        "usesFreePlanManualSlot": true
+      },
       "existingHistoricalRestoreBranch": {
         "id": "br-ancient-rice-at9d6eqj",
         "parentTimestamp": "2026-10-25T13:01:04Z",
@@ -40,11 +58,14 @@
         "adequateForFreshPreRelease": false
       },
       "freshPreReleaseSnapshot": {
-        "status": "NOT_CREATED_REQUIRES_EXPLICIT_OWNER_AUTHORIZATION",
+        "status": "BLOCKED_EXISTING_FREE_PLAN_MANUAL_SNAPSHOT_LIMIT_AND_STORAGE_CHARGE",
         "proposedName": "pr18-pre-migration-20261027",
-        "sourceBranch": "br-calm-meadow-atgqqrhf"
+        "sourceBranch": "br-calm-meadow-atgqqrhf",
+        "ownerAuthorized": true,
+        "creationPerformed": false,
+        "preservationConstraint": "Existing snapshot must remain unchanged"
       },
-      "restorationProcedure": "Restore only to a new candidate branch with finalization disabled; validate and reconcile post-snapshot writes; production branch cutover requires separate explicit recovery approval"
+      "restorationProcedure": "After a separately approved suitable recovery point exists, restore to a new candidate branch with finalization disabled; validate and reconcile post-snapshot writes; production branch cutover requires separate explicit recovery approval"
     }
   },
   "billingConfigurationEvidence": {
@@ -489,8 +510,8 @@
     "currentPlanMembershipEvidence": "NO_MEMBERSHIP_OBSERVED_ON_CURRENT_149_499_PLANS; AUTHENTICATED_PERIOD_SAMPLE_REQUIRED_BEFORE_ANY_FUTURE_ENROLLMENT",
     "entitlementSecurity": "CANCELED_MEMBERSHIPS_FAIL_CLOSED_ON_LIVE_REFRESH; HARD_CODED_OAUTH_LOGIN_EXCEPTION_REMAINS; PRODUCTION_ADMIN_ENV_ABSENT_SO_REPLACEMENT_NOT_VERIFIED",
     "perAccountSeedImpactReview": "NO_EXISTING_ACCOUNTS_TO_ENROLL; ALL_8_EXCLUDED; LIFETIME_USAGE_PRESERVED",
-    "migrationAndReleaseApproval": "OPEN; READ_ONLY_HISTORY_RECONFIRMED; RELEASE_COMMIT_REQUIRES_OWNER_APPROVAL",
-    "restoreReadiness": "FRESH_PRE_RELEASE_SNAPSHOT_NOT_CREATED; EXPLICIT_AUTHORIZATION_REQUIRED",
+    "migrationAndReleaseApproval": "OPEN; READ_ONLY_HISTORY_RECONFIRMED; PRODUCTION_MIGRATION_NOT_AUTHORIZED",
+    "restoreReadiness": "BLOCKED_FREE_PLAN_ONE_MANUAL_SNAPSHOT_SLOT_OCCUPIED; SNAPSHOT_STORAGE_BILLED; NO_NEW_SNAPSHOT_CREATED",
     "authenticatedDesktopAndMobileVerification": "OPEN_AFTER_DISABLED_MODE_APP_DEPLOYMENT"
   },
   "safety": {
@@ -636,11 +657,11 @@
   "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265",
   "ownerApprovalChecklist": [
     {
-      "item": "Authorize creation of the named pre-release Neon snapshot on the production branch",
-      "status": "required_before_snapshot_creation"
+      "item": "Fresh pre-release snapshot was authorized conditionally but not created: existing manual snapshot occupies Free plan limit and snapshot storage is billed; do not upgrade or alter existing snapshot",
+      "status": "BLOCKED"
     },
     {
-      "item": "Approve applying only the exact additive migration to the verified production target after reconfirming history/checksum and verifying snapshot availability",
+      "item": "After a suitable no-unapproved-cost recovery point is available, approve applying only the exact additive migration to the verified production target after reconfirming history/checksum",
       "status": "required_before_production_migration"
     },
     {
@@ -695,7 +716,8 @@
     },
     "stage1": "Fresh pre-release snapshot after explicit authorization; then separately approved additive migration after history/target/checksum reconfirmation",
     "stage2": "Separately approved app deployment with mode disabled, empty enrollment, and future settings absent",
-    "activation": "Blocked until genuine paid current-plan period evidence and separate final owner approval"
+    "activation": "Blocked until genuine paid current-plan period evidence and separate final owner approval",
+    "recoveryPoint": "BLOCKED: current Free plan one-manual-snapshot allowance is occupied; snapshot storage is billed; existing snapshot preserved"
   },
   "candidateApplicationRevisionAtReview": "44b873a7dacb1271dcd5fa9215c3c4079d4e935b",
   "productionEnvironment": {
