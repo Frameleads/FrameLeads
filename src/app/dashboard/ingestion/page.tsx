@@ -1,4 +1,6 @@
-import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { getDisplayedUsage } from '@/lib/allowance-context';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import AllowanceRefresh from '@/components/AllowanceRefresh';
 export const dynamic = 'force-dynamic';
 
 import { prisma } from "@/lib/prisma";
@@ -30,6 +32,14 @@ export default async function IngestionPage() {
     return <div>User not found</div>;
   }
 
-  return <IngestionClient userTier={user.tier} monthlyQuota={monthlyLeadQuotaForTier(user.tier)}
-    leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed} />;
+  let usage;
+  try {
+    const tier = await getUserEntitlementTier(principal.id);
+    usage = await getDisplayedUsage(principal.id, tier, user);
+  } catch {
+    return <div role="alert" className="p-8">Allowance could not be verified. Please refresh to retry.</div>;
+  }
+  return <><AllowanceRefresh periodEnd={usage.periodEnd} /><IngestionClient userTier={usage.tier} monthlyQuota={usage.limit}
+    allowanceUnavailable={usage.state === 'verification-required'}
+      leadsProcessed={usage.used} /></>;
 }

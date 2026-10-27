@@ -1,10 +1,11 @@
 # Prospect allowance renewal: audit and proposed correction
 
-Status: **review-only design and executable offline model, not an activated fix**.
+Status: **implemented on draft PR #18, disabled and unmerged pending evidence/release gates**.
 Based on released PR #17 / production commit `4ae766517ddb6a376749ae691a292f163418b98c`.
-This PR must not be merged as an operational renewal release. It contains no
-runtime wiring, schema migration, scheduled job, environment change or production
-write. The completed Enterprise cap release is left intact.
+The original design and audit below remain the basis. See [RELEASE.md](RELEASE.md)
+for the implemented adapter, local PostgreSQL validation, migration review, and
+remaining activation gates. No production migration, enrollment, or activation
+has been performed. The completed Enterprise cap release is left intact.
 
 ## Confirmed behavior
 
@@ -55,7 +56,7 @@ append-only period ledger and one tenant cursor. Do not zero or rewrite historic
 usage. Existing imported prospects, generated leads, Whop purchases, plans,
 prices, billing settings and Micro-Pilot counters remain untouched.
 
-Proposed additive data structures (design only; no migration in this PR):
+Additive data structures from the initial design (now implemented in the draft migration):
 
 1. `ProspectAllowancePeriod`: id, userId FK, membershipId, companyId,
    periodStart UTC, periodEnd UTC, usage, legacySeed, verifiedAt, closedAt.
@@ -214,7 +215,7 @@ Before activation:
    TypeScript, migration validation and production build.
 5. Produce a non-mutating account impact report and recovery/restore point.
    Deploy dormant support only after migration review; then explicitly activate
-   reviewed recurring accounts with atomic seed. No activation in this PR.
+   reviewed recurring accounts with atomic seed. No activation without satisfying the release gates.
 6. Verify authenticated UI + backend snapshot and a fixture-driven renewal in
    nonproduction. In production use read-only observation at a real boundary.
 
