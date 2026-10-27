@@ -9,6 +9,15 @@ require.extensions['.ts'] = (m, file) => m._compile(ts.transpileModule(fs.readFi
 const { PrismaClient } = require('@prisma/client');
 const { selectAllowancePeriod, membershipCurrentlyEntitled } = require('../src/lib/whop-memberships.ts');
 const { resolveWhopSubscription } = require('../src/lib/whop-subscription.ts');
+function normalizeMembership(m) {
+  const relationId = value => typeof value === 'string' ? value : value?.id;
+  const companyId = m.company_id || relationId(m.company) || relationId(m.account);
+  const planId = m.plan?.id || m.plan_id;
+  return { ...m, ...(companyId ? { company_id: companyId } : {}),
+    ...(planId && !m.plan?.id ? { plan: { id: planId, billing_period: m.billing_period_days } } : {}),
+    renewal_period_start: m.renewal_period_start ?? m.current_period_start ?? null,
+    renewal_period_end: m.renewal_period_end ?? m.current_period_end ?? null };
+}
 async function main() {
   const token = process.env.WHOP_AUDIT_TOKEN;
   const company = process.env.WHOP_AUDIT_COMPANY_ID;
@@ -30,7 +39,7 @@ async function main() {
       if (cursor) url.searchParams.set('after', cursor);
       const result = await get(url);
       if (!Array.isArray(result.data)) throw new Error('Unknown Whop membership response contract');
-      memberships.push(...result.data);
+      memberships.push(...result.data.map(normalizeMembership));
       if (result.page_info?.has_next_page !== true) { complete = true; break; }
       cursor = result.page_info?.end_cursor;
       if (!cursor || seen.has(cursor)) throw new Error('Incomplete Whop pagination'); seen.add(cursor);
