@@ -94,12 +94,42 @@ but no exact current-period boundaries. This is consistent with a promotional
 free checkout but does not prove why the boundaries are missing. The individual
 membership detail endpoint could not be reached in this follow-up because the
 restricted executor failed DNS resolution for `api.whop.com`. No receipt or
-successful payment evidence was returned.
+successful payment evidence was returned. Both the follow-up membership-detail
+GET and associated payment-list GET also failed with DNS `EAI_AGAIN`.
 
 No membership was observed on the new $149/$499 plans. The API catalog confirms
 their numeric 30-day interval but not that a genuine paying membership supplies
 the exact current-period timestamps required by the allocator. Future allocation
 stays fail-closed until genuine paid memberships return both boundaries.
+
+### Period source contract review
+
+The authenticated membership detail endpoint is the period source:
+`GET /api/v1/memberships/{id}` (`member:basic:read`; Whop docs:
+<https://docs.whop.com/api-reference/memberships/retrieve-membership>). The
+installed `@whop/sdk` 2.6.0 Membership type describes nullable
+`current_period_start` and `current_period_end`; its legacy membership types
+also expose nullable `renewal_period_start/end`. Null means no period is
+recorded. The adapter accepts both pairs and fails closed if either endpoint is
+absent, invalid, stale, or ambiguous. These fields, when present on the
+authenticated membership record, are the authoritative period source.
+
+The Payments API (`GET /api/v1/payments`, filterable by `membership_id`; docs:
+<https://docs.whop.com/api-reference/payments/list-payments>) can corroborate
+payment status, `paid_at`, and membership association. The SDK Payment type has
+no subscription period start/end fields. Payment time, checkout time, plan
+`billing_period: 30`, or adding 30 days to any date cannot substitute for
+membership boundaries. The direct detail and payment reads failed DNS; this
+review does not claim a successful charge or explain the missing periods.
+
+No genuine paid membership on either approved current plan exists in the
+available provider snapshot. Do not initiate a test purchase or use a sandbox
+charge as proof. The smallest evidence needed is a redacted authenticated
+membership detail response from genuine paid customers on both current plans,
+showing exact plan, paid/current status, numeric cadence, and both provider
+period timestamps. If either response still omits boundaries, obtain written
+Whop contract/support confirmation of the authenticated source and fields before
+changing the allocator.
 
 The canceled-membership check rejects canceled/expired/unknown records, stores
 `INACTIVE` after authoritative no-membership results, and paid-feature routes
@@ -119,22 +149,31 @@ conservative seeding still requires explicit per-account review.
 
 ### Current release gates
 
-- Owner disposition of the two Core accounts individually; neither is labeled a
-  test account. The six Enterprise test accounts remain excluded from enrollment.
-- Owner disposition of the hard-coded OAuth Enterprise login fallback and
-  configured administrator bypass. Paid routes continue to fail closed on a
-  canceled membership after live refresh.
-- Genuine paid membership evidence for each current plan with exact period start
-  and end. Do not infer from checkout promotion, account creation, canceled
-  periods, or 30-day arithmetic.
-- Approve the future-customer policy for only new genuine paying customers on
-  the exact current plan IDs. Exclude all eight historical accounts.
-- Review per-account lifetime seed impact and the private manifest. It remains
-  empty; preserve all lifetime usage and Micro-Pilot entitlements.
-- Approval of the exact migration and release commit, current Neon restore point,
-  migration history/checksums and release target.
-- Normal authenticated desktop/mobile verification after the reviewed release.
-- If future-account auto-enrollment is included, separate approval of the UTC cutover and exact plan policy; otherwise leave both settings absent.
+- Keep the six Enterprise internal test accounts and both canceled Core
+  accounts excluded from enrollment. The Core classification remains unresolved
+  and is not inferred or changed.
+- Keep the hard-coded OAuth login exception unchanged until an administrator
+  replacement is verified. Current production Vercel configuration has no
+  `NEXT_PUBLIC_ADMIN_EMAIL`, so replacing the exception with that setting could
+  remove administrator login. The fallback can mint a persisted Enterprise-tier
+  session without a current membership; protected feature paths refresh Whop and
+  deny canceled or missing memberships. Before a separate auth correction,
+  establish an administrator identity/role from a stable verified Whop subject or
+  another server-side trusted source. `NEXT_PUBLIC_ADMIN_EMAIL` is not a secret.
+- Verify exact period start/end on genuine paid memberships for both current
+  plans through authenticated membership detail. Do not infer from promotion,
+  payment `paid_at`, account creation, canceled periods, or 30-day arithmetic.
+- Keep existing-account enrollment and future-account auto-enrollment disabled
+  until provider evidence is verified and the exact new-customer policy and UTC
+  cutover receive separate approval.
+- Keep the private manifest empty and all historical accounts excluded; preserve
+  lifetime usage and Micro-Pilot entitlements.
+- Immediately before release, recheck migration history/checksum and a current
+  restorable Neon point. The last packet snapshot shows 29 earlier migrations
+  completed and the new migration absent; restore readiness remains unconfirmed
+  until a current recovery point is checked.
+- Complete authenticated desktop/mobile verification after the app is deployed
+  with renewal mode disabled.
 
 ### Reconciliation validation — 2026-10-27
 
@@ -146,15 +185,21 @@ conservative seeding still requires explicit per-account review.
 - TypeScript `npx tsc --noEmit`: passed. The optimized production build passed
   with `NODE_OPTIONS=--max-old-space-size=4096`; the default 2 GB Node heap was
   insufficient for Next.js lint/type validation in this executor.
-- Disposable PostgreSQL 17 integration run: 20 of 21 checks passed. The sole
-  failure was the raw CHECK-constraint test because a Prisma `db push` fixture
-  does not include SQL-only CHECK constraints. The fixture and database were
-  isolated to loopback and are not production. No migration file was executed;
-  full SQL-constraint integration must be re-run only after a permitted local
-  fixture setup. Production migration was not run.
+- Disposable PostgreSQL 17.11 integration run on 2026-10-27: all 21/21 checks
+  passed after building the pre-allowance baseline schema locally and applying
+  the exact additive migration SQL. SQL-only CHECK constraints were exercised.
+  The database was loopback-only and disposable; no production migration was run.
 - `prisma validate` passed. Migration review was read-only: the migration file
   and checksum are pinned in this packet; no migration SQL was applied during
   this reconciliation.
+
+The migration SHA-256 is
+`55e9dc1e76c33e8d5208db9cff9a8060a8c467915c63e0da4489a690cf9f5b9b`.
+The recorded production history has 29 earlier migrations finished; three
+failed attempts were already rolled back and later reapplied successfully. The
+PR #18 migration was absent. Reconfirm immediately before release. No current
+restorable Neon point was confirmed in this continuation, so schema deployment
+remains gated on that check.
 
 ## Isolated PostgreSQL and migration validation
 
@@ -203,47 +248,30 @@ npx tsc --noEmit --incremental false
 npm run build
 ```
 
-## Concrete production plan — approval required, not executed
+## Staged production release proposal — not executed
 
-1. Collect actual read-only Whop evidence and account impact. Review all eight
-   recurring accounts individually; verify exact response fields and plan interval
-   scope. Review webhook destinations/deliveries separately; no event can reset
-   usage. The collector writes private identity evidence only with explicit
-   `--private-manifest /tmp/...`; keep that file out of Git and public reports.
-2. Resolve ambiguous/missing/nonmonthly accounts. Approve the conservative seed
-   for each account or provide auditable current-period attribution. This version
-   intentionally supports only the conservative full-history seed; do not edit
-   production lifetime counters to implement a different attribution policy.
-3. Review the additive migration and exact release commit. Confirm a current
-   Neon restore point, existing migration checksums/history, and production target.
-   Apply only `20261027130000_prospect_allowance_periods` through the existing
-   `prisma migrate deploy` workflow after confirming the preceding 29 are applied.
-   It creates empty tables/constraints only; no seed or usage UPDATE is included.
-   Schema must precede the app: the new client looks up enrollment even when off.
-4. Merge/deploy **only after explicit release approval and all gates pass**.
-   Initially keep `PROSPECT_ALLOWANCE_MODE=disabled` and no cursor rows. Verify
-   default behavior and authenticated usage on an authorized testing account.
-5. From collected evidence create a private manifest with top-level
-   `reviewReference` and `accounts` as emitted by the collector. Run
-   `node scripts/enroll-prospect-allowances.cjs /tmp/reviewed-manifest.json`
-   for a dry-run. Recollect/review if usage changed. Store the manifest SHA256 and
-   exact reviewer decision in the release record.
-6. Set mode `active` using the normal reviewed environment release process, then
-   apply the exact reviewed manifest with `--apply` and
-   `ALLOWANCE_APPROVED_MANIFEST_SHA256` equal to its printed digest. No cursor
-   should be inserted while serving mode disabled. The first authenticated read
-   seeds under lock from the unchanged lifetime counter. If usage moved since
-   enrollment, the seed fails closed; re-review before proceeding.
-7. To support future subscriptions, separately approve a UTC ISO cutover in
-   `PROSPECT_ALLOWANCE_NEW_ACCOUNTS_AFTER` and a JSON array in
-   `PROSPECT_ALLOWANCE_PLAN_REVIEWS` containing the exact reviewed planId,
-   companyId, billingDays and reviewReference. Only new zero-usage accounts created
-   at/after that instant can auto-enroll; older accounts still require the
-   individual manifest. No unknown/nonmonthly plan is automatically admitted.
-8. Verify the actual logged-in UI matches `/api/usage`, account tier/access and
-   historical totals remain unchanged, and then observe a real verified renewal
-   boundary non-destructively. Exercise forced boundaries only in nonproduction.
-   Review recent logs and stalled operation receipts before expanding enrollment.
+1. **Schema first:** after separate production approval, confirm the target,
+   migration checksum/history, and a current restorable Neon point. Apply only
+   `20261027130000_prospect_allowance_periods`. It creates empty tables and
+   constraints; it does not modify account usage. Abort if history/checksum
+   differs or restore readiness is not established.
+2. **Application second:** after separate deployment approval, deploy the exact
+   reviewed commit with `PROSPECT_ALLOWANCE_MODE=disabled`, no enrollment
+   manifest, no cursor rows, and no future-account cutover or plan policy. No
+   existing account is enrolled. Verify authenticated usage and desktop/mobile UI
+   on an authorized account. Existing usage and Micro-Pilot paths remain intact.
+3. **Provider proof:** leave all enrollment off. Obtain authenticated, redacted
+   period evidence for genuine paid memberships on both current plans through
+   ordinary customer activity. No test purchase, new charge, or fabricated time
+   is part of this plan.
+4. **Controlled activation:** only after period evidence, release target,
+   restore/recovery, UI, migration history/checksum, and policy are reviewed,
+   obtain separate explicit owner approval. All eight historical accounts remain
+   excluded. Future-account auto-enrollment requires its own exact current-plan
+   allowlist and UTC cutover approval.
+5. For any later approved enrollment, create and dry-run a fresh private
+   manifest, review unchanged lifetime usage, retain its digest and approval, and
+   use the guarded apply tool only after separate explicit approval.
 
 ## Rollback protection
 
@@ -257,13 +285,17 @@ Do not clear a PROCESSING receipt merely to retry an uncertain model operation;
 review persisted lead/provider evidence first. Database restore requires a reviewed
 recovery plan preserving post-restore-point usage; it is not routine rollback.
 
-## Remaining owner actions
+## Owner decisions required before activation
 
-- Supply authorized read-only provider access or private period evidence. The
-  current monthly pricing configuration is owner-verified, but exact membership
-  identity/status/periods and API cadence representation remain unverified.
-- Review per-account seed impact, concrete migration, release commit and activation
-  manifest. No migration/merge/activation approval is assumed from implementation.
-- Sign in normally to the Enterprise testing account and inspect Ingestion and
-  Sandbox at desktop/mobile width, comparing usage headers with authenticated
-  `/api/usage` after the reviewed release. No tokens, cookies, HAR or purchases.
+- Provide/approve redacted authenticated period evidence from genuine paid
+  memberships on both current plans, or keep renewal disabled if Whop does not
+  provide both boundaries.
+- Approve the exact release commit, production target, current restore point,
+  migration history/checksum, and schema-first/app-disabled sequence.
+- Complete authenticated desktop/mobile verification after the disabled-mode
+  app deployment.
+- Separately approve controlled renewal activation and any future-account policy
+  and UTC cutover. No existing account is in scope for enrollment.
+- For the separate auth issue, establish a verified administrator identity and
+  approve its replacement before changing the hard-coded fallback. PR #18 leaves
+  that existing path unchanged.

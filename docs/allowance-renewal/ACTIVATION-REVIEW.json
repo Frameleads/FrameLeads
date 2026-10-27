@@ -7,7 +7,23 @@
     "path": "prisma/migrations/20261027130000_prospect_allowance_periods/migration.sql",
     "sha256": "55e9dc1e76c33e8d5208db9cff9a8060a8c467915c63e0da4489a690cf9f5b9b",
     "productionApplied": false,
-    "approval": null
+    "approval": null,
+    "localDisposableValidation": {
+      "database": "PostgreSQL 17.11, loopback disposable",
+      "baseline": "Released Prisma schema without the additive allowance models",
+      "migrationApplied": "Exact migration SQL",
+      "integrationChecksPassed": 21,
+      "integrationChecksFailed": 0,
+      "sqlOnlyConstraintsExercised": true,
+      "productionTouched": false
+    },
+    "historySnapshot": {
+      "priorMigrationsFinished": 29,
+      "priorFailedAttemptsRolledBackAndReapplied": 3,
+      "pr18MigrationPresent": false,
+      "source": "Prior read-only packet snapshot; must be reconfirmed immediately before release"
+    },
+    "restoreReadiness": "NOT_CONFIRMED_IN_THIS_REVIEW; REQUIRE CURRENT RESTORE POINT AND RECOVERY PATH BEFORE PRODUCTION SCHEMA CHANGE"
   },
   "billingConfigurationEvidence": {
     "source": "owner inspection of real Whop dashboard pricing-option screenshots, reported 2026-10-27",
@@ -444,16 +460,16 @@
     "currentPricingConfiguration": "PROVIDER_CONFIRMED_CURRENT_149_499; PRIOR_147_697_PLANS_ARCHIVED",
     "exactPlanAndBusinessIds": "PROVIDER_IDS_AND_PRODUCT_ASSOCIATIONS_VERIFIED; BUSINESS_MATCHED",
     "membershipToTenantMapping": "SUBJECT_MATCHED_8_OF_8",
-    "currentMembershipStatuses": "6_ENTERPRISE_OWNER_CONFIRMED_TESTS; 2_CORE_CANCELED_DISPOSITION_OPEN",
-    "exactSubscriptionPeriodBoundaries": "ACTIVE_TEST_MEMBERSHIP_START_END_ABSENT; HISTORICAL_PERIODS_NOT_ANCHORS",
+    "currentMembershipStatuses": "6_ENTERPRISE_OWNER_CONFIRMED_INTERNAL_TESTS_EXCLUDED; 2_CORE_CANCELED_EXCLUDED_CLASSIFICATION_UNRESOLVED",
+    "exactSubscriptionPeriodBoundaries": "ACTIVE_INTERNAL_TEST_MEMBERSHIP_START_END_ABSENT; DETAIL_AND_PAYMENT_GETS_FAILED_DNS_EAI_AGAIN; HISTORICAL_PERIODS_NOT_ANCHORS",
     "apiCadenceRepresentation": "CURRENT_PLANS_NUMERIC_BILLING_PERIOD_30; LEGACY_PLANS_ALSO_30; ONE_TIME_PLAN_NULL",
     "paymentState": "ACTIVE_LEGACY_MEMBERSHIP_PROMO_PRESENT_ZERO_PRICE; SUCCESSFUL_PAYMENT_NOT_PROVEN",
-    "currentPlanMembershipEvidence": "NO_MEMBERSHIP_OBSERVED_ON_CURRENT_149_499_PLANS; FUTURE_BOUNDARY_CONTRACT_SAMPLE_REQUIRED",
-    "entitlementSecurity": "CANCELED_MEMBERSHIPS_FAIL_CLOSED_ON_LIVE_REFRESH; HARDCODED_OAUTH_ENTERPRISE_FALLBACK_REQUIRES_OWNER_DISPOSITION",
-    "perAccountSeedImpactReview": "OPEN; ALL_8_EXCLUDED_FROM_ENROLLMENT",
+    "currentPlanMembershipEvidence": "NO_MEMBERSHIP_OBSERVED_ON_CURRENT_149_499_PLANS; AUTHENTICATED_PERIOD_SAMPLE_REQUIRED_BEFORE_ANY_FUTURE_ENROLLMENT",
+    "entitlementSecurity": "CANCELED_MEMBERSHIPS_FAIL_CLOSED_ON_LIVE_REFRESH; HARD_CODED_OAUTH_LOGIN_EXCEPTION_REMAINS; PRODUCTION_ADMIN_ENV_ABSENT_SO_REPLACEMENT_NOT_VERIFIED",
+    "perAccountSeedImpactReview": "NO_EXISTING_ACCOUNTS_TO_ENROLL; ALL_8_EXCLUDED; LIFETIME_USAGE_PRESERVED",
     "migrationAndReleaseApproval": "OPEN",
-    "restoreReadiness": "RECONFIRM_BEFORE_RELEASE",
-    "authenticatedDesktopAndMobileVerification": "OPEN"
+    "restoreReadiness": "CURRENT_RESTORE_POINT_NOT_VERIFIED; RECONFIRM_BEFORE_SCHEMA_RELEASE",
+    "authenticatedDesktopAndMobileVerification": "OPEN_AFTER_DISABLED_MODE_APP_DEPLOYMENT"
   },
   "safety": {
     "noInferredPeriods": true,
@@ -463,7 +479,7 @@
     "noCustomerIdentifiersPublished": true
   },
   "providerReadEvidence": {
-    "source": "Read-only Whop API GET; selected memberships also retrieved by ID; plan records retrieved by exact provider plan ID",
+    "source": "Read-only Whop API GET membership pagination and exact plan GETs; direct membership detail and payment GET follow-ups failed restricted-executor DNS resolution",
     "collectedAt": "2026-10-27T14:44:26.768Z",
     "host": "api.whop.com",
     "credentialBinding": "WHOP_AUDIT_TOKEN ready; value not logged",
@@ -552,7 +568,7 @@
     ],
     "redactedReport": {
       "path": "docs/allowance-renewal/WHOP-ACTIVATION-IMPACT.md",
-      "sha256": "b824fcccf553e09bf3a6d6736b5cd279a8ddb1fd0615fd34c1b622637a3b4044"
+      "sha256": "e231a82eef99936a600be4bc2d833a25733f08906c3517eea8f6a0d74ea862a2"
     },
     "privateEvidence": {
       "status": "DO_NOT_APPLY_BLOCKED",
@@ -582,8 +598,9 @@
           "currency": "usd",
           "amount": "0.00"
         },
-        "membershipDetailRead": "UNAVAILABLE_DNS_EAI_AGAIN",
-        "periodAbsenceCause": "NOT_ESTABLISHED"
+        "membershipDetailRead": "FAILED_DNS_EAI_AGAIN",
+        "periodAbsenceCause": "NOT_ESTABLISHED",
+        "paymentRead": "FAILED_DNS_EAI_AGAIN"
       }
     }
   },
@@ -597,32 +614,78 @@
   "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265",
   "ownerApprovalChecklist": [
     {
-      "item": "Disposition both Core accounts without assuming they are tests",
-      "status": "required"
+      "item": "Obtain/approve redacted authenticated current-period evidence from genuine paid memberships on both approved current plans; otherwise keep enrollment disabled",
+      "status": "required_before_any_enrollment"
     },
     {
-      "item": "Decide hard-coded OAuth Enterprise fallback: approved admin exception or remove in separately reviewed change",
-      "status": "required"
+      "item": "Approve the exact production release commit, target, additive migration, verified current restore point, migration history/checksum, and schema-first/app-disabled sequence",
+      "status": "required_before_production_release"
     },
     {
-      "item": "Approve future-customer policy restricted to current plan IDs and new genuine paying customers",
-      "status": "required"
+      "item": "Complete authenticated desktop/mobile UI verification after disabled-mode application deployment",
+      "status": "required_before_activation"
     },
     {
-      "item": "Verify exact current-period start/end for genuine paid membership on each current plan",
-      "status": "required"
+      "item": "Separately approve renewal activation and any future-customer plan allowlist plus UTC cutover; no existing account enrollment",
+      "status": "required_before_activation"
     },
     {
-      "item": "Approve exact migration/release commit after per-account impact and restore review",
-      "status": "required"
-    },
-    {
-      "item": "Complete authenticated desktop and mobile verification",
-      "status": "required"
-    },
-    {
-      "item": "Separately approve production migration, deployment, enrollment cutover and renewal activation",
-      "status": "required"
+      "item": "For any separate OAuth admin correction, first establish a verified administrator identity/role; production NEXT_PUBLIC_ADMIN_EMAIL is currently absent and PR #18 preserves the existing path",
+      "status": "required_for_auth_correction_only"
     }
-  ]
+  ],
+  "providerPeriodContract": {
+    "authoritativeSource": "Authenticated Whop membership detail response",
+    "detailEndpoint": "GET /api/v1/memberships/{id}",
+    "requiredPermission": "member:basic:read",
+    "documentation": "https://docs.whop.com/api-reference/memberships/retrieve-membership",
+    "sdk": "@whop/sdk 2.6.0",
+    "currentFields": [
+      "current_period_start",
+      "current_period_end"
+    ],
+    "legacyFields": [
+      "renewal_period_start",
+      "renewal_period_end"
+    ],
+    "nullMeaning": "Provider contract/type describes the period as not recorded; do not infer timestamps",
+    "paymentEndpoint": "GET /api/v1/payments?membership_id={id}",
+    "paymentDocumentation": "https://docs.whop.com/api-reference/payments/list-payments",
+    "paymentEvidenceLimit": "Payment status, paid_at and membership association only; payment API/SDK has no subscription-period boundaries; paid_at is not an anchor",
+    "followupReads": {
+      "membershipDetail": "FAILED_DNS_EAI_AGAIN",
+      "membershipPayments": "FAILED_DNS_EAI_AGAIN"
+    },
+    "currentPlanPaidSamples": 0,
+    "conclusion": "Endpoint contract identifies the source, but genuine paid current-plan behavior remains unproven; fail closed until redacted live provider evidence for both plans is available"
+  },
+  "stagedRelease": {
+    "status": "PROPOSAL_ONLY_NOT_EXECUTED",
+    "stage1": {
+      "action": "Apply only additive migration 20261027130000_prospect_allowance_periods",
+      "preconditions": [
+        "Separate production migration approval",
+        "Reconfirm production migration history/checksum",
+        "Verify current Neon restore point and recovery path"
+      ],
+      "productionApplied": false
+    },
+    "stage2": {
+      "action": "Deploy reviewed application commit with renewal mode disabled",
+      "preconditions": [
+        "Separate production deployment approval",
+        "No enrollment manifest or cursor rows",
+        "No future-account cutover or plan policy"
+      ],
+      "deploymentPerformed": false
+    },
+    "enrollment": {
+      "existingAccounts": "NONE; ALL_EIGHT_EXCLUDED",
+      "futureAccounts": "DISABLED_UNTIL_PERIOD_EVIDENCE_AND_SEPARATE_POLICY_APPROVAL"
+    },
+    "activation": {
+      "status": "BLOCKED_PROVIDER_PERIOD_EVIDENCE_AND_FINAL_OWNER_APPROVAL",
+      "performed": false
+    }
+  }
 }

@@ -23,7 +23,9 @@ Seven of eight accounts have no currently entitled recurring membership matching
 
 No membership was observed on the current $149/$499 plans. The verified plan catalog alone does not prove that actual paid memberships on those plans return usable period boundaries. Require genuine current-plan membership evidence with exact start and end timestamps before period allocation; keep the allocator fail-closed until then.
 
-The membership response uses `account.id`, `plan_id`, `current_period_start`, and `current_period_end`; the collector and runtime adapter normalize those alongside the nested `company`/`plan`/`renewal_period_*` shape. Canceled memberships are rejected by current paid entitlement verification and an authoritative no-membership result persists `INACTIVE`. Paid-feature routes require live entitlement checks. The OAuth callback also contains a hard-coded email fallback that assigns Enterprise when no membership is found. This is a real access exception; it was not changed, and owner disposition is required before release.
+The authenticated membership detail endpoint, `GET /api/v1/memberships/{id}` ([Whop docs](https://docs.whop.com/api-reference/memberships/retrieve-membership), `member:basic:read`), is the authoritative period source. The installed `@whop/sdk` 2.6.0 membership types describe nullable `current_period_start/end` and legacy nullable `renewal_period_start/end`. The Payments API can report paid state, `paid_at`, and the linked membership, but has no subscription boundary fields; payment time is not a period anchor ([payments docs](https://docs.whop.com/api-reference/payments/list-payments)). The latest direct membership and payment reads failed with executor DNS `EAI_AGAIN`. No genuine paid current-plan sample exists, so current-plan period behavior remains unverified and allocation stays fail-closed.
+
+Canceled memberships are rejected by current paid entitlement verification and an authoritative no-membership result persists `INACTIVE`. Paid-feature routes require live entitlement checks. The OAuth callback contains a hard-coded email fallback that permits login with a persisted Enterprise tier when membership is missing. Read-only production Vercel metadata shows `NEXT_PUBLIC_ADMIN_EMAIL` is absent; it is not a verified replacement. Do not alter the callback path until a stable administrator identity/role is verified. The email-based admin bypass must not be treated as a secret. This isolated auth issue is documented and unchanged in PR #18.
 
 ## Activation review packet
 
@@ -33,10 +35,9 @@ The membership response uses `account.id`, `plan_id`, `current_period_start`, an
 
 ## Owner approvals still required
 
-1. Disposition the two Core accounts without presuming they are tests.
-2. Decide whether the hard-coded OAuth Enterprise fallback is an approved admin exception or should be removed in a separately reviewed change.
-3. Approve a future-customer policy restricted to new genuine paying customers on the two verified current plans; exclude the eight historical accounts.
-4. Verify exact current-period boundaries on genuine paid memberships for both current plans. If Whop cannot provide them reliably, do not enable allocation for those memberships.
-5. Approve the precise migration and release commit after reviewing seed impact, migration history/checksums, and a current restore point.
-6. Complete authenticated desktop and mobile verification.
-7. Separately approve production migration, deployment, enrollment cutover, and renewal activation. This evidence packet grants none of those approvals.
+1. Keep all eight historical accounts excluded; no individual Core disposition is required to preserve that exclusion.
+2. Verify exact current-period boundaries on genuine paid memberships for both current plans. If Whop does not provide them reliably, leave all enrollment disabled.
+3. Approve the precise migration and release commit after confirming production target, history/checksum, recovery point, and schema-first/disabled-mode order.
+4. Complete authenticated desktop and mobile verification after the disabled-mode app release.
+5. Separately approve future-customer enrollment policy/cutover and controlled renewal activation. This evidence packet grants none of those approvals.
+6. Before any OAuth admin-path correction, establish the verified admin identity/role; PR #18 preserves the current login path.
