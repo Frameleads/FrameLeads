@@ -18,12 +18,34 @@
       "productionTouched": false
     },
     "historySnapshot": {
-      "priorMigrationsFinished": 29,
-      "priorFailedAttemptsRolledBackAndReapplied": 3,
-      "pr18MigrationPresent": false,
-      "source": "Prior read-only packet snapshot; must be reconfirmed immediately before release"
+      "source": "Authorized read-only Neon SQL query, 2026-10-27",
+      "projectId": "delicate-glitter-86466488",
+      "branchId": "br-calm-meadow-atgqqrhf",
+      "database": "neondb",
+      "completedMigrations": 29,
+      "rolledBackAttempts": 3,
+      "unresolvedAttempts": 0,
+      "pr18MigrationRows": 0,
+      "productionApplied": false,
+      "recheckImmediatelyBeforeExecution": true
     },
-    "restoreReadiness": "NOT_CONFIRMED_IN_THIS_REVIEW; REQUIRE CURRENT RESTORE POINT AND RECOVERY PATH BEFORE PRODUCTION SCHEMA CHANGE"
+    "restoreReadiness": {
+      "historyRetentionSeconds": 21600,
+      "automaticSnapshotSchedule": [],
+      "listedSnapshotObjects": 0,
+      "existingHistoricalRestoreBranch": {
+        "id": "br-ancient-rice-at9d6eqj",
+        "parentTimestamp": "2026-10-25T13:01:04Z",
+        "parentLsn": "0/6380AD8",
+        "adequateForFreshPreRelease": false
+      },
+      "freshPreReleaseSnapshot": {
+        "status": "NOT_CREATED_REQUIRES_EXPLICIT_OWNER_AUTHORIZATION",
+        "proposedName": "pr18-pre-migration-20261027",
+        "sourceBranch": "br-calm-meadow-atgqqrhf"
+      },
+      "restorationProcedure": "Restore only to a new candidate branch with finalization disabled; validate and reconcile post-snapshot writes; production branch cutover requires separate explicit recovery approval"
+    }
   },
   "billingConfigurationEvidence": {
     "source": "owner inspection of real Whop dashboard pricing-option screenshots, reported 2026-10-27",
@@ -461,14 +483,14 @@
     "exactPlanAndBusinessIds": "PROVIDER_IDS_AND_PRODUCT_ASSOCIATIONS_VERIFIED; BUSINESS_MATCHED",
     "membershipToTenantMapping": "SUBJECT_MATCHED_8_OF_8",
     "currentMembershipStatuses": "6_ENTERPRISE_OWNER_CONFIRMED_INTERNAL_TESTS_EXCLUDED; 2_CORE_CANCELED_EXCLUDED_CLASSIFICATION_UNRESOLVED",
-    "exactSubscriptionPeriodBoundaries": "ACTIVE_INTERNAL_TEST_MEMBERSHIP_START_END_ABSENT; DETAIL_AND_PAYMENT_GETS_FAILED_DNS_EAI_AGAIN; HISTORICAL_PERIODS_NOT_ANCHORS",
+    "exactSubscriptionPeriodBoundaries": "NO_CURRENT_PLAN_PAID_SAMPLE; DETAIL/PAYMENT_READS_FAILED_DNS_EAI_AGAIN; KEEP_ACTIVATION_DISABLED",
     "apiCadenceRepresentation": "CURRENT_PLANS_NUMERIC_BILLING_PERIOD_30; LEGACY_PLANS_ALSO_30; ONE_TIME_PLAN_NULL",
     "paymentState": "ACTIVE_LEGACY_MEMBERSHIP_PROMO_PRESENT_ZERO_PRICE; SUCCESSFUL_PAYMENT_NOT_PROVEN",
     "currentPlanMembershipEvidence": "NO_MEMBERSHIP_OBSERVED_ON_CURRENT_149_499_PLANS; AUTHENTICATED_PERIOD_SAMPLE_REQUIRED_BEFORE_ANY_FUTURE_ENROLLMENT",
     "entitlementSecurity": "CANCELED_MEMBERSHIPS_FAIL_CLOSED_ON_LIVE_REFRESH; HARD_CODED_OAUTH_LOGIN_EXCEPTION_REMAINS; PRODUCTION_ADMIN_ENV_ABSENT_SO_REPLACEMENT_NOT_VERIFIED",
     "perAccountSeedImpactReview": "NO_EXISTING_ACCOUNTS_TO_ENROLL; ALL_8_EXCLUDED; LIFETIME_USAGE_PRESERVED",
-    "migrationAndReleaseApproval": "OPEN",
-    "restoreReadiness": "CURRENT_RESTORE_POINT_NOT_VERIFIED; RECONFIRM_BEFORE_SCHEMA_RELEASE",
+    "migrationAndReleaseApproval": "OPEN; READ_ONLY_HISTORY_RECONFIRMED; RELEASE_COMMIT_REQUIRES_OWNER_APPROVAL",
+    "restoreReadiness": "FRESH_PRE_RELEASE_SNAPSHOT_NOT_CREATED; EXPLICIT_AUTHORIZATION_REQUIRED",
     "authenticatedDesktopAndMobileVerification": "OPEN_AFTER_DISABLED_MODE_APP_DEPLOYMENT"
   },
   "safety": {
@@ -614,24 +636,28 @@
   "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265",
   "ownerApprovalChecklist": [
     {
-      "item": "Obtain/approve redacted authenticated current-period evidence from genuine paid memberships on both approved current plans; otherwise keep enrollment disabled",
-      "status": "required_before_any_enrollment"
+      "item": "Authorize creation of the named pre-release Neon snapshot on the production branch",
+      "status": "required_before_snapshot_creation"
     },
     {
-      "item": "Approve the exact production release commit, target, additive migration, verified current restore point, migration history/checksum, and schema-first/app-disabled sequence",
-      "status": "required_before_production_release"
+      "item": "Approve applying only the exact additive migration to the verified production target after reconfirming history/checksum and verifying snapshot availability",
+      "status": "required_before_production_migration"
     },
     {
-      "item": "Complete authenticated desktop/mobile UI verification after disabled-mode application deployment",
+      "item": "Approve the reviewed application revision deployed with renewal disabled, no historical enrollment, and future enrollment settings absent",
+      "status": "required_before_production_deployment"
+    },
+    {
+      "item": "Complete authenticated desktop/mobile UI verification after the disabled-mode deployment",
       "status": "required_before_activation"
     },
     {
-      "item": "Separately approve renewal activation and any future-customer plan allowlist plus UTC cutover; no existing account enrollment",
+      "item": "Provide/approve genuine paid membership period evidence on both current plans; separately approve any future-customer policy/cutover and controlled renewal activation",
       "status": "required_before_activation"
     },
     {
-      "item": "For any separate OAuth admin correction, first establish a verified administrator identity/role; production NEXT_PUBLIC_ADMIN_EMAIL is currently absent and PR #18 preserves the existing path",
-      "status": "required_for_auth_correction_only"
+      "item": "Track the hard-coded OAuth exception as a separate security review; do not change access until a replacement administrator identity is verified",
+      "status": "separate_security_review"
     }
   ],
   "providerPeriodContract": {
@@ -661,31 +687,20 @@
   },
   "stagedRelease": {
     "status": "PROPOSAL_ONLY_NOT_EXECUTED",
-    "stage1": {
-      "action": "Apply only additive migration 20261027130000_prospect_allowance_periods",
-      "preconditions": [
-        "Separate production migration approval",
-        "Reconfirm production migration history/checksum",
-        "Verify current Neon restore point and recovery path"
-      ],
-      "productionApplied": false
+    "candidateApplicationRevisionAtReview": "44b873a7dacb1271dcd5fa9215c3c4079d4e935b",
+    "productionTarget": {
+      "projectId": "delicate-glitter-86466488",
+      "branchId": "br-calm-meadow-atgqqrhf",
+      "database": "neondb"
     },
-    "stage2": {
-      "action": "Deploy reviewed application commit with renewal mode disabled",
-      "preconditions": [
-        "Separate production deployment approval",
-        "No enrollment manifest or cursor rows",
-        "No future-account cutover or plan policy"
-      ],
-      "deploymentPerformed": false
-    },
-    "enrollment": {
-      "existingAccounts": "NONE; ALL_EIGHT_EXCLUDED",
-      "futureAccounts": "DISABLED_UNTIL_PERIOD_EVIDENCE_AND_SEPARATE_POLICY_APPROVAL"
-    },
-    "activation": {
-      "status": "BLOCKED_PROVIDER_PERIOD_EVIDENCE_AND_FINAL_OWNER_APPROVAL",
-      "performed": false
-    }
+    "stage1": "Fresh pre-release snapshot after explicit authorization; then separately approved additive migration after history/target/checksum reconfirmation",
+    "stage2": "Separately approved app deployment with mode disabled, empty enrollment, and future settings absent",
+    "activation": "Blocked until genuine paid current-plan period evidence and separate final owner approval"
+  },
+  "candidateApplicationRevisionAtReview": "44b873a7dacb1271dcd5fa9215c3c4079d4e935b",
+  "productionEnvironment": {
+    "allowanceVariablesPresent": [],
+    "mode": "disabled_by_code_default",
+    "futureAccountEnrollmentConfigured": false
   }
 }

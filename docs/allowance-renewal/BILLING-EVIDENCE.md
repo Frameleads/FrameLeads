@@ -32,6 +32,7 @@ Canceled memberships are rejected by current paid entitlement verification and a
 [ACTIVATION-REVIEW.json](ACTIVATION-REVIEW.json) records current plan evidence and stays non-executable: all eight historical accounts are excluded, `activationManifest.accounts` is empty, approvals are null, future cutover remains unset, and target mode is disabled. The full crosswalk and exact membership evidence remain in a mode-0600 private file outside Git. Do not pass it to enrollment tooling.
 
 [WHOP-ACTIVATION-IMPACT.md](WHOP-ACTIVATION-IMPACT.md) contains the redacted per-account classification and impact report. [RELEASE.md](RELEASE.md) retains migration order and rollback protections.
+[PRODUCTION-RELEASE-APPROVAL.md](PRODUCTION-RELEASE-APPROVAL.md) pins the read-only production target/history, current backup capabilities, proposed snapshot/recovery procedure, and separate approval sequence. Snapshot creation remains unauthorized and unperformed.
 
 ## Owner approvals still required
 

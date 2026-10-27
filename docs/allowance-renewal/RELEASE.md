@@ -168,10 +168,16 @@ conservative seeding still requires explicit per-account review.
   cutover receive separate approval.
 - Keep the private manifest empty and all historical accounts excluded; preserve
   lifetime usage and Micro-Pilot entitlements.
-- Immediately before release, recheck migration history/checksum and a current
-  restorable Neon point. The last packet snapshot shows 29 earlier migrations
-  completed and the new migration absent; restore readiness remains unconfirmed
-  until a current recovery point is checked.
+- Production migration history was rechecked read-only on 2026-10-27 against
+  Neon project `delicate-glitter-86466488`, branch
+  `br-calm-meadow-atgqqrhf`, database `neondb`: 29 complete, 3 rolled back, 0
+  unresolved, and the PR #18 migration absent. The SQL checksum matches this
+  packet. Recheck immediately before any execution.
+- Neon history retention is six hours; there is no automatic snapshot schedule.
+  Snapshot listing returned no Neon snapshot objects. The Oct 25 recovery branch
+  is a historical point only; create and verify a fresh pre-release snapshot
+  after explicit owner authorization. See
+  [PRODUCTION-RELEASE-APPROVAL.md](PRODUCTION-RELEASE-APPROVAL.md).
 - Complete authenticated desktop/mobile verification after the app is deployed
   with renewal mode disabled.
 
@@ -195,11 +201,11 @@ conservative seeding still requires explicit per-account review.
 
 The migration SHA-256 is
 `55e9dc1e76c33e8d5208db9cff9a8060a8c467915c63e0da4489a690cf9f5b9b`.
-The recorded production history has 29 earlier migrations finished; three
-failed attempts were already rolled back and later reapplied successfully. The
-PR #18 migration was absent. Reconfirm immediately before release. No current
-restorable Neon point was confirmed in this continuation, so schema deployment
-remains gated on that check.
+The authorized read-only Neon SQL check on 2026-10-27 confirmed 29 completed
+rows, 3 rolled-back attempts, 0 unresolved attempts, and no PR #18 migration row
+on production database `neondb`, branch `br-calm-meadow-atgqqrhf`. Reconfirm
+immediately before release. The fresh pre-release snapshot is not yet created;
+explicit owner authorization is required first.
 
 ## Isolated PostgreSQL and migration validation
 
@@ -216,11 +222,12 @@ transactional migration was applied. Schema diff against the new schema is empty
 Raw check constraints were additionally exercised because Prisma's diff does not
 represent CHECK constraints.
 
-Read-only production migration history shows all **29 prior migrations finished**;
-three earlier failed attempts were already marked rolled back and have successful
-reapplications. The new migration is absent. Thus no old migrations should run
-in the intended production release; verify history/checksums again immediately
-before release. Empty-database history remains a pre-existing repository issue.
+Read-only production migration history confirms all **29 prior migrations
+finished**, three earlier failed attempts rolled back with successful
+reapplications, zero unresolved rows, and no PR #18 migration. Thus no old
+migrations should run in the intended production release; reconfirm history and
+checksums immediately before release. Empty-database history remains a
+pre-existing repository issue.
 
 Validation evidence:
 
@@ -287,6 +294,8 @@ recovery plan preserving post-restore-point usage; it is not routine rollback.
 
 ## Owner decisions required before activation
 
+- Explicitly authorize creation of the named pre-release snapshot on the
+  production branch. No snapshot has been created.
 - Provide/approve redacted authenticated period evidence from genuine paid
   memberships on both current plans, or keep renewal disabled if Whop does not
   provide both boundaries.
