@@ -48,42 +48,62 @@ were made during this continuation. Checkout branches and billing are unchanged.
 
 ## Actual provider/account evidence
 
-**Owner evidence update, 2026-10-27:** the real FrameLeads Whop dashboard shows
-Enterprise recurring at USD 499 every 1 month and Core recurring at USD 149 every
-1 month; both current options have free trial OFF. This closes current pricing
-configuration uncertainty. See [BILLING-EVIDENCE.md](BILLING-EVIDENCE.md) for
-provenance and limits, and [ACTIVATION-REVIEW.json](ACTIVATION-REVIEW.json) for the
-pinned, blocked review packet. No plan/business API IDs or member periods were
-supplied. Do not infer a numeric 30-day API interval from the screenshots.
+**Owner screenshot evidence, 2026-10-27:** Core USD 149/month and Enterprise
+USD 499/month, recurring every one month, free trial OFF. This remains evidence
+of the inspected pricing options only.
 
-Membership-specific verification remains an **unsatisfied release gate**. Tool discovery found no connected
-Whop account-reading tool. The cloud runtime has only DATABASE_URL, with no Whop
-credential or buyer session. Vercel **metadata only** confirms OAuth credentials
-and webhook secret exist; no production Whop API read key is configured there.
-No secret was decrypted or extracted. The collector exits before any database or
-network access when the dedicated read-only credential is unavailable.
+**Read-only live Whop audit, 2026-10-27:** the dedicated audit bindings were
+ready, and restricted HTTP egress was enforced with `api.whop.com` allowed.
+Membership pagination completed across two pages and 73 records. The live rows
+were reconciled to all eight recurring production SaaS accounts using stored
+Whop subject IDs; no email was used. The Neon account rows came from read-only
+Neon SQL because this executor had no TCP route to the production database host.
+See [WHOP-ACTIVATION-IMPACT.md](WHOP-ACTIVATION-IMPACT.md) for the redacted
+account-level status, usage, plan IDs and periods. Full IDs/statuses remain in a
+mode-0600 local private evidence file outside Git.
 
-Required access: bind a least-privilege Whop membership/plan read credential as
-`WHOP_AUDIT_TOKEN`, expected company as `WHOP_AUDIT_COMPANY_ID`, and permit the
-live Whop API in the execution environment. Alternatively provide a private,
-sanitized provider export retaining subject/membership/plan IDs, status, billing
-interval, renewal start/end and company mapping; no passwords/cookies are needed.
-A fixture is not evidence of a real subscription.
+Seven mapped accounts have no currently entitled recurring Whop membership
+matching their stored tier. Their matching tier memberships are canceled. One
+Enterprise account has an active membership, but Whop returned no current period
+start or end. Six accounts have exact boundaries only for historical canceled
+periods; those cannot be used as anchors. No account qualifies for enrollment
+(0/8), and the private executable enrollment manifest is empty.
 
-Read-only production SQL reconfirmed:
+The API returned the legacy membership shape `account.id`, `plan_id`, and
+`current_period_start/end`. The provider adapter and read-only collector now
+normalize these aliases alongside the nested company/plan/renewal-period shape.
+The collector was rerun against live Whop after the update. It completed
+read-only pagination and remained fail-closed for every account.
 
-| Tier | Accounts | Quota | Lifetime usage | Individual range |
-| --- | ---: | ---: | ---: | ---: |
-| Core | 2 | 500 | 0 | 0–0 |
-| Enterprise | 6 | 10,000 | 289 | 0–162 |
-| Micro-Pilot | 7 | 25 total | 52 | 0–25 |
+Plan GET evidence conflicts with the owner screenshot prices. Current recurring
+Enterprise plan `plan_jdy5Z44fMKMAz` is USD 697/month with billing_period 30;
+current recurring Core plan `plan_sAEhr77rTrhX4` is USD 147/month with
+billing_period 30. Two mapped Enterprise accounts also have canceled one-time
+memberships on `plan_PZqjKqvMr0KBI`; its billing period is null. The owner
+must resolve the plan/price mapping. Membership status alone does not establish
+a successful payment, and the active membership has no exact period boundaries.
+No Whop billing or production data was changed.
 
-There are no over-cap recurring accounts in this snapshot. Attribution of the
-289 Enterprise attempts to real periods is unknown. A conservative seed would
-retain all of it until the next verified boundary; that impact needs explicit
-review. Internal/admin accounts without real membership periods must not receive
-fabricated anchors. Nonmonthly plans require a separate approved monthly anchor
-policy; they are not silently enabled.
+**Production impact remains:** Core 2 accounts, lifetime usage 0; Enterprise 6
+accounts, lifetime usage 289 (individual range 0–162); Micro-Pilot 7 accounts,
+usage 52, excluded from renewal. None is over the lifetime cap. Period
+attribution for the 289 Enterprise attempts is unresolved; full-history
+conservative seeding still requires explicit per-account review.
+
+### Current release gates
+
+- Owner resolution of the screenshot/API plan price mismatch and the exact
+  current plan mapping.
+- Owner disposition for each of the seven accounts without a current matching
+  entitlement, including whether access should remain.
+- Exact current-period boundaries for the active Enterprise membership, and
+  private reconciliation of its payment state. Do not infer from account
+  creation, canceled periods, or 30-day arithmetic.
+- Review of per-account lifetime seed impact and the private manifest. At present
+  the executable manifest has zero accounts and must not be applied.
+- Approval of the exact migration and release commit, current Neon restore point,
+  migration history/checksums and release target.
+- Normal authenticated desktop/mobile verification after the reviewed release.
 
 ## Isolated PostgreSQL and migration validation
 
