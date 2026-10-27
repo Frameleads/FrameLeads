@@ -1,6 +1,6 @@
 {
   "reviewId": "frameleads-pr18-activation-review-20261027",
-  "status": "BLOCKED_PENDING_MEMBERSHIP_EVIDENCE",
+  "status": "BLOCKED_PROVIDER_MEMBERSHIP_AND_PLAN_RECONCILIATION",
   "implementationCommit": "13c4ec51cf9e57105e91df73ba173e2339f03b6f",
   "releaseCommit": null,
   "migration": {
@@ -41,11 +41,45 @@
         "planId": null,
         "apiBillingDays": null
       }
-    ]
+    ],
+    "providerPlanComparison": {
+      "result": "OWNER_SCREENSHOT_PRICE_MISMATCH",
+      "ownerReportedOptions": {
+        "enterprise": {
+          "amount": 499,
+          "currency": "USD",
+          "interval": "1 month"
+        },
+        "core": {
+          "amount": 149,
+          "currency": "USD",
+          "interval": "1 month"
+        }
+      },
+      "providerObservedRecurringPlans": [
+        {
+          "planId": "plan_jdy5Z44fMKMAz",
+          "tier": "ENTERPRISE",
+          "planType": "renewal",
+          "billingPeriod": 30,
+          "currency": "usd",
+          "formattedPrice": "$697.00 / month"
+        },
+        {
+          "planId": "plan_sAEhr77rTrhX4",
+          "tier": "CORE",
+          "planType": "renewal",
+          "billingPeriod": 30,
+          "currency": "usd",
+          "formattedPrice": "$147.00 / month"
+        }
+      ],
+      "note": "Observed provider plan IDs are exact, but their catalog prices do not match the owner-reported screenshots; do not treat them as approved current pricing options without owner resolution."
+    }
   },
   "databaseImpactSnapshot": {
     "source": "authorized read-only Neon production query, 2026-10-27",
-    "membershipEvidence": false,
+    "membershipEvidence": true,
     "tiers": [
       {
         "tier": "CORE",
@@ -68,7 +102,259 @@
       }
     ]
   },
-  "verifiedMemberships": [],
+  "verifiedMemberships": [
+    {
+      "accountRef": "8e52a7428303",
+      "tier": "CORE",
+      "preservedLifetimeUsage": 0,
+      "matchedMembershipCount": 3,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_sAEhr77rTrhX4"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_sAEhr77rTrhX4",
+          "start": "2026-08-18T21:39:26.459Z",
+          "end": "2026-09-17T21:39:26.459Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "8499d930a570",
+      "tier": "CORE",
+      "preservedLifetimeUsage": 0,
+      "matchedMembershipCount": 3,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_sAEhr77rTrhX4"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_sAEhr77rTrhX4",
+          "start": "2026-08-18T22:02:54.572Z",
+          "end": "2026-09-17T22:02:54.572Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "3457e4043e55",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 0,
+      "matchedMembershipCount": 1,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_jdy5Z44fMKMAz",
+          "start": "2026-08-18T20:24:52.252Z",
+          "end": "2026-09-17T20:24:52.252Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "a57cd57556a6",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 0,
+      "matchedMembershipCount": 1,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_jdy5Z44fMKMAz",
+          "start": "2026-08-18T20:40:35.980Z",
+          "end": "2026-09-17T20:40:35.980Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "ad04c321cf39",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 0,
+      "matchedMembershipCount": 1,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_jdy5Z44fMKMAz",
+          "start": "2026-08-18T21:01:43.678Z",
+          "end": "2026-09-17T21:01:43.678Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "225be10f468a",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 117,
+      "matchedMembershipCount": 7,
+      "targetTierStatusCounts": {
+        "canceled": 1
+      },
+      "targetTierPlanIds": [
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [
+        {
+          "status": "canceled",
+          "planId": "plan_jdy5Z44fMKMAz",
+          "start": "2026-08-20T06:46:24.023Z",
+          "end": "2026-09-19T06:46:24.023Z",
+          "billingDays": 30
+        }
+      ],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "738694d6b03f",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 162,
+      "matchedMembershipCount": 8,
+      "targetTierStatusCounts": {
+        "canceled": 2
+      },
+      "targetTierPlanIds": [
+        "plan_PZqjKqvMr0KBI",
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "none",
+      "currentPlanId": null,
+      "currentBillingDays": null,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [],
+      "enrollmentEligible": false,
+      "blockers": [
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
+      ]
+    },
+    {
+      "accountRef": "1f4744c7af0b",
+      "tier": "ENTERPRISE",
+      "preservedLifetimeUsage": 10,
+      "matchedMembershipCount": 5,
+      "targetTierStatusCounts": {
+        "active": 1,
+        "canceled": 2
+      },
+      "targetTierPlanIds": [
+        "plan_PZqjKqvMr0KBI",
+        "plan_jdy5Z44fMKMAz"
+      ],
+      "numericCadenceDaysObserved": [
+        30
+      ],
+      "currentStatus": "active",
+      "currentPlanId": "plan_jdy5Z44fMKMAz",
+      "currentBillingDays": 30,
+      "currentPeriodStart": null,
+      "currentPeriodEnd": null,
+      "historicalPeriods": [],
+      "enrollmentEligible": false,
+      "blockers": [
+        "CURRENT_PERIOD_BOUNDARIES_OR_CADENCE_MISSING"
+      ]
+    }
+  ],
   "activationManifest": {
     "reviewReference": null,
     "accounts": [],
@@ -82,12 +368,13 @@
   },
   "targetMode": "disabled",
   "gates": {
-    "currentPricingConfiguration": "OWNER_VERIFIED",
-    "exactPlanAndBusinessIds": "OPEN",
-    "membershipToTenantMapping": "OPEN",
-    "currentMembershipStatuses": "OPEN",
-    "exactSubscriptionPeriodBoundaries": "OPEN",
-    "apiCadenceRepresentation": "OPEN",
+    "currentPricingConfiguration": "OWNER_SCREENSHOT_VERIFIED_PROVIDER_PLAN_PRICE_MISMATCH_OPEN",
+    "exactPlanAndBusinessIds": "PROVIDER_IDS_OBSERVED_BUSINESS_MATCHED; OWNER_PRICE_MAPPING_OPEN",
+    "membershipToTenantMapping": "SUBJECT_MATCHED_8_OF_8",
+    "currentMembershipStatuses": "7_NO_CURRENT_ENTITLED_MATCH; 1_ACTIVE",
+    "exactSubscriptionPeriodBoundaries": "CURRENT_ACTIVE_PERIOD_MISSING; HISTORICAL_PERIODS_FOR_6",
+    "apiCadenceRepresentation": "30_DAY_CONFIRMED_FOR_TWO_RECURRING_PLANS; LEGACY_PLAN_CADENCE_NULL",
+    "paymentState": "NOT_CONFIRMED_BY_MEMBERSHIP_ENDPOINT",
     "perAccountSeedImpactReview": "OPEN",
     "migrationAndReleaseApproval": "OPEN",
     "restoreReadiness": "RECONFIRM_BEFORE_RELEASE",
@@ -97,6 +384,90 @@
     "noInferredPeriods": true,
     "noProductionChangePerformed": true,
     "noWhopBillingChangePerformed": true,
-    "implementationAndCompletedTestsPreserved": true
+    "implementationAndCompletedTestsPreserved": true,
+    "noCustomerIdentifiersPublished": true
+  },
+  "providerReadEvidence": {
+    "source": "Read-only Whop API GET; selected memberships also retrieved by ID; plan records retrieved by exact provider plan ID",
+    "collectedAt": "2026-10-27T14:06:40.910Z",
+    "host": "api.whop.com",
+    "credentialBinding": "WHOP_AUDIT_TOKEN ready; value not logged",
+    "businessBinding": "WHOP_AUDIT_COMPANY_ID ready and matched provider account.id; raw ID retained privately",
+    "network": {
+      "mode": "restricted",
+      "state": "enforced",
+      "allowedHost": "api.whop.com"
+    },
+    "pagination": {
+      "pages": 2,
+      "complete": true,
+      "records": 73,
+      "statusCounts": {
+        "completed": 3,
+        "active": 1,
+        "canceled": 69
+      }
+    },
+    "planEvidence": [
+      {
+        "planId": "plan_jdy5Z44fMKMAz",
+        "tier": "ENTERPRISE",
+        "productId": "prod_7CoRolH7SDjmQ",
+        "planType": "renewal",
+        "billingPeriod": 30,
+        "currency": "usd",
+        "formattedPrice": "$697.00 / month",
+        "trialPeriodDays": null
+      },
+      {
+        "planId": "plan_sAEhr77rTrhX4",
+        "tier": "CORE",
+        "productId": "prod_1GtBYI46Z2HQS",
+        "planType": "renewal",
+        "billingPeriod": 30,
+        "currency": "usd",
+        "formattedPrice": "$147.00 / month",
+        "trialPeriodDays": null
+      },
+      {
+        "planId": "plan_PZqjKqvMr0KBI",
+        "tier": "ENTERPRISE",
+        "productId": "prod_7CoRolH7SDjmQ",
+        "planType": "one_time",
+        "billingPeriod": null,
+        "currency": "usd",
+        "formattedPrice": "$697.00",
+        "trialPeriodDays": null
+      },
+      {
+        "planId": "plan_MUeh0CYdRPPaJ",
+        "tier": "CORE",
+        "productId": "prod_1GtBYI46Z2HQS",
+        "planType": "one_time",
+        "billingPeriod": null,
+        "currency": "usd",
+        "formattedPrice": "Free",
+        "trialPeriodDays": null
+      }
+    ],
+    "redactedReport": {
+      "path": "docs/allowance-renewal/WHOP-ACTIVATION-IMPACT.md",
+      "sha256": "836edf53c1ada4e7fd0630ed5edee6110253e1909de1d85a7c22ec97db128a79"
+    },
+    "privateEvidence": {
+      "status": "DO_NOT_APPLY_BLOCKED",
+      "storedOutsideGit": true,
+      "fileMode": "0600",
+      "sha256": "420f1779925464d7f5081e9f84a57b11c394d211b9585fd91e3682a0488facc2",
+      "executableEnrollmentAccounts": 0
+    },
+    "collectorCompatibility": "Collector and provider adapter now normalize both the live account/plan_id/current_period_* shape and the company/plan/renewal_period_* shape."
+  },
+  "privateActivationReviewEvidence": {
+    "location": "Private local file outside Git",
+    "status": "DO_NOT_APPLY_BLOCKED",
+    "sha256": "420f1779925464d7f5081e9f84a57b11c394d211b9585fd91e3682a0488facc2",
+    "executableEnrollmentAccounts": 0,
+    "approval": null
   }
 }
