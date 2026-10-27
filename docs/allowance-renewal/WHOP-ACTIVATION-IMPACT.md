@@ -31,7 +31,7 @@ The account references below are the first 12 characters of SHA-256 over the Saa
 
 The live API payload used account.id, plan_id, current_period_start, and current_period_end. A temporary in-memory adapter first mapped those provider fields to the collector's expected aliases while preserving their values. The checked-in collector was then updated to accept both Whop response shapes and rerun directly against the live API; it produced the same redacted eight-account report and an empty enrollment manifest. The matching provider adapter in whop-memberships.ts now uses the same alias normalization. No tests were added or run as part of this evidence continuation.
 
-The complete private crosswalk, membership IDs/statuses, exact historical periods, and account IDs are held outside Git in a mode-0600 private activation review file. It is marked DO_NOT_APPLY_BLOCKED, contains an empty executable enrollment manifest, and has SHA-256 420f1779925464d7f5081e9f84a57b11c394d211b9585fd91e3682a0488facc2. It must not be committed or passed to the enrollment tool as an approved manifest.
+The complete private crosswalk, membership IDs/statuses, exact historical periods, and account IDs are held outside Git in a mode-0600 private activation review file. It is marked DO_NOT_APPLY_BLOCKED, contains an empty executable enrollment manifest, and has SHA-256 aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29. It must not be committed or passed to the enrollment tool as an approved manifest.
 
 ## Release blockers
 
