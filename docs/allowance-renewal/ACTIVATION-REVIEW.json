@@ -452,13 +452,13 @@
     ],
     "redactedReport": {
       "path": "docs/allowance-renewal/WHOP-ACTIVATION-IMPACT.md",
-      "sha256": "836edf53c1ada4e7fd0630ed5edee6110253e1909de1d85a7c22ec97db128a79"
+      "sha256": "059ef9c7deb7cb7f728012e085388d63c5f6dc961900541f07f164dafd0d655a"
     },
     "privateEvidence": {
       "status": "DO_NOT_APPLY_BLOCKED",
       "storedOutsideGit": true,
       "fileMode": "0600",
-      "sha256": "420f1779925464d7f5081e9f84a57b11c394d211b9585fd91e3682a0488facc2",
+      "sha256": "aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29",
       "executableEnrollmentAccounts": 0
     },
     "collectorCompatibility": "Collector and provider adapter now normalize both the live account/plan_id/current_period_* shape and the company/plan/renewal_period_* shape."
@@ -466,8 +466,9 @@
   "privateActivationReviewEvidence": {
     "location": "Private local file outside Git",
     "status": "DO_NOT_APPLY_BLOCKED",
-    "sha256": "420f1779925464d7f5081e9f84a57b11c394d211b9585fd91e3682a0488facc2",
+    "sha256": "aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29",
     "executableEnrollmentAccounts": 0,
     "approval": null
-  }
+  },
+  "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265"
 }
