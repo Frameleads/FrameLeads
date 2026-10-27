@@ -1,0 +1,102 @@
+{
+  "reviewId": "frameleads-pr18-activation-review-20261027",
+  "status": "BLOCKED_PENDING_MEMBERSHIP_EVIDENCE",
+  "implementationCommit": "13c4ec51cf9e57105e91df73ba173e2339f03b6f",
+  "releaseCommit": null,
+  "migration": {
+    "path": "prisma/migrations/20261027130000_prospect_allowance_periods/migration.sql",
+    "sha256": "55e9dc1e76c33e8d5208db9cff9a8060a8c467915c63e0da4489a690cf9f5b9b",
+    "productionApplied": false,
+    "approval": null
+  },
+  "billingConfigurationEvidence": {
+    "source": "owner inspection of real Whop dashboard pricing-option screenshots, reported 2026-10-27",
+    "membershipSpecific": false,
+    "business": "actual FrameLeads Whop business, owner-confirmed",
+    "businessApiId": null,
+    "options": [
+      {
+        "tier": "ENTERPRISE",
+        "type": "recurring",
+        "amount": 499,
+        "currency": "USD",
+        "interval": {
+          "count": 1,
+          "unit": "month"
+        },
+        "freeTrial": false,
+        "planId": null,
+        "apiBillingDays": null
+      },
+      {
+        "tier": "CORE",
+        "type": "recurring",
+        "amount": 149,
+        "currency": "USD",
+        "interval": {
+          "count": 1,
+          "unit": "month"
+        },
+        "freeTrial": false,
+        "planId": null,
+        "apiBillingDays": null
+      }
+    ]
+  },
+  "databaseImpactSnapshot": {
+    "source": "authorized read-only Neon production query, 2026-10-27",
+    "membershipEvidence": false,
+    "tiers": [
+      {
+        "tier": "CORE",
+        "accounts": 2,
+        "quota": 500,
+        "preservedLifetimeUsage": 0
+      },
+      {
+        "tier": "ENTERPRISE",
+        "accounts": 6,
+        "quota": 10000,
+        "preservedLifetimeUsage": 289
+      },
+      {
+        "tier": "MICRO_PILOT",
+        "accounts": 7,
+        "quota": 25,
+        "preservedLifetimeUsage": 52,
+        "renewalEnrollment": "excluded"
+      }
+    ]
+  },
+  "verifiedMemberships": [],
+  "activationManifest": {
+    "reviewReference": null,
+    "accounts": [],
+    "sha256": null,
+    "approval": null
+  },
+  "futureAccountPolicy": {
+    "utcCutover": null,
+    "planReviews": [],
+    "approval": null
+  },
+  "targetMode": "disabled",
+  "gates": {
+    "currentPricingConfiguration": "OWNER_VERIFIED",
+    "exactPlanAndBusinessIds": "OPEN",
+    "membershipToTenantMapping": "OPEN",
+    "currentMembershipStatuses": "OPEN",
+    "exactSubscriptionPeriodBoundaries": "OPEN",
+    "apiCadenceRepresentation": "OPEN",
+    "perAccountSeedImpactReview": "OPEN",
+    "migrationAndReleaseApproval": "OPEN",
+    "restoreReadiness": "RECONFIRM_BEFORE_RELEASE",
+    "authenticatedDesktopAndMobileVerification": "OPEN"
+  },
+  "safety": {
+    "noInferredPeriods": true,
+    "noProductionChangePerformed": true,
+    "noWhopBillingChangePerformed": true,
+    "implementationAndCompletedTestsPreserved": true
+  }
+}

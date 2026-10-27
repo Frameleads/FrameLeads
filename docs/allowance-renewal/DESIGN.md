@@ -7,6 +7,11 @@ for the implemented adapter, local PostgreSQL validation, migration review, and
 remaining activation gates. No production migration, enrollment, or activation
 has been performed. The completed Enterprise cap release is left intact.
 
+Owner evidence update (2026-10-27): the current Core/Enterprise monthly pricing
+and free-trial OFF configuration is confirmed. This does not establish member
+identities, statuses or renewal periods. See
+[BILLING-EVIDENCE.md](BILLING-EVIDENCE.md); no implementation or test is changed.
+
 ## Confirmed behavior
 
 | Layer | Evidence | Result |

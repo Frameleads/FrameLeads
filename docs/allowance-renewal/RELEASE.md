@@ -48,7 +48,15 @@ were made during this continuation. Checkout branches and billing are unchanged.
 
 ## Actual provider/account evidence
 
-This remains an **unsatisfied release gate**. Tool discovery found no connected
+**Owner evidence update, 2026-10-27:** the real FrameLeads Whop dashboard shows
+Enterprise recurring at USD 499 every 1 month and Core recurring at USD 149 every
+1 month; both current options have free trial OFF. This closes current pricing
+configuration uncertainty. See [BILLING-EVIDENCE.md](BILLING-EVIDENCE.md) for
+provenance and limits, and [ACTIVATION-REVIEW.json](ACTIVATION-REVIEW.json) for the
+pinned, blocked review packet. No plan/business API IDs or member periods were
+supplied. Do not infer a numeric 30-day API interval from the screenshots.
+
+Membership-specific verification remains an **unsatisfied release gate**. Tool discovery found no connected
 Whop account-reading tool. The cloud runtime has only DATABASE_URL, with no Whop
 credential or buyer session. Vercel **metadata only** confirms OAuth credentials
 and webhook secret exist; no production Whop API read key is configured there.
@@ -181,7 +189,8 @@ recovery plan preserving post-restore-point usage; it is not routine rollback.
 ## Remaining owner actions
 
 - Supply authorized read-only provider access or private period evidence. The
-  unresolved live contract/cadence cannot be replaced by assumptions or fixtures.
+  current monthly pricing configuration is owner-verified, but exact membership
+  identity/status/periods and API cadence representation remain unverified.
 - Review per-account seed impact, concrete migration, release commit and activation
   manifest. No migration/merge/activation approval is assumed from implementation.
 - Sign in normally to the Enterprise testing account and inspect Ingestion and
