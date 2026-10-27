@@ -20,7 +20,7 @@ export default function LoginPage() {
         {/* Logo / Brand */}
         <div className="text-center mb-10 flex flex-col items-center">
           <div className="flex items-center gap-3 justify-center mb-4">
-            <div className="bg-[#1A1A1A] border border-[#242424] p-2 rounded-xl">
+            <div className="bg-[#242424] border border-white/10 p-2 rounded-xl">
               <Zap className="text-[#FF5A1F] w-5 h-5" />
             </div>
             <span className="font-heading font-bold text-white tracking-wide text-xl">
