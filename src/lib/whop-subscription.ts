@@ -27,6 +27,10 @@ export class UnrecognizedWhopProductError extends Error {
   }
 }
 
+const LEGACY_ENTERPRISE_PLAN_IDS = new Set([
+  "plan_PZqjKqvMr0KBI", "plan_jdy5Z44fMKMAz",
+]);
+
 const DEFAULT_TIER_IDS = {
   MICRO_PILOT: ["prod_bTf6npFBh6teM", "plan_8qLWfJZHQUYZf"],
   CORE: ["prod_1GtBYI46Z2HQS", "plan_MUeh0CYdRPPaJ", "plan_sAEhr77rTrhX4", "plan_GQTDPXnvijugf"],
@@ -181,11 +185,19 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
   for (const mapping of mappings) {
     const matchedId = mapping.ids.find((id) => observedIds.includes(id.toLowerCase()));
     if (matchedId) {
+      // New Enterprise purchases receive 10k, including Sandbox. Retired
+      // Enterprise plan IDs preserve their contract; grandfathered existing
+      // customers on a current plan are handled per-account in whop-user and
+      // the entitlement refresher, not by increasing every buyer's limit.
+      const legacyEnterprisePlan = planIds.some(id => LEGACY_ENTERPRISE_PLAN_IDS.has(id));
+      const monthlyQuota = mapping.tier === "ENTERPRISE"
+        ? (!isWhopSandbox() && legacyEnterprisePlan ? 20_000 : 10_000)
+        : mapping.monthlyQuota;
       console.info("[WHOP] Paid tier resolved", {
         tier: mapping.tier,
         matchedBy: "product_or_plan_id",
       });
-      return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
+      return { tier: mapping.tier, monthlyQuota };
     }
   }
 
@@ -195,7 +207,7 @@ export function resolveWhopSubscription(source: unknown): WhopSubscription {
   for (const mapping of mappings) {
     if (mapping.namePattern.test(nameText)) {
       console.info("[WHOP] Paid tier resolved", { tier: mapping.tier, matchedBy: "product_or_plan_name" });
-      return { tier: mapping.tier, monthlyQuota: mapping.monthlyQuota };
+      return { tier: mapping.tier, monthlyQuota: mapping.tier === "ENTERPRISE" ? 10_000 : mapping.monthlyQuota };
     }
   }
 
