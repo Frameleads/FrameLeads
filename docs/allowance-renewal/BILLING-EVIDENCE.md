@@ -1,86 +1,42 @@
 # Whop billing configuration evidence — PR #18
 
-Recorded 2026-10-27 (Asia/Dubai), from the product owner's direct inspection of
-real Whop dashboard pricing-option screenshots. The owner supplied the findings
-in this session; this is owner-verified configuration evidence, not an API read
-or an independent inspection of attached screenshot files by the agent.
+Recorded 2026-10-27 from the owner's direct inspection of actual Whop pricing-option screenshots and read-only Whop API GETs. Screenshot-derived configuration was owner reported; exact current plan identities, product associations, visibility, pricing, and numeric billing periods were verified from the provider API. No billing settings were changed.
 
-| Pricing option | Type | Amount | Currency | Interval | Free trial | Business |
-| --- | --- | ---: | --- | --- | --- | --- |
-| Enterprise | Recurring | 499 | USD | Every 1 month | OFF | Actual FrameLeads Whop business, owner-confirmed |
-| Core | Recurring | 149 | USD | Every 1 month | OFF | Actual FrameLeads Whop business, owner-confirmed |
+| Tier | Current plan | Product | Type | API `billing_period` | Amount | Visibility | Trial |
+| --- | --- | --- | --- | ---: | ---: | --- | --- |
+| Enterprise | `plan_uGDGf5WKW7hlE` | `prod_7CoRolH7SDjmQ` — FrameLeads Enterprise: Revenue Decision Intelligence | renewal | 30 days | USD 499/month | visible | none configured |
+| Core | `plan_GQTDPXnvijugf` | `prod_1GtBYI46Z2HQS` — FrameLeads Core: Reply Decision Intelligence | renewal | 30 days | USD 149/month | visible | none configured |
 
-## What this closes
+The plan API has no populated `status` field for these records; `visibility: visible` is the catalog status. They were created on 2026-10-25 and match the owner's approved current options. Core allowance remains 500 prospects per month and Enterprise 10,000 per month. PR #17 and Micro-Pilot remain unchanged.
 
-The current owner-inspected Core and Enterprise pricing options are monthly,
-not annual, quarterly or one-time. Their current configured prices and trial
-settings are established. No pricing, trial or billing setting needs changing.
-The allowance remains Core 500/month and Enterprise 10,000/month. PR #17 and
-Micro-Pilot remain unchanged.
+## Historical plan reconciliation
 
-## What it does not establish
+The earlier Core plan `plan_sAEhr77rTrhX4` costs USD 147/month and the earlier Enterprise plan `plan_jdy5Z44fMKMAz` costs USD 697/month. Both are renewal plans with `billing_period: 30`, reference the same respective products as the current plans, were created on 2026-08-18, and are now archived. Their update timestamps coincide with current plan creation on 2026-10-25. The $147/$697 values are historical pricing, not a current mismatch. `plan_PZqjKqvMr0KBI` is a separate one-time Enterprise plan with no recurring period.
 
-- Exact pricing-option plan/product IDs or the business API ID: these were not
-  included in the supplied findings. Existing IDs in code are candidates, not
-  evidence that an inspected option or membership uses that ID.
-- Membership IDs, buyer-to-SaaS tenant mappings, or current subscription status.
-  A pricing option labeled Recurring is not proof that a buyer is active/paid.
-- Membership-specific renewal_period_start/end, cancellation-at-end state,
-  expiration, payment success, or prior periods.
-- Whether every existing account subscribes to these exact current options,
-  rather than a legacy option, manual/internal grant, or another membership.
-- Existing membership trial history or status. Current free-trial OFF does not
-  prove that no historical membership is trialing. Preserve fail-closed handling.
-- The API's numeric billing-period representation. **Every 1 month does not
-  authorize assigning billingDays=30**, constructing fixed 30-day periods,
-  using account creation dates, or using promotional-checkout timing as an anchor.
-- Attribution of historical consumed usage to a current subscription period.
+## Membership reconciliation
 
-The pricing configuration gate is OWNER_VERIFIED. Membership identity, current
-status, exact period boundaries and API-contract gates remain OPEN.
+The dedicated audit credential was available in the managed runtime; its value was never printed. Restricted HTTP egress was enforced with `api.whop.com` allowed. The completed read-only membership collection returned 73 records over two pages. The latest refresh completed at 2026-10-27T14:44:26.768Z. Production Neon account rows were read through the authorized read-only connection, and eight SaaS records matched by stored Whop subject ID.
 
-## Read-only provider evidence collected — 2026-10-27
+The owner confirmed all six Enterprise accounts are internal test memberships. They are excluded from future enrollment; their historic usage remains intact. The two Core accounts remain canceled and their classification is unknown. They require individual owner disposition and must not be assumed to be test accounts. No account among the eight will be reenrolled.
 
-The dedicated `WHOP_AUDIT_TOKEN` and `WHOP_AUDIT_COMPANY_ID` bindings were
-reported ready by the managed runtime. Its current HTTP policy was restricted
-and enforced, with `api.whop.com` explicitly allowed. The audit used GET only
-for the membership list, selected membership records, and exact plan records.
-Pagination completed across two pages with 73 provider memberships.
+Seven of eight accounts have no currently entitled recurring membership matching their SaaS tier. The eighth is a provider-active Enterprise membership in the confirmed internal test cohort, on the archived $697 plan. Its membership-list record has `promo_code_id`, USD 0.00 initial and renewal prices, a numeric 30-day cadence, and no current period start/end. Its archived plan has no configured trial. Those fields are consistent with a promotional/free checkout, but they do not prove that the promotion caused Whop to omit the boundaries. The individual detail GET could not be completed in this follow-up because the restricted executor route failed DNS resolution for `api.whop.com`; no membership fields were manufactured. The API evidence does not establish a successful paid charge.
 
-The production Neon rows were queried read-only through the connected Neon SQL
-tool because this executor had no TCP route to the database host. Eight recurring
-SaaS accounts matched Whop subjects by exact stored Whop subject ID (no email).
-Seven have no currently entitled recurring membership matching their stored
-tier; the remaining Enterprise account has one active membership, but its
-current period start and end are absent. Six accounts have exact historical
-periods on canceled memberships. Those dates are not current renewal anchors.
+No membership was observed on the current $149/$499 plans. The verified plan catalog alone does not prove that actual paid memberships on those plans return usable period boundaries. Require genuine current-plan membership evidence with exact start and end timestamps before period allocation; keep the allocator fail-closed until then.
 
-The API returned `account.id`, `plan_id`, `current_period_start`, and
-`current_period_end`. The collector and entitlement adapter now normalize these
-fields as well as the nested `company`/`plan`/`renewal_period_*` form. The
-read-only collector completed with an empty enrollment manifest. Its report is
-[WHOP-ACTIVATION-IMPACT.md](WHOP-ACTIVATION-IMPACT.md).
-
-Exact plan reads add a material configuration discrepancy. The observed
-recurring Enterprise plan `plan_jdy5Z44fMKMAz` is USD 697/month with a 30-day
-period; the observed recurring Core plan `plan_sAEhr77rTrhX4` is USD 147/month
-with a 30-day period. The owner-reported screenshot options are USD 499/month
-and USD 149/month. Two mapped Enterprise accounts also have canceled one-time
-memberships on `plan_PZqjKqvMr0KBI`; its plan record has no recurring period.
-The active Enterprise membership's current period boundaries are missing.
-Resolve the price/plan mapping, status, payment state, and current period before
-any activation. The exact membership IDs, user IDs, and subject crosswalk remain
-in a mode-0600 private review file outside Git.
+The membership response uses `account.id`, `plan_id`, `current_period_start`, and `current_period_end`; the collector and runtime adapter normalize those alongside the nested `company`/`plan`/`renewal_period_*` shape. Canceled memberships are rejected by current paid entitlement verification and an authoritative no-membership result persists `INACTIVE`. Paid-feature routes require live entitlement checks. The OAuth callback also contains a hard-coded email fallback that assigns Enterprise when no membership is found. This is a real access exception; it was not changed, and owner disposition is required before release.
 
 ## Activation review packet
 
-[ACTIVATION-REVIEW.json](ACTIVATION-REVIEW.json) pins the tested implementation
-and exact migration checksum. It is deliberately non-executable and blocked:
-verifiedMemberships and activationManifest.accounts are empty, approval fields
-are null, no future-account cutover or plan policy is populated, and mode remains
-disabled. Do not submit it to the enrollment tool as if it were an approved
-manifest. Fill a separate private manifest only after reconciling real memberships.
+[ACTIVATION-REVIEW.json](ACTIVATION-REVIEW.json) records current plan evidence and stays non-executable: all eight historical accounts are excluded, `activationManifest.accounts` is empty, approvals are null, future cutover remains unset, and target mode is disabled. The full crosswalk and exact membership evidence remain in a mode-0600 private file outside Git. Do not pass it to enrollment tooling.
 
-[RELEASE.md](RELEASE.md) retains the migration order and rollback protections.
-There is no merge, migration, enrollment, billing write or activation authorized
-by the pricing screenshots alone.
+[WHOP-ACTIVATION-IMPACT.md](WHOP-ACTIVATION-IMPACT.md) contains the redacted per-account classification and impact report. [RELEASE.md](RELEASE.md) retains migration order and rollback protections.
+
+## Owner approvals still required
+
+1. Disposition the two Core accounts without presuming they are tests.
+2. Decide whether the hard-coded OAuth Enterprise fallback is an approved admin exception or should be removed in a separately reviewed change.
+3. Approve a future-customer policy restricted to new genuine paying customers on the two verified current plans; exclude the eight historical accounts.
+4. Verify exact current-period boundaries on genuine paid memberships for both current plans. If Whop cannot provide them reliably, do not enable allocation for those memberships.
+5. Approve the precise migration and release commit after reviewing seed impact, migration history/checksums, and a current restore point.
+6. Complete authenticated desktop and mobile verification.
+7. Separately approve production migration, deployment, enrollment cutover, and renewal activation. This evidence packet grants none of those approvals.

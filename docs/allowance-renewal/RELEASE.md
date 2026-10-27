@@ -75,13 +75,40 @@ normalize these aliases alongside the nested company/plan/renewal-period shape.
 The collector was rerun against live Whop after the update. It completed
 read-only pagination and remained fail-closed for every account.
 
-Plan GET evidence conflicts with the owner screenshot prices. Current recurring
-Enterprise plan `plan_jdy5Z44fMKMAz` is USD 697/month with billing_period 30;
-current recurring Core plan `plan_sAEhr77rTrhX4` is USD 147/month with
-billing_period 30. Two mapped Enterprise accounts also have canceled one-time
-memberships on `plan_PZqjKqvMr0KBI`; its billing period is null. The owner
-must resolve the plan/price mapping. Membership status alone does not establish
-a successful payment, and the active membership has no exact period boundaries.
+Exact plan GETs resolve the pricing mapping. Current visible Core plan
+`plan_GQTDPXnvijugf` maps to `prod_1GtBYI46Z2HQS`, is a renewal plan with
+`billing_period: 30`, costs USD 149/month, and has no configured trial. Current
+visible Enterprise plan `plan_uGDGf5WKW7hlE` maps to `prod_7CoRolH7SDjmQ`, is a
+renewal plan with `billing_period: 30`, costs USD 499/month, and has no
+configured trial. The earlier $147 Core plan and $697 Enterprise plan are
+archived renewal plans on the same products. The earlier pricing mismatch is
+closed. A separate Enterprise one-time plan has no recurring interval.
+
+The owner confirms all six Enterprise SaaS accounts are internal test accounts;
+exclude them from enrollment and preserve their usage. The two Core accounts
+remain canceled and their classification/disposition is unknown; do not assume
+they are tests or reenroll them. No account qualifies for enrollment (0/8).
+The only active provider membership is one of the Enterprise test accounts on
+the archived $697 plan. It reports a promo code and zero initial/renewal amounts,
+but no exact current-period boundaries. This is consistent with a promotional
+free checkout but does not prove why the boundaries are missing. The individual
+membership detail endpoint could not be reached in this follow-up because the
+restricted executor failed DNS resolution for `api.whop.com`. No receipt or
+successful payment evidence was returned.
+
+No membership was observed on the new $149/$499 plans. The API catalog confirms
+their numeric 30-day interval but not that a genuine paying membership supplies
+the exact current-period timestamps required by the allocator. Future allocation
+stays fail-closed until genuine paid memberships return both boundaries.
+
+The canceled-membership check rejects canceled/expired/unknown records, stores
+`INACTIVE` after authoritative no-membership results, and paid-feature routes
+recheck the Whop entitlement. Review also found an explicit hard-coded OAuth
+fallback that allows one configured email to complete login with a persisted
+Enterprise tier when there is no membership. Protected feature routes still
+perform live entitlement refresh, so this does not demonstrate canceled-account
+paid-feature access. The login exception and the configured administrator
+bypass require owner disposition; no access code or account was modified.
 No Whop billing or production data was changed.
 
 **Production impact remains:** Core 2 accounts, lifetime usage 0; Enterprise 6
@@ -92,19 +119,42 @@ conservative seeding still requires explicit per-account review.
 
 ### Current release gates
 
-- Owner resolution of the screenshot/API plan price mismatch and the exact
-  current plan mapping.
-- Owner disposition for each of the seven accounts without a current matching
-  entitlement, including whether access should remain.
-- Exact current-period boundaries for the active Enterprise membership, and
-  private reconciliation of its payment state. Do not infer from account
-  creation, canceled periods, or 30-day arithmetic.
-- Review of per-account lifetime seed impact and the private manifest. At present
-  the executable manifest has zero accounts and must not be applied.
+- Owner disposition of the two Core accounts individually; neither is labeled a
+  test account. The six Enterprise test accounts remain excluded from enrollment.
+- Owner disposition of the hard-coded OAuth Enterprise login fallback and
+  configured administrator bypass. Paid routes continue to fail closed on a
+  canceled membership after live refresh.
+- Genuine paid membership evidence for each current plan with exact period start
+  and end. Do not infer from checkout promotion, account creation, canceled
+  periods, or 30-day arithmetic.
+- Approve the future-customer policy for only new genuine paying customers on
+  the exact current plan IDs. Exclude all eight historical accounts.
+- Review per-account lifetime seed impact and the private manifest. It remains
+  empty; preserve all lifetime usage and Micro-Pilot entitlements.
 - Approval of the exact migration and release commit, current Neon restore point,
   migration history/checksums and release target.
 - Normal authenticated desktop/mobile verification after the reviewed release.
 - If future-account auto-enrollment is included, separate approval of the UTC cutover and exact plan policy; otherwise leave both settings absent.
+
+### Reconciliation validation — 2026-10-27
+
+- Whop membership tests: 12 passed, including current/canceled lifecycle,
+  recognized legacy and current plan IDs, OAuth identity checks, live-shape
+  normalization, entitlement refresh, and bounded outage behavior.
+- Whop OAuth tests: passed. Entitlement tests: 15 passed. Protected route tests:
+  12 passed. Renewal design tests: 15 passed.
+- TypeScript `npx tsc --noEmit`: passed. The optimized production build passed
+  with `NODE_OPTIONS=--max-old-space-size=4096`; the default 2 GB Node heap was
+  insufficient for Next.js lint/type validation in this executor.
+- Disposable PostgreSQL 17 integration run: 20 of 21 checks passed. The sole
+  failure was the raw CHECK-constraint test because a Prisma `db push` fixture
+  does not include SQL-only CHECK constraints. The fixture and database were
+  isolated to loopback and are not production. No migration file was executed;
+  full SQL-constraint integration must be re-run only after a permitted local
+  fixture setup. Production migration was not run.
+- `prisma validate` passed. Migration review was read-only: the migration file
+  and checksum are pinned in this packet; no migration SQL was applied during
+  this reconciliation.
 
 ## Isolated PostgreSQL and migration validation
 

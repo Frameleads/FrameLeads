@@ -1,6 +1,6 @@
 {
   "reviewId": "frameleads-pr18-activation-review-20261027",
-  "status": "BLOCKED_PROVIDER_MEMBERSHIP_AND_PLAN_RECONCILIATION",
+  "status": "BLOCKED_PROVIDER_PERIOD_CONTRACT_AND_OWNER_APPROVAL",
   "implementationCommit": "13c4ec51cf9e57105e91df73ba173e2339f03b6f",
   "releaseCommit": null,
   "migration": {
@@ -13,7 +13,7 @@
     "source": "owner inspection of real Whop dashboard pricing-option screenshots, reported 2026-10-27",
     "membershipSpecific": false,
     "business": "actual FrameLeads Whop business, owner-confirmed",
-    "businessApiId": null,
+    "businessApiId": "biz_RSQW7xARXYAQke",
     "options": [
       {
         "tier": "ENTERPRISE",
@@ -25,8 +25,9 @@
           "unit": "month"
         },
         "freeTrial": false,
-        "planId": null,
-        "apiBillingDays": null
+        "planId": "plan_uGDGf5WKW7hlE",
+        "apiBillingDays": 30,
+        "productId": "prod_7CoRolH7SDjmQ"
       },
       {
         "tier": "CORE",
@@ -38,43 +39,72 @@
           "unit": "month"
         },
         "freeTrial": false,
-        "planId": null,
-        "apiBillingDays": null
+        "planId": "plan_GQTDPXnvijugf",
+        "apiBillingDays": 30,
+        "productId": "prod_1GtBYI46Z2HQS"
       }
     ],
     "providerPlanComparison": {
-      "result": "OWNER_SCREENSHOT_PRICE_MISMATCH",
-      "ownerReportedOptions": {
-        "enterprise": {
-          "amount": 499,
-          "currency": "USD",
-          "interval": "1 month"
-        },
-        "core": {
-          "amount": 149,
-          "currency": "USD",
-          "interval": "1 month"
-        }
-      },
-      "providerObservedRecurringPlans": [
+      "result": "CURRENT_PLANS_MATCH_OWNER_APPROVED_PRICING; PRIOR_PRICES_ARCHIVED",
+      "currentPlans": [
         {
-          "planId": "plan_jdy5Z44fMKMAz",
-          "tier": "ENTERPRISE",
+          "planId": "plan_GQTDPXnvijugf",
+          "tier": "CORE",
+          "productId": "prod_1GtBYI46Z2HQS",
+          "productName": "FrameLeads Core: Reply Decision Intelligence",
           "planType": "renewal",
           "billingPeriod": 30,
           "currency": "usd",
-          "formattedPrice": "$697.00 / month"
+          "formattedPrice": "$149.00 / month",
+          "visibility": "visible",
+          "trialPeriodDays": null,
+          "statusField": null,
+          "createdAt": "2026-10-25T11:12:39.544Z",
+          "updatedAt": "2026-10-25T11:12:51.327Z"
         },
+        {
+          "planId": "plan_uGDGf5WKW7hlE",
+          "tier": "ENTERPRISE",
+          "productId": "prod_7CoRolH7SDjmQ",
+          "productName": "FrameLeads Enterprise: Revenue Decision Intelligence",
+          "planType": "renewal",
+          "billingPeriod": 30,
+          "currency": "usd",
+          "formattedPrice": "$499.00 / month",
+          "visibility": "visible",
+          "trialPeriodDays": null,
+          "statusField": null,
+          "createdAt": "2026-10-25T11:12:04.927Z",
+          "updatedAt": "2026-10-25T11:12:21.544Z"
+        }
+      ],
+      "historicalPlans": [
         {
           "planId": "plan_sAEhr77rTrhX4",
           "tier": "CORE",
+          "productId": "prod_1GtBYI46Z2HQS",
           "planType": "renewal",
           "billingPeriod": 30,
           "currency": "usd",
-          "formattedPrice": "$147.00 / month"
+          "formattedPrice": "$147.00 / month",
+          "visibility": "archived",
+          "createdAt": "2026-08-18T13:22:19.035Z",
+          "updatedAt": "2026-10-25T11:12:39.496Z"
+        },
+        {
+          "planId": "plan_jdy5Z44fMKMAz",
+          "tier": "ENTERPRISE",
+          "productId": "prod_7CoRolH7SDjmQ",
+          "planType": "renewal",
+          "billingPeriod": 30,
+          "currency": "usd",
+          "formattedPrice": "$697.00 / month",
+          "visibility": "archived",
+          "createdAt": "2026-08-18T13:21:49.033Z",
+          "updatedAt": "2026-10-25T11:12:04.859Z"
         }
       ],
-      "note": "Observed provider plan IDs are exact, but their catalog prices do not match the owner-reported screenshots; do not treat them as approved current pricing options without owner resolution."
+      "note": "The 147/697 plans are archived older pricing on the same products; these do not contradict current visible 149/499 options."
     }
   },
   "databaseImpactSnapshot": {
@@ -100,7 +130,12 @@
         "preservedLifetimeUsage": 52,
         "renewalEnrollment": "excluded"
       }
-    ]
+    ],
+    "ownerDispositionCounts": {
+      "ownerConfirmedEnterpriseInternalTests": 6,
+      "coreDispositionUnresolved": 2
+    },
+    "renewalEnrollmentPolicy": "Only new genuine paying customers on the verified current plans may be considered; all eight historical accounts excluded"
   },
   "verifiedMemberships": [
     {
@@ -133,8 +168,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_DISPOSITION_REQUIRED"
+      ],
+      "ownerDisposition": "UNRESOLVED_OWNER_DISPOSITION_REQUIRED"
     },
     {
       "accountRef": "8499d930a570",
@@ -166,8 +203,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_DISPOSITION_REQUIRED"
+      ],
+      "ownerDisposition": "UNRESOLVED_OWNER_DISPOSITION_REQUIRED"
     },
     {
       "accountRef": "3457e4043e55",
@@ -199,8 +238,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     },
     {
       "accountRef": "a57cd57556a6",
@@ -232,8 +273,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     },
     {
       "accountRef": "ad04c321cf39",
@@ -265,8 +308,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     },
     {
       "accountRef": "225be10f468a",
@@ -298,8 +343,10 @@
       ],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     },
     {
       "accountRef": "738694d6b03f",
@@ -324,8 +371,10 @@
       "historicalPeriods": [],
       "enrollmentEligible": false,
       "blockers": [
-        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP"
-      ]
+        "NO_CURRENT_ENTITLED_RECURRING_MEMBERSHIP",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     },
     {
       "accountRef": "1f4744c7af0b",
@@ -351,8 +400,10 @@
       "historicalPeriods": [],
       "enrollmentEligible": false,
       "blockers": [
-        "CURRENT_PERIOD_BOUNDARIES_OR_CADENCE_MISSING"
-      ]
+        "CURRENT_PERIOD_BOUNDARIES_OR_CADENCE_MISSING",
+        "OWNER_CONFIRMED_INTERNAL_TEST_EXCLUDED"
+      ],
+      "ownerDisposition": "OWNER_CONFIRMED_INTERNAL_TEST"
     }
   ],
   "activationManifest": {
@@ -363,19 +414,43 @@
   },
   "futureAccountPolicy": {
     "utcCutover": null,
-    "planReviews": [],
+    "planReviews": [
+      {
+        "tier": "CORE",
+        "planId": "plan_GQTDPXnvijugf",
+        "productId": "prod_1GtBYI46Z2HQS",
+        "priceUsdMonthly": 149,
+        "billingPeriod": 30,
+        "monthlyProspectAllowance": 500,
+        "visibility": "visible",
+        "membershipBoundaryProof": "required from genuine paid membership"
+      },
+      {
+        "tier": "ENTERPRISE",
+        "planId": "plan_uGDGf5WKW7hlE",
+        "productId": "prod_7CoRolH7SDjmQ",
+        "priceUsdMonthly": 499,
+        "billingPeriod": 30,
+        "monthlyProspectAllowance": 10000,
+        "visibility": "visible",
+        "membershipBoundaryProof": "required from genuine paid membership"
+      }
+    ],
+    "policy": "new genuine paying customers only; exact current-period boundaries and approved plan ID required; no historical auto-enrollment",
     "approval": null
   },
   "targetMode": "disabled",
   "gates": {
-    "currentPricingConfiguration": "OWNER_SCREENSHOT_VERIFIED_PROVIDER_PLAN_PRICE_MISMATCH_OPEN",
-    "exactPlanAndBusinessIds": "PROVIDER_IDS_OBSERVED_BUSINESS_MATCHED; OWNER_PRICE_MAPPING_OPEN",
+    "currentPricingConfiguration": "PROVIDER_CONFIRMED_CURRENT_149_499; PRIOR_147_697_PLANS_ARCHIVED",
+    "exactPlanAndBusinessIds": "PROVIDER_IDS_AND_PRODUCT_ASSOCIATIONS_VERIFIED; BUSINESS_MATCHED",
     "membershipToTenantMapping": "SUBJECT_MATCHED_8_OF_8",
-    "currentMembershipStatuses": "7_NO_CURRENT_ENTITLED_MATCH; 1_ACTIVE",
-    "exactSubscriptionPeriodBoundaries": "CURRENT_ACTIVE_PERIOD_MISSING; HISTORICAL_PERIODS_FOR_6",
-    "apiCadenceRepresentation": "30_DAY_CONFIRMED_FOR_TWO_RECURRING_PLANS; LEGACY_PLAN_CADENCE_NULL",
-    "paymentState": "NOT_CONFIRMED_BY_MEMBERSHIP_ENDPOINT",
-    "perAccountSeedImpactReview": "OPEN",
+    "currentMembershipStatuses": "6_ENTERPRISE_OWNER_CONFIRMED_TESTS; 2_CORE_CANCELED_DISPOSITION_OPEN",
+    "exactSubscriptionPeriodBoundaries": "ACTIVE_TEST_MEMBERSHIP_START_END_ABSENT; HISTORICAL_PERIODS_NOT_ANCHORS",
+    "apiCadenceRepresentation": "CURRENT_PLANS_NUMERIC_BILLING_PERIOD_30; LEGACY_PLANS_ALSO_30; ONE_TIME_PLAN_NULL",
+    "paymentState": "ACTIVE_LEGACY_MEMBERSHIP_PROMO_PRESENT_ZERO_PRICE; SUCCESSFUL_PAYMENT_NOT_PROVEN",
+    "currentPlanMembershipEvidence": "NO_MEMBERSHIP_OBSERVED_ON_CURRENT_149_499_PLANS; FUTURE_BOUNDARY_CONTRACT_SAMPLE_REQUIRED",
+    "entitlementSecurity": "CANCELED_MEMBERSHIPS_FAIL_CLOSED_ON_LIVE_REFRESH; HARDCODED_OAUTH_ENTERPRISE_FALLBACK_REQUIRES_OWNER_DISPOSITION",
+    "perAccountSeedImpactReview": "OPEN; ALL_8_EXCLUDED_FROM_ENROLLMENT",
     "migrationAndReleaseApproval": "OPEN",
     "restoreReadiness": "RECONFIRM_BEFORE_RELEASE",
     "authenticatedDesktopAndMobileVerification": "OPEN"
@@ -389,7 +464,7 @@
   },
   "providerReadEvidence": {
     "source": "Read-only Whop API GET; selected memberships also retrieved by ID; plan records retrieved by exact provider plan ID",
-    "collectedAt": "2026-10-27T14:06:40.910Z",
+    "collectedAt": "2026-10-27T14:44:26.768Z",
     "host": "api.whop.com",
     "credentialBinding": "WHOP_AUDIT_TOKEN ready; value not logged",
     "businessBinding": "WHOP_AUDIT_COMPANY_ID ready and matched provider account.id; raw ID retained privately",
@@ -410,14 +485,34 @@
     },
     "planEvidence": [
       {
-        "planId": "plan_jdy5Z44fMKMAz",
-        "tier": "ENTERPRISE",
-        "productId": "prod_7CoRolH7SDjmQ",
+        "planId": "plan_GQTDPXnvijugf",
+        "tier": "CORE",
+        "productId": "prod_1GtBYI46Z2HQS",
+        "productName": "FrameLeads Core: Reply Decision Intelligence",
         "planType": "renewal",
         "billingPeriod": 30,
         "currency": "usd",
-        "formattedPrice": "$697.00 / month",
-        "trialPeriodDays": null
+        "formattedPrice": "$149.00 / month",
+        "visibility": "visible",
+        "trialPeriodDays": null,
+        "statusField": null,
+        "createdAt": "2026-10-25T11:12:39.544Z",
+        "updatedAt": "2026-10-25T11:12:51.327Z"
+      },
+      {
+        "planId": "plan_uGDGf5WKW7hlE",
+        "tier": "ENTERPRISE",
+        "productId": "prod_7CoRolH7SDjmQ",
+        "productName": "FrameLeads Enterprise: Revenue Decision Intelligence",
+        "planType": "renewal",
+        "billingPeriod": 30,
+        "currency": "usd",
+        "formattedPrice": "$499.00 / month",
+        "visibility": "visible",
+        "trialPeriodDays": null,
+        "statusField": null,
+        "createdAt": "2026-10-25T11:12:04.927Z",
+        "updatedAt": "2026-10-25T11:12:21.544Z"
       },
       {
         "planId": "plan_sAEhr77rTrhX4",
@@ -427,7 +522,21 @@
         "billingPeriod": 30,
         "currency": "usd",
         "formattedPrice": "$147.00 / month",
-        "trialPeriodDays": null
+        "visibility": "archived",
+        "createdAt": "2026-08-18T13:22:19.035Z",
+        "updatedAt": "2026-10-25T11:12:39.496Z"
+      },
+      {
+        "planId": "plan_jdy5Z44fMKMAz",
+        "tier": "ENTERPRISE",
+        "productId": "prod_7CoRolH7SDjmQ",
+        "planType": "renewal",
+        "billingPeriod": 30,
+        "currency": "usd",
+        "formattedPrice": "$697.00 / month",
+        "visibility": "archived",
+        "createdAt": "2026-08-18T13:21:49.033Z",
+        "updatedAt": "2026-10-25T11:12:04.859Z"
       },
       {
         "planId": "plan_PZqjKqvMr0KBI",
@@ -437,38 +546,83 @@
         "billingPeriod": null,
         "currency": "usd",
         "formattedPrice": "$697.00",
-        "trialPeriodDays": null
-      },
-      {
-        "planId": "plan_MUeh0CYdRPPaJ",
-        "tier": "CORE",
-        "productId": "prod_1GtBYI46Z2HQS",
-        "planType": "one_time",
-        "billingPeriod": null,
-        "currency": "usd",
-        "formattedPrice": "Free",
+        "visibility": "archived",
         "trialPeriodDays": null
       }
     ],
     "redactedReport": {
       "path": "docs/allowance-renewal/WHOP-ACTIVATION-IMPACT.md",
-      "sha256": "059ef9c7deb7cb7f728012e085388d63c5f6dc961900541f07f164dafd0d655a"
+      "sha256": "c08d2ad0ab4031c08bce4deff263da69308ae315631c3635eef0ffe5b83284d9"
     },
     "privateEvidence": {
       "status": "DO_NOT_APPLY_BLOCKED",
       "storedOutsideGit": true,
       "fileMode": "0600",
-      "sha256": "aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29",
+      "sha256": "2bc123600aafad780c40863d03b99afc7368886765a900a296b44dc7b2e8a0f7",
       "executableEnrollmentAccounts": 0
     },
-    "collectorCompatibility": "Collector and provider adapter now normalize both the live account/plan_id/current_period_* shape and the company/plan/renewal_period_* shape."
+    "collectorCompatibility": "Collector and entitlement adapter normalize both observed provider membership shapes. Memberships on canceled status fail current paid entitlement checks; exact allowance boundaries are never inferred.",
+    "membershipReconciliation": {
+      "ownerConfirmedInternalTests": 6,
+      "coreDispositionUnresolved": 2,
+      "currentPlanMembershipsObserved": 0,
+      "activeMembership": {
+        "tier": "ENTERPRISE",
+        "planId": "plan_jdy5Z44fMKMAz",
+        "status": "active",
+        "billingPeriodDays": 30,
+        "currentPeriodStart": null,
+        "currentPeriodEnd": null,
+        "promoCodePresent": true,
+        "initialPrice": {
+          "currency": "usd",
+          "amount": "0.00"
+        },
+        "renewalPrice": {
+          "currency": "usd",
+          "amount": "0.00"
+        },
+        "membershipDetailRead": "UNAVAILABLE_DNS_EAI_AGAIN",
+        "periodAbsenceCause": "NOT_ESTABLISHED"
+      }
+    }
   },
   "privateActivationReviewEvidence": {
     "location": "Private local file outside Git",
     "status": "DO_NOT_APPLY_BLOCKED",
-    "sha256": "aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29",
+    "sha256": "2bc123600aafad780c40863d03b99afc7368886765a900a296b44dc7b2e8a0f7",
     "executableEnrollmentAccounts": 0,
     "approval": null
   },
-  "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265"
+  "providerCompatibilityCommit": "39a72525bb874a49cc6f673611177bc30261e265",
+  "ownerApprovalChecklist": [
+    {
+      "item": "Disposition both Core accounts without assuming they are tests",
+      "status": "required"
+    },
+    {
+      "item": "Decide hard-coded OAuth Enterprise fallback: approved admin exception or remove in separately reviewed change",
+      "status": "required"
+    },
+    {
+      "item": "Approve future-customer policy restricted to current plan IDs and new genuine paying customers",
+      "status": "required"
+    },
+    {
+      "item": "Verify exact current-period start/end for genuine paid membership on each current plan",
+      "status": "required"
+    },
+    {
+      "item": "Approve exact migration/release commit after per-account impact and restore review",
+      "status": "required"
+    },
+    {
+      "item": "Complete authenticated desktop and mobile verification",
+      "status": "required"
+    },
+    {
+      "item": "Separately approve production migration, deployment, enrollment cutover and renewal activation",
+      "status": "required"
+    }
+  ]
 }

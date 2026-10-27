@@ -1,45 +1,49 @@
 # Whop activation impact report (redacted)
 
-Collected 2026-10-27T14:06:40.910Z from read-only GET requests to api.whop.com. Production Neon data was read through the connected Neon SQL tool. The Whop credential and business identifier were ready in the managed runtime; restricted HTTP egress was enforced and allowed api.whop.com. No billing, database, or production changes were made.
+Provider evidence collected 2026-10-27 from read-only GET requests to `api.whop.com`; the latest complete membership snapshot is 2026-10-27T14:44:26.768Z. Production Neon records were read through the authorized read-only SQL connection. No customer contact data is included. No billing, database, or production changes were made.
 
-Pagination completed across 2 pages and 73 membership records for the supplied FrameLeads business. Provider-wide status counts were completed: 3, active: 1, canceled: 69. The records were matched to eight recurring SaaS accounts by the stored Whop subject ID, with no email or name used in this report.
+The supplied FrameLeads business returned 73 membership records across two complete pages: 3 completed, 1 active, and 69 canceled. The eight recurring SaaS accounts were matched by their exact stored Whop subject ID. The report uses a 12-character SHA-256 pseudonym of each SaaS user ID.
 
-The account references below are the first 12 characters of SHA-256 over the SaaS user ID. They are pseudonymous and have no customer contact details.
+| Account ref | SaaS tier | Lifetime usage | Matched target-tier statuses | Membership evidence | Owner disposition | Enrollment finding |
+| --- | --- | ---: | --- | --- | --- | --- |
+| 8e52a7428303 | CORE | 0 | canceled 1 | Archived plan `plan_sAEhr77rTrhX4`; historical exact period 2026-08-18T21:39:26.459Z → 2026-09-17T21:39:26.459Z; 30 days | Unknown; owner disposition required | No current entitled membership; do not reenroll |
+| 8499d930a570 | CORE | 0 | canceled 1 | Archived plan `plan_sAEhr77rTrhX4`; historical exact period 2026-08-18T22:02:54.572Z → 2026-09-17T22:02:54.572Z; 30 days | Unknown; owner disposition required | No current entitled membership; do not reenroll |
+| 3457e4043e55 | ENTERPRISE | 0 | canceled 1 | Archived plan `plan_jdy5Z44fMKMAz`; historical exact period 2026-08-18T20:24:52.252Z → 2026-09-17T20:24:52.252Z; 30 days | Owner-confirmed internal test | Excluded from enrollment |
+| a57cd57556a6 | ENTERPRISE | 0 | canceled 1 | Archived plan `plan_jdy5Z44fMKMAz`; historical exact period 2026-08-18T20:40:35.980Z → 2026-09-17T20:40:35.980Z; 30 days | Owner-confirmed internal test | Excluded from enrollment |
+| ad04c321cf39 | ENTERPRISE | 0 | canceled 1 | Archived plan `plan_jdy5Z44fMKMAz`; historical exact period 2026-08-18T21:01:43.678Z → 2026-09-17T21:01:43.678Z; 30 days | Owner-confirmed internal test | Excluded from enrollment |
+| 225be10f468a | ENTERPRISE | 117 | canceled 1 | Archived plan `plan_jdy5Z44fMKMAz`; historical exact period 2026-08-20T06:46:24.023Z → 2026-09-19T06:46:24.023Z; 30 days | Owner-confirmed internal test | Excluded; preserve lifetime usage |
+| 738694d6b03f | ENTERPRISE | 162 | canceled 2 | Archived recurring plan `plan_jdy5Z44fMKMAz` and legacy one-time plan `plan_PZqjKqvMr0KBI`; no current period | Owner-confirmed internal test | Excluded; preserve lifetime usage |
+| 1f4744c7af0b | ENTERPRISE | 10 | active 1, canceled 2 | Active membership on archived plan `plan_jdy5Z44fMKMAz`, numeric 30-day cadence; current period start/end absent; promo code present and both initial/renewal prices are USD 0.00 | Owner-confirmed internal test | Excluded; no period anchor; preserve lifetime usage |
 
-| Account ref | SaaS tier | Lifetime usage | Matched target-tier status counts | Target-tier plan IDs | Numeric cadence days observed | Provider period evidence | Enrollment finding |
-| --- | --- | ---: | --- | --- | --- | --- | --- |
-| 8e52a7428303 | CORE | 0 | canceled 1 | plan_sAEhr77rTrhX4 | 30 | 2026-08-18T21:39:26.459Z → 2026-09-17T21:39:26.459Z (canceled) | No current entitled recurring membership |
-| 8499d930a570 | CORE | 0 | canceled 1 | plan_sAEhr77rTrhX4 | 30 | 2026-08-18T22:02:54.572Z → 2026-09-17T22:02:54.572Z (canceled) | No current entitled recurring membership |
-| 3457e4043e55 | ENTERPRISE | 0 | canceled 1 | plan_jdy5Z44fMKMAz | 30 | 2026-08-18T20:24:52.252Z → 2026-09-17T20:24:52.252Z (canceled) | No current entitled recurring membership |
-| a57cd57556a6 | ENTERPRISE | 0 | canceled 1 | plan_jdy5Z44fMKMAz | 30 | 2026-08-18T20:40:35.980Z → 2026-09-17T20:40:35.980Z (canceled) | No current entitled recurring membership |
-| ad04c321cf39 | ENTERPRISE | 0 | canceled 1 | plan_jdy5Z44fMKMAz | 30 | 2026-08-18T21:01:43.678Z → 2026-09-17T21:01:43.678Z (canceled) | No current entitled recurring membership |
-| 225be10f468a | ENTERPRISE | 117 | canceled 1 | plan_jdy5Z44fMKMAz | 30 | 2026-08-20T06:46:24.023Z → 2026-09-19T06:46:24.023Z (canceled) | No current entitled recurring membership |
-| 738694d6b03f | ENTERPRISE | 162 | canceled 2 | plan_PZqjKqvMr0KBI<br>plan_jdy5Z44fMKMAz | 30 | Not returned | No current entitled recurring membership |
-| 1f4744c7af0b | ENTERPRISE | 10 | active 1, canceled 2 | plan_PZqjKqvMr0KBI<br>plan_jdy5Z44fMKMAz | 30 | Not returned | Active membership lacks exact current period boundaries |
+## Verified current and historical plans
 
-## Findings
+Exact plan GETs confirm the current owner-approved pricing options and their product associations:
 
-- The production impact remains 2 Core accounts with 0 lifetime usage and 6 Enterprise accounts with 289 combined lifetime usage (individual range 0–162). The eight counters were read only and remain unchanged.
-- Seven mapped SaaS accounts have no currently entitled recurring Whop membership matching their stored tier. Their matching current-tier records are canceled. Six of those accounts have an exact historical billing period on a canceled membership; those dates are not current renewal anchors.
-- One Enterprise account has an active membership on plan_jdy5Z44fMKMAz. Whop returned a 30-day cadence for that membership, and GET on the plan returned billing_period: 30. Whop returned neither current_period_start nor current_period_end, so it is not eligible for seeding.
-- Core historical memberships on plan_sAEhr77rTrhX4 returned a 30-day cadence; the matching GET plan record also returned billing_period: 30. Enterprise historical memberships on plan_jdy5Z44fMKMAz returned exact 30-day periods. Two accounts also have canceled Enterprise memberships on plan_PZqjKqvMr0KBI, for which the plan endpoint returned no numeric billing period.
-- The current recurring plan records do not match the owner-reported screenshot prices: plan_jdy5Z44fMKMAz is Enterprise, 30-day renewal, USD 697/month; plan_sAEhr77rTrhX4 is Core, 30-day renewal, USD 147/month. The owner-reported current options were USD 499/month and USD 149/month. Two mapped Enterprise accounts also have canceled one-time memberships on plan_PZqjKqvMr0KBI (USD 697, no recurring period). The price/plan mapping requires owner resolution.
-- The API read did not include a payment receipt, so active status alone does not prove a successful paid renewal. Payment state must be reconciled privately before release.
-- For the other seven mapped accounts, the evidence does not establish an active paid subscription. Their current tier membership state must be resolved before release. No enrollment accounts qualify (0/8).
+| Tier | Current plan ID | Product | Plan type | Numeric `billing_period` | Price | Visibility | Trial |
+| --- | --- | --- | --- | ---: | --- | --- | --- |
+| CORE | `plan_GQTDPXnvijugf` | `prod_1GtBYI46Z2HQS` — FrameLeads Core: Reply Decision Intelligence | renewal | 30 days | USD 149/month | visible | none configured |
+| ENTERPRISE | `plan_uGDGf5WKW7hlE` | `prod_7CoRolH7SDjmQ` — FrameLeads Enterprise: Revenue Decision Intelligence | renewal | 30 days | USD 499/month | visible | none configured |
 
-## Evidence handling and limits
+The earlier Core plan `plan_sAEhr77rTrhX4` (USD 147/month) and Enterprise plan `plan_jdy5Z44fMKMAz` (USD 697/month) reference those same respective products, are both renewal plans with `billing_period: 30`, and are now archived. Their provider records date to 2026-08-18 and were updated as the new plans were created on 2026-10-25. The old prices are historical pricing, not a mismatch in the current visible plan catalog. The separate Enterprise plan `plan_PZqjKqvMr0KBI` is one-time, USD 697, with no recurring billing period.
 
-The live API payload used account.id, plan_id, current_period_start, and current_period_end. A temporary in-memory adapter first mapped those provider fields to the collector's expected aliases while preserving their values. The checked-in collector was then updated to accept both Whop response shapes and rerun directly against the live API; it produced the same redacted eight-account report and an empty enrollment manifest. The matching provider adapter in whop-memberships.ts now uses the same alias normalization. No tests were added or run as part of this evidence continuation.
+## Findings and release impact
 
-The complete private crosswalk, membership IDs/statuses, exact historical periods, and account IDs are held outside Git in a mode-0600 private activation review file. It is marked DO_NOT_APPLY_BLOCKED, contains an empty executable enrollment manifest, and has SHA-256 aca2664dbb9ec6a979d196794cbc67c8aa8dbb0e625560c01c06eaf197205e29. It must not be committed or passed to the enrollment tool as an approved manifest.
+- The owner-confirmed internal test cohort is six Enterprise accounts. They are not production enrollment candidates, regardless of historical usage. No subscription will be recreated and no usage will be reset.
+- The two Core accounts are not confirmed as tests. Both have canceled Core memberships; their owner disposition remains open. No automatic re-enrollment or historical-period substitution is allowed.
+- Seven of eight accounts have no current entitled recurring membership matching their SaaS tier. The remaining active membership belongs to the confirmed Enterprise test cohort and is on the archived $697 plan. None of the eight qualifies for renewal enrollment.
+- The active membership has a promo code and zero initial and renewal prices in the list response. The archived plan has no configured trial. Individual membership detail could not be retrieved in this follow-up because the restricted executor route could not resolve `api.whop.com`; therefore the promotion is consistent with a free checkout, but the available evidence does not prove that it caused the missing period boundaries. No current-period timestamp was inferred.
+- No membership was observed on either current $149/$499 plan. The plan catalog verifies future pricing and a numeric 30-day period, but a genuine paid membership on each current plan has not yet demonstrated that Whop returns exact current-period boundaries. The allocator must remain fail-closed until a real membership provides both boundaries and passes the existing cadence validation.
+- Current entitlement code rejects canceled memberships during live verification and persists `INACTIVE` on an authoritative no-membership result. Reviewed paid-feature routes call a fresh entitlement check; the hard-coded OAuth callback fallback accepts login and sets an Enterprise tier when one configured email has no membership, but the protected feature route then refreshes the membership and denies paid access. The explicit `NEXT_PUBLIC_ADMIN_EMAIL` bypass separately grants Enterprise to the configured administrator. No canceled membership is treated as paid by the normal live-check path; no customer-to-admin mapping was made in this report. Owner disposition is required for the callback login exception and configured administrator bypass. Identity-only sessions can still reach customer-owned data routes, which is separate from paid-feature access.
+- The account counters remain unchanged: Core 2 accounts / 0 lifetime usage; Enterprise 6 accounts / 289 total lifetime usage (range 0–162); Micro-Pilot 7 accounts / 52 usage, excluded from recurring renewal. The six Enterprise test accounts remain excluded, and both Core account classifications remain unresolved.
+- A private crosswalk and activation manifest remain outside Git with mode 0600. The executable enrollment manifest is empty. Existing Micro-Pilot entitlements, lifetime usage, PR #17, and checkout work are preserved.
 
-## Release blockers
+## Owner approvals required
 
-1. Resolve the discrepancy between the owner-reported Core USD 149/Enterprise USD 499 pricing options and the matched provider plan records Core USD 147/Enterprise USD 697; obtain an owner-reviewed disposition for each affected account.
-2. Resolve why seven active SaaS tiers have no currently entitled matching Whop membership and obtain an owner-reviewed disposition for each account.
-3. Obtain the active Enterprise membership's exact period boundaries from a provider read that returns them; do not infer them from creation time, a prior canceled period, or 30-day arithmetic. Reconcile its payment state privately.
-4. Confirm whether the canceled plan_PZqjKqvMr0KBI memberships are legacy/nonrecurring and map each historical plan to the reviewed pricing options.
-5. Review the per-account lifetime seed impact, exact migration and release commit, and current restore readiness.
-6. Complete normally authenticated desktop and mobile verification after the reviewed release.
+1. Provide a disposition for each of the two Core accounts (retain as historical canceled accounts, or separately resolve current customer status). Do not label either an internal test without evidence.
+2. Decide whether the hard-coded OAuth Enterprise fallback is an intentional admin exception or must be removed; if retained, identify the approved account through the private channel. No account-level identifiers are published here.
+3. Approve a genuine future-customer enrollment policy tied only to the verified visible current plan IDs and exact 30-day numeric contract; exclude all eight historical accounts from automated enrollment.
+4. Before enabling allocation, verify exact start/end boundaries on a genuine paid membership for each current plan. If Whop does not return reliable boundaries, keep allocation disabled for that membership and resolve the provider contract.
+5. Review the exact migration/release commit, per-account seed impact, current Neon restore point and migration history, and approve the release separately.
+6. Complete authenticated desktop/mobile verification and separately approve production migration, deployment, future-account enrollment/cutover, and renewal activation. No approval is implied by this evidence packet.
 
-Status: **blocked; keep PR #18 draft; no migration, merge, enrollment, activation, or billing write is approved.**
+**Status: ready for release review, not for production activation.** Current plan pricing is resolved; membership-boundary proof, two Core dispositions, OAuth exception disposition, migration/release approval, restore readiness, and UI verification remain open. No migration, merge, deployment, enrollment, activation, or Whop billing change is authorized.
