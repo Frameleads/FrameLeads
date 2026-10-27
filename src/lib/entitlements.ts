@@ -51,7 +51,7 @@ export function hasFeatureAccess(tierValue: unknown, feature: FeatureKey): boole
   return tier === 'CORE' && !ENTERPRISE_FEATURES.has(feature);
 }
 
-export function monthlyLeadQuotaForTier(tierValue: unknown): number {
+export function monthlyLeadQuotaForTier(tierValue: unknown, enterpriseLegacyQuota = false): number {
   const tier = normalizeFrameLeadsTier(tierValue);
-  return tier === 'ENTERPRISE' ? 20_000 : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
+  return tier === 'ENTERPRISE' ? (enterpriseLegacyQuota ? 20_000 : 10_000) : tier === 'CORE' ? 500 : tier === 'MICRO_PILOT' ? 25 : 0;
 }
