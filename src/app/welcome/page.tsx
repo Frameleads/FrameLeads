@@ -67,7 +67,7 @@ export default function WelcomePortalPage() {
       </main>
 
       {/* Bottom Minimalist Footer */}
-      <footer className="relative z-10 w-full px-8 py-6 border-t border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md flex flex-col sm:flex-row justify-between items-center text-xs text-gray-600 gap-2">
+      <footer className="relative z-10 w-full px-8 py-6 border-t border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md flex flex-col sm:flex-row justify-between items-center text-center text-xs text-[#A0A0A0] gap-2">
         <div style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
           FRAMELEADS © 2026 • GOVERNED REPLY DECISIONS
         </div>
