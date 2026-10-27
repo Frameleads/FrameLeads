@@ -39,32 +39,38 @@ Micro-Pilot remain unchanged.
 The pricing configuration gate is OWNER_VERIFIED. Membership identity, current
 status, exact period boundaries and API-contract gates remain OPEN.
 
-## Required authorized read-only evidence
+## Read-only provider evidence collected — 2026-10-27
 
-For each of the two Core and six Enterprise SaaS records in the current database
-snapshot, privately reconcile:
+The dedicated `WHOP_AUDIT_TOKEN` and `WHOP_AUDIT_COMPANY_ID` bindings were
+reported ready by the managed runtime. Its current HTTP policy was restricted
+and enforced, with `api.whop.com` explicitly allowed. The audit used GET only
+for the membership list, selected membership records, and exact plan records.
+Pagination completed across two pages with 73 provider memberships.
 
-1. SaaS user ID and canonical Whop subject ID (no email is needed).
-2. Whop membership ID, business/company ID, product ID and exact plan ID.
-3. Current lifecycle status, valid/access indicators, cancel_at_period_end and
-   expiry where present. Retain the raw status in the private evidence record.
-4. Exact renewal_period_start and renewal_period_end from the same membership,
-   with the original timestamp representation and normalized UTC values.
-5. Plan interval fields returned by the API, and their correspondence to the
-   owner-inspected monthly pricing option. Do not replace missing fields with 30.
-6. Collection time, source origin, and completeness of membership pagination.
-   Resolve multiple current memberships deterministically or exclude for review.
+The production Neon rows were queried read-only through the connected Neon SQL
+tool because this executor had no TCP route to the database host. Eight recurring
+SaaS accounts matched Whop subjects by exact stored Whop subject ID (no email).
+Seven have no currently entitled recurring membership matching their stored
+tier; the remaining Enterprise account has one active membership, but its
+current period start and end are absent. Six accounts have exact historical
+periods on canceled memberships. Those dates are not current renewal anchors.
 
-Use the existing read-only collector when a least-privilege Whop membership/plan
-credential is securely bound as WHOP_AUDIT_TOKEN with WHOP_AUDIT_COMPANY_ID and
-approved live API network access. Keep original status/identity evidence private;
-its plan/period proof output alone is not a substitute for inspecting raw status.
-Alternatively use a private owner-provided membership export containing these
-fields. Never paste passwords, OAuth tokens, cookies or full HAR files.
+The API returned `account.id`, `plan_id`, `current_period_start`, and
+`current_period_end`. The collector and entitlement adapter now normalize these
+fields as well as the nested `company`/`plan`/`renewal_period_*` form. The
+read-only collector completed with an empty enrollment manifest. Its report is
+[WHOP-ACTIVATION-IMPACT.md](WHOP-ACTIVATION-IMPACT.md).
 
-Current access recheck: no connected Whop read tool; no Whop credential or buyer
-session in the managed runtime; both audit bindings absent. The collector exited
-before database/network access. No membership evidence was invented or inferred.
+Exact plan reads add a material configuration discrepancy. The observed
+recurring Enterprise plan `plan_jdy5Z44fMKMAz` is USD 697/month with a 30-day
+period; the observed recurring Core plan `plan_sAEhr77rTrhX4` is USD 147/month
+with a 30-day period. The owner-reported screenshot options are USD 499/month
+and USD 149/month. Two mapped Enterprise accounts also have canceled one-time
+memberships on `plan_PZqjKqvMr0KBI`; its plan record has no recurring period.
+The active Enterprise membership's current period boundaries are missing.
+Resolve the price/plan mapping, status, payment state, and current period before
+any activation. The exact membership IDs, user IDs, and subject crosswalk remain
+in a mode-0600 private review file outside Git.
 
 ## Activation review packet
 
