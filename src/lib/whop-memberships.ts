@@ -14,10 +14,14 @@ type WhopMembership = {
   user?: string | { id?: string } | null;
   company_id?: string;
   company?: string | { id?: string } | null;
+  account?: string | { id?: string } | null;
+  plan_id?: string;
   cancel_at_period_end?: boolean;
   billing_period_days?: number | null;
   renewal_period_start?: string | number | null;
   renewal_period_end?: string | number | null;
+  current_period_start?: string | number | null;
+  current_period_end?: string | number | null;
   expires_at?: string | number | null;
   product?: { id?: string; name?: string; title?: string; route?: string; metadata?: unknown };
   plan?: { billing_period?: number | null; id?: string; name?: string; title?: string; metadata?: unknown };
@@ -68,6 +72,21 @@ function relationId(value: string | { id?: string } | null | undefined): string 
   return typeof value === "string" ? value : value?.id;
 }
 
+/** Normalize both Whop membership response shapes without changing provider values. */
+function normalizeMembership(membership: WhopMembership): WhopMembership {
+  const companyId = membership.company_id || relationId(membership.company) || relationId(membership.account);
+  const planId = membership.plan?.id || membership.plan_id;
+  return {
+    ...membership,
+    ...(companyId ? { company_id: companyId } : {}),
+    ...(planId && !membership.plan?.id
+      ? { plan: { id: planId, billing_period: membership.billing_period_days } }
+      : {}),
+    renewal_period_start: membership.renewal_period_start ?? membership.current_period_start,
+    renewal_period_end: membership.renewal_period_end ?? membership.current_period_end,
+  };
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -116,7 +135,7 @@ export async function verifyWhopSubscription(
       throw new Error("Whop membership response was invalid");
     }
     if (!Array.isArray(payload.data)) throw new Error("Whop membership response was malformed");
-    memberships.push(...payload.data);
+    memberships.push(...payload.data.map(normalizeMembership));
 
     if (payload.page_info?.has_next_page !== true) break;
     const next = payload.page_info.end_cursor;
