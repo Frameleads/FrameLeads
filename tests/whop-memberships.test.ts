@@ -38,7 +38,8 @@ test('SaaS recognizes both legacy and newly priced Whop checkout plans for all t
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_sAEhr77rTrhX4' } }), { tier: 'CORE', monthlyQuota: 500 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf' } }), { tier: 'CORE', monthlyQuota: 500 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_jdy5Z44fMKMAz' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
-  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+  assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
+  assert.deepEqual(resolveWhopSubscription({ product: { id: 'prod_7CoRolH7SDjmQ' }, plan: { id: 'plan_uGDGf5WKW7hlE' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
   assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_8qLWfJZHQUYZf' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
   assert.deepEqual(resolveWhopSubscription({ product: { id: 'prod_bTf6npFBh6teM' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
 });
@@ -55,7 +56,7 @@ test('Sandbox only recognizes explicit Sandbox plan IDs, never old production ID
     process.env.WHOP_ENTERPRISE_IDS = 'plan_YmOeElzhAHzjD';
     assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_kEqA9P0Tj0TBT' } }), { tier: 'MICRO_PILOT', monthlyQuota: 25 });
     assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_B1F9owb9s65h0' } }), { tier: 'CORE', monthlyQuota: 500 });
-    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_YmOeElzhAHzjD' } }), { tier: 'ENTERPRISE', monthlyQuota: 20_000 });
+    assert.deepEqual(resolveWhopSubscription({ plan: { id: 'plan_YmOeElzhAHzjD' } }), { tier: 'ENTERPRISE', monthlyQuota: 10_000 });
     assert.throws(() => resolveWhopSubscription({ plan: { id: 'plan_GQTDPXnvijugf', name: 'Core' } }), /Unrecognized Whop product/);
     assert.throws(() => resolveWhopSubscription({ product: { name: 'Enterprise' } }), /Unrecognized Whop product/);
     delete process.env.WHOP_CORE_IDS;
