@@ -43,15 +43,15 @@ export default function WelcomePortalPage() {
 
           {/* Headline with Hard Line Break */}
           <h1
-            className="text-5xl md:text-6xl font-bold text-center tracking-tight mb-8 leading-[1.1]"
+            className="text-4xl sm:text-5xl md:text-6xl font-bold text-center tracking-tight mb-8 leading-[1.1]"
             style={{ color: '#FF5A1F', textShadow: '0px 0px 35px rgba(255, 90, 31, 0.4)' }}
           >
-            Your outbound <br /> architecture is live.
+            Keep outbound moving <br /> after the reply.
           </h1>
 
           {/* Subheadline */}
           <p className="text-gray-400 text-center max-w-2xl mx-auto text-lg mb-12 leading-relaxed">
-            Stop babysitting your inbox. Connect your sending tools, drop your leads, and let the engine handle the endless follow-ups. You only step in when a whale replies.
+            FrameLeads uses reply intent, prospect context, and your sales rules to guide the next action. Routine decisions can move forward within your rules, while consequential replies stay under your control.
           </p>
         </div>
 
@@ -61,7 +61,7 @@ export default function WelcomePortalPage() {
           className="flex items-center justify-center text-center px-8 py-4 bg-[#FF5A1F] text-white font-medium rounded-xl shadow-[0_10px_30px_-10px_rgba(255,90,31,0.5)]"
           style={{ fontFamily: 'Oxanium, sans-serif' }}
         >
-          <span>Enter Workspace</span>
+          <span>Enter Decision Workspace</span>
         </button>
 
       </main>
@@ -69,11 +69,10 @@ export default function WelcomePortalPage() {
       {/* Bottom Minimalist Footer */}
       <footer className="relative z-10 w-full px-8 py-6 border-t border-gray-800/60 bg-[#0a0a0a]/50 backdrop-blur-md flex flex-col sm:flex-row justify-between items-center text-xs text-gray-600 gap-2">
         <div style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
-          FRAMELEADS ARCHITECTURE © 2026 • ZERO-CODE DEPLOYMENT
+          FRAMELEADS © 2026 • GOVERNED REPLY DECISIONS
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
-          <span>ALL LOGIC ENGINES OPERATIONAL</span>
+          <span>PROSPECT CONTEXT • SALES RULES • HUMAN CONTROL</span>
         </div>
       </footer>
 
