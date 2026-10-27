@@ -8,9 +8,9 @@ const spaceGrotesk = Space_Grotesk({ subsets: ['latin'], variable: '--font-space
 const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mono' });
 
 export const metadata: Metadata = {
-  title: "FrameLeads — AI-Powered B2B Outreach Engine",
+  title: "FrameLeads — Governed Decisions After the Reply",
   description:
-    "Signal-driven outreach generation for high-ticket B2B consultancies. Powered by LangGraph.",
+    "FrameLeads uses reply intent, prospect context, and sales rules to guide what happens after a prospect replies.",
 };
 
 export default function RootLayout({
