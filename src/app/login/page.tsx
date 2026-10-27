@@ -10,7 +10,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-black">
+    <div className="min-h-screen flex items-center justify-center bg-[#1A1A1A]">
       {/* Ambient glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-primary/5 rounded-full blur-[120px]" />
@@ -28,19 +28,19 @@ export default function LoginPage() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground">
-            AI-powered outreach for high-ticket B2B
+            The governed decision layer for outbound replies
           </p>
         </div>
 
         {/* Auth Card */}
-        <div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
+        <div className="rounded-2xl border border-white/10 bg-[#242424] p-8 shadow-2xl shadow-black/20">
           <div className="space-y-4">
             <div className="text-center mb-6">
               <h2 className="text-lg font-medium text-white">
                 Welcome back
               </h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Sign in to access your outreach engine
+                Review prospect replies, next actions, and decisions that need you
               </p>
             </div>
 
@@ -63,7 +63,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-xs text-center text-muted-foreground mt-8">
-          Subscription validated via Whop &middot; Powered by LangGraph
+          Account access via Whop &middot; Governed reply decisions
         </p>
       </div>
     </div>
