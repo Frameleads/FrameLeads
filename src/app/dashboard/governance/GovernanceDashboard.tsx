@@ -205,6 +205,11 @@ export default function GovernanceDashboard({
   const hasLatencyData = metrics.timeSeriesData.some(
     (d) => d.avgLatencyMin > 0
   );
+  // A queue can contain real protected records without a recorded ARR amount.
+  // Show a single $0 axis tick in that case, rather than tiny "0.004k" ticks.
+  const hasNonzeroProtectedARR = metrics.timeSeriesData.some(
+    (d) => d.protectedARR > 0
+  );
 
   const pageContent = (
     <div className="mx-auto w-full max-w-6xl">
@@ -355,10 +360,10 @@ export default function GovernanceDashboard({
       </div>
 
       {/* ── Data Visualizations (Live-Bound) ─────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
+      <div className="grid min-w-0 grid-cols-1 lg:grid-cols-2 gap-5 mb-8">
 
         {/* ─── Chart 1: Protection Velocity (Area Chart) ────────────── */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7">
+        <div className="relative min-w-0 overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-sm font-medium text-gray-300">Protection Velocity</h3>
@@ -375,12 +380,11 @@ export default function GovernanceDashboard({
           </div>
 
           {hasProtectionData ? (
-            <div className="h-[240px] w-full overflow-x-auto hide-scrollbar pr-4 md:pr-0">
-              <div className="min-w-[400px] h-full">
-                <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] w-full min-w-0 overflow-hidden">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <AreaChart
                     data={metrics.timeSeriesData}
-                    margin={{ top: 4, right: 20, left: -20, bottom: 0 }}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
                   >
                     <defs>
                       <linearGradient id="protectionGradient" x1="0" y1="0" x2="0" y2="1">
@@ -396,13 +400,15 @@ export default function GovernanceDashboard({
                       tick={{ fill: "#4b5563", fontSize: 10 }}
                       interval={Math.max(0, Math.floor(metrics.timeSeriesData.length / 5) - 1)}
                     />
-                    <YAxis 
-                      stroke="#888888" 
-                      tickLine={false} 
-                      axisLine={false} 
-                      width={60} 
-                      tick={{ fontSize: 10, fill: '#888888' }} 
-                      tickFormatter={(value) => "$" + (value / 1000) + "k"}
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      width={64}
+                      allowDecimals={false}
+                      domain={hasNonzeroProtectedARR ? [0, "auto"] : [0, 1]}
+                      ticks={hasNonzeroProtectedARR ? undefined : [0]}
+                      tick={{ fontSize: 10, fill: "#888888" }}
+                      tickFormatter={(value: number) => formatCurrency(value)}
                     />
                     <Tooltip
                       content={<ProtectionTooltip />}
@@ -425,7 +431,6 @@ export default function GovernanceDashboard({
                     />
                   </AreaChart>
                 </ResponsiveContainer>
-              </div>
             </div>
           ) : (
             <ChartEmptyState label="Protection Velocity" />
@@ -433,7 +438,7 @@ export default function GovernanceDashboard({
         </div>
 
         {/* ─── Chart 2: Review Latency (Bar Chart) ──────────────────── */}
-        <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7">
+        <div className="relative min-w-0 overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 md:p-7">
           <div className="flex items-start justify-between mb-6">
             <div>
               <h3 className="text-sm font-medium text-gray-300">Review Latency</h3>
@@ -448,12 +453,11 @@ export default function GovernanceDashboard({
           </div>
 
           {hasLatencyData ? (
-            <div className="h-[240px] w-full overflow-x-auto hide-scrollbar pr-4 md:pr-0">
-              <div className="min-w-[400px] h-full">
-                <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] w-full min-w-0 overflow-hidden">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart
                     data={metrics.timeSeriesData}
-                    margin={{ top: 4, right: 20, left: -20, bottom: 0 }}
+                    margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
                     barCategoryGap="25%"
                   >
                     <XAxis
@@ -498,7 +502,6 @@ export default function GovernanceDashboard({
                     />
                   </BarChart>
                 </ResponsiveContainer>
-              </div>
             </div>
           ) : (
             <ChartEmptyState label="Review Latency" />
