@@ -145,6 +145,9 @@ model User {
   decisionOutcomes        DecisionOutcome[]
   learningSuggestions     LearningSuggestion[]
   marketMessagingProfiles MarketMessagingProfile[]
+  allowancePeriods ProspectAllowancePeriod[]
+  allowanceOperations ProspectAllowanceOperation[]
+  allowanceCursor ProspectAllowanceCursor?
   microPilotDecisionClaims MicroPilotDecisionClaim[]
   microPilotResearchClaims MicroPilotResearchClaim[]
   microPilotOutboundClaims MicroPilotOutboundClaim[]
@@ -1517,4 +1520,56 @@ model DecisionActionEvent {
   createdAt          DateTime                 @default(now())
 
   @@index([userId, decisionId, createdAt])
+}
+
+// Monthly allowance is opt-in per reviewed tenant. Lifetime User usage is retained.
+model ProspectAllowancePeriod {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  membershipId String
+  companyId    String
+  planId       String
+  periodStart  DateTime @db.Timestamptz(3)
+  periodEnd    DateTime @db.Timestamptz(3)
+  used         Int
+  legacySeed   Int      @default(0)
+  verifiedAt   DateTime @db.Timestamptz(3)
+  closedAt     DateTime? @db.Timestamptz(3)
+  cursors      ProspectAllowanceCursor[]
+  operations   ProspectAllowanceOperation[]
+
+  @@unique([userId, id])
+  @@unique([userId, periodStart])
+}
+
+model ProspectAllowanceCursor {
+  userId               String @id
+  user                 User   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  currentPeriodId      String?
+  currentPeriod        ProspectAllowancePeriod? @relation(fields: [userId, currentPeriodId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  approvedMembershipId String
+  approvedCompanyId    String
+  approvedPlanId       String
+  // Exact provider billing interval reviewed as a monthly allowance cadence.
+  approvedBillingDays  Int
+  approvedLegacyUsage  Int
+  reviewReference      String
+  enrolledAt           DateTime @default(now()) @db.Timestamptz(3)
+}
+
+model ProspectAllowanceOperation {
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  operationId String
+  requestHash String
+  periodId    String?
+  period      ProspectAllowancePeriod? @relation(fields: [userId, periodId], references: [userId, id], onDelete: NoAction, onUpdate: NoAction)
+  allocated   Int?
+  status      String @default("PROCESSING")
+  response    Json?
+  statusCode  Int?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  @@id([userId, operationId])
+  @@index([userId, periodId])
 }
