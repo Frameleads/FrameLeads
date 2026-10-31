@@ -309,12 +309,76 @@ test('ten controlled inbound scenarios validate through canonical analysis and r
     assert.equal(f.calls(), 1, reply);
     assert.ok(result.decision?.trace, reply);
     const requiresCommercialReview = commercialIntents.includes(intent);
-    assert.equal(result.decision?.status, requiresCommercialReview ? 'NEEDS_REVIEW' : 'READY', reply);
-    if (requiresCommercialReview) {
+    const safetyReviewReason = intent === TriageIntent.SECURITY ? 'SECURITY_REVIEW_REQUIRED' :
+      intent === TriageIntent.CONFUSED ? 'AMBIGUOUS_REPLY_REQUIRES_REVIEW' :
+      intent === TriageIntent.UNSUBSCRIBE ? 'UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION' : null;
+    assert.equal(result.decision?.status, requiresCommercialReview || safetyReviewReason ? 'NEEDS_REVIEW' : 'READY', reply);
+    if (requiresCommercialReview || safetyReviewReason) {
       assert.equal(result.decision?.suggestedReply, null, reply);
-      assert.ok(result.decision?.reviewReasons.includes('COMMERCIAL_AUTHORITY_UNVERIFIED'), reply);
+      assert.ok(result.decision?.reviewReasons.includes(requiresCommercialReview ?
+        'COMMERCIAL_AUTHORITY_UNVERIFIED' : safetyReviewReason!), reply);
     }
+    if (intent === TriageIntent.UNSUBSCRIBE)
+      assert.equal(result.decision?.recommendedNextAction, 'NO_SALES_OUTREACH', reply);
   }
+});
+
+test('a high-confidence confused or security reply still requires human review', async () => {
+  const cases = [
+    { reply: 'Maybe, I am not sure what you mean.', intent: TriageIntent.CONFUSED,
+      evidence: 'not sure what you mean', reason: 'AMBIGUOUS_REPLY_REQUIRES_REVIEW' },
+    { reply: 'Please send your SOC 2 report.', intent: TriageIntent.SECURITY,
+      evidence: 'SOC 2 report', reason: 'SECURITY_REVIEW_REQUIRED' },
+  ];
+  for (const c of cases) {
+    const f = fixture({ reply: c.reply, answer: { ...answer, primaryIntent: c.intent,
+      intents: [{ intent: c.intent, confidence: 96, evidence: c.evidence }],
+      overallConfidence: 97, recommendedNextAction: 'REPLY_WITH_FACTS',
+      suggestedReply: 'Here are the details.' } });
+    const result = await triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps);
+    assert.equal(result.status, 'NEEDS_REVIEW');
+    assert.ok(result.decision?.reviewReasons.includes(c.reason), c.reply);
+    assert.equal(result.decision?.requiresReview, true);
+  }
+});
+
+test('text-classified unsubscribe primary or secondary withholds sales draft and action', async () => {
+  const cases = [
+    { reply: 'Unsubscribe me now.', primary: TriageIntent.UNSUBSCRIBE,
+      intents: [{ intent: TriageIntent.UNSUBSCRIBE, confidence: 96, evidence: 'Unsubscribe me' }] },
+    { reply: 'Interested, but please unsubscribe me.', primary: TriageIntent.POSITIVE_INTEREST,
+      intents: [{ intent: TriageIntent.POSITIVE_INTEREST, confidence: 95, evidence: 'Interested' },
+        { intent: TriageIntent.UNSUBSCRIBE, confidence: 93, evidence: 'unsubscribe me' }] },
+  ];
+  for (const c of cases) {
+    const f = fixture({ reply: c.reply, answer: { ...answer, primaryIntent: c.primary,
+      intents: c.intents, overallConfidence: 96, recommendedNextAction: 'OFFER_MEETING',
+      suggestedReply: 'Can we meet next week?' } });
+    const result = await triageInboundSignal({ userId: f.tenant, signalId: 'signal-1' }, f.deps);
+    assert.equal(result.status, 'NEEDS_REVIEW');
+    assert.ok(result.decision?.reviewReasons.includes('UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION'));
+    assert.equal(result.decision?.suggestedReply, null);
+    assert.equal(result.decision?.recommendedNextAction, 'NO_SALES_OUTREACH');
+  }
+});
+
+test('interest score contradicting rejection or unsubscribe fails validation', () => {
+  for (const intent of [TriageIntent.UNSUBSCRIBE, TriageIntent.NOT_INTERESTED]) {
+    const reply = intent === TriageIntent.UNSUBSCRIBE ? 'Please unsubscribe.' : 'Not interested.';
+    const value = { ...answer, primaryIntent: intent, intents: [{ intent, confidence: 90, evidence: reply }],
+      prospectInterestScore: 99 };
+    assert.throws(() => validateTriageOutput(value, reply), /Interest score contradicts/);
+    assert.equal(safeTriageOutputDiagnostic(new TypeError('Interest score contradicts rejection or unsubscribe')),
+      'INTEREST_SCORE_CONTRADICTS_REJECTION');
+    assert.equal(validateTriageOutput({ ...value, prospectInterestScore: 10 }, reply).prospectInterestScore, 10);
+    assert.equal(validateTriageOutput({ ...value, prospectInterestScore: null }, reply).prospectInterestScore, null);
+  }
+  const mixed = { ...answer, primaryIntent: TriageIntent.POSITIVE_INTEREST,
+    intents: [{ intent: TriageIntent.POSITIVE_INTEREST, confidence: 93, evidence: 'Interested' },
+      { intent: TriageIntent.UNSUBSCRIBE, confidence: 93, evidence: 'unsubscribe' }], prospectInterestScore: 80 };
+  assert.throws(() => validateTriageOutput(mixed, 'Interested but unsubscribe.'), /Interest score contradicts/);
+  assert.equal(validateTriageOutput({ ...answer, prospectInterestScore: 78 },
+    'What is the price?').prospectInterestScore, 78);
 });
 
 test('changed context revision is captured by explicit re-triage without rewriting history', async () => {
