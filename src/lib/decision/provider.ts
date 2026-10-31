@@ -179,7 +179,7 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
     throw new TypeError('Invalid prospect interest score');
   // Interest is not model confidence. Reject a high buying score on an explicit
   // negative intent, including when it appears as a secondary intent.
-  if (interest != null && interest > 19 &&
+  if (typeof interest === 'number' && interest > 19 &&
     intents.some(item => item.intent === Intent.UNSUBSCRIBE || item.intent === Intent.NOT_INTERESTED))
     throw new TypeError('Interest score contradicts rejection or unsubscribe');
   return { primaryIntent: raw.primaryIntent as Intent, intents,
