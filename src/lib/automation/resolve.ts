@@ -80,6 +80,12 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
       (decision.trace.playbookRevision != null && playbook?.revision !== decision.trace.playbookRevision)));
   const integrationAvailable = Boolean(user?.imapEmail && user.imapPassword && user.imapHost && source.generatedLead?.email);
   const blocked = Boolean(suppression) || has('blockingRules');
+  // Recheck even older persisted decisions and secondary intents at execution time.
+  // A model-classified unsubscribe is not proof of provider-confirmed suppression.
+  const hasIntent = (intent: TriageIntent) => decision.primaryIntent === intent || Boolean(decision.secondaryIntents?.includes(intent));
+  const unsubscribeIntent = hasIntent(TriageIntent.UNSUBSCRIBE);
+  const securityIntent = hasIntent(TriageIntent.SECURITY);
+  const ambiguousIntent = hasIntent(TriageIntent.CONFUSED);
   let resolvedMode: Mode = requestedMode;
   let state: State = requestedMode === Mode.MANDATORY_ESCALATION ? State.ESCALATED :
     requestedMode === Mode.HUMAN_APPROVAL ? State.PENDING_APPROVAL : State.READY;
@@ -102,17 +108,19 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   } else if (input.simulation?.holdActive ?? hold?.active) {
     state = State.HELD; resolvedMode = Mode.MANDATORY_ESCALATION; reasons.push('PROSPECT_HOLD');
   } else if (has('humanReviewRequirements') || has('safeResponseRequirements') || has('unresolvedRules') || unconfigured ||
-    decision.primaryIntent === TriageIntent.UNSUBSCRIBE) {
+    unsubscribeIntent) {
     state = State.ESCALATED; resolvedMode = Mode.MANDATORY_ESCALATION;
     if (has('humanReviewRequirements')) reasons.push('CONSTITUTION_REQUIRES_HUMAN');
     if (has('safeResponseRequirements')) reasons.push('CONSTITUTION_REQUIRES_SAFE_RESPONSE');
     if (has('unresolvedRules') || unconfigured) reasons.push('CONSTITUTION_UNRESOLVED');
-    if (decision.primaryIntent === TriageIntent.UNSUBSCRIBE) reasons.push('UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION');
+    if (unsubscribeIntent) reasons.push('UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION');
   } else if (requestedMode === Mode.MANDATORY_ESCALATION) {
     state = State.ESCALATED; resolvedMode = Mode.MANDATORY_ESCALATION; reasons.push('REQUESTED_ESCALATION');
-  } else if (requestedMode === Mode.HUMAN_APPROVAL || has('approvalRequirements')) {
+  } else if (requestedMode === Mode.HUMAN_APPROVAL || has('approvalRequirements') || securityIntent || ambiguousIntent) {
     state = State.PENDING_APPROVAL; resolvedMode = Mode.HUMAN_APPROVAL;
     if (has('approvalRequirements')) reasons.push('CONSTITUTION_REQUIRES_APPROVAL');
+    if (securityIntent) reasons.push('SECURITY_REVIEW_REQUIRED');
+    if (ambiguousIntent) reasons.push('AMBIGUOUS_REPLY_REQUIRES_REVIEW');
   } else {
     if (override?.mode === CampaignMode.DISABLE_AUTOMATION || policy.autoExecutionDisabled || !policy.autopilotEnabled ||
       !automaticExecutionRolloutEnabled()) reasons.push('AUTOMATIC_EXECUTION_DISABLED');
