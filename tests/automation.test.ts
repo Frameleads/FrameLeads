@@ -165,6 +165,40 @@ test('review, confidence, kill switch, suppression and cap fail closed', async (
   assert.equal(action.state, 'BLOCKED'); assert.equal(f.sends(), 0);
 });
 
+test('legacy READY security and ambiguous decisions cannot gain Autopilot by confidence alone', async () => {
+  for (const [intent, reason] of [
+    ['SECURITY', 'SECURITY_REVIEW_REQUIRED'],
+    ['CONFUSED', 'AMBIGUOUS_REPLY_REQUIRES_REVIEW'],
+  ] as const) {
+    const f = fixture();
+    f.setPolicy({ defaultMode: 'AUTOPILOT', autopilotEnabled: true, autoExecutionDisabled: false });
+    f.setDecision({ primaryIntent: intent, secondaryIntents: [], status: 'READY',
+      confidenceScore: 99, requiresReview: false, reviewReasons: [] });
+    const result = await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db);
+    assert.equal(result.state, 'PENDING_APPROVAL');
+    assert.equal(result.resolvedMode, 'HUMAN_APPROVAL');
+    assert.ok(result.reasons.includes(reason), intent);
+    const attempt = await runAutopilot({ userId: tenant, decisionId: 'decision-a' }, { db: f.db, sender: f.sender });
+    assert.notEqual(attempt.state, 'EXECUTED');
+    assert.equal(f.sends(), 0);
+  }
+});
+
+test('secondary unsubscribe blocks automation without claiming provider suppression', async () => {
+  const f = fixture();
+  f.setPolicy({ defaultMode: 'AUTOPILOT', autopilotEnabled: true, autoExecutionDisabled: false });
+  f.setDecision({ primaryIntent: 'POSITIVE_INTEREST', secondaryIntents: ['UNSUBSCRIBE'],
+    status: 'READY', confidenceScore: 99, requiresReview: false, reviewReasons: [] });
+  const result = await evaluateAutomationMode({ userId: tenant, decisionId: 'decision-a' }, f.db);
+  assert.equal(result.state, 'ESCALATED');
+  assert.equal(result.resolvedMode, 'MANDATORY_ESCALATION');
+  assert.ok(result.reasons.includes('UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION'));
+  assert.equal(result.suppression, null);
+  const attempt = await runAutopilot({ userId: tenant, decisionId: 'decision-a' }, { db: f.db, sender: f.sender });
+  assert.notEqual(attempt.state, 'EXECUTED');
+  assert.equal(f.sends(), 0);
+});
+
 test('reject and escalate audit without sending; cross-tenant action rejected', async () => {
   const f = fixture();
   await assert.rejects(() => actOnDecision({ userId: 'tenant-b', decisionId: 'decision-a', action: 'APPROVE', requestKey: 'request-abc' }, { db: f.db, sender: f.sender }), /not found for tenant/);

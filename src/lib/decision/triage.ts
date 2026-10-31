@@ -49,6 +49,10 @@ export function decideReview(input: { analysis: TriageAnalysis | null; policy: {
     if (input.analysis.overallConfidence < 70 || input.analysis.intents.find(v => v.intent === input.analysis!.primaryIntent)!.confidence < 65)
       reasons.push('LOW_CONFIDENCE');
     const labels = new Set(input.analysis.intents.map(v => v.intent));
+    // Confidence describes classification certainty, not permission to skip human review.
+    if (labels.has(Intent.CONFUSED)) reasons.push('AMBIGUOUS_REPLY_REQUIRES_REVIEW');
+    if (labels.has(Intent.SECURITY)) reasons.push('SECURITY_REVIEW_REQUIRED');
+    if (labels.has(Intent.UNSUBSCRIBE)) reasons.push('UNSUBSCRIBE_INTENT_REQUIRES_CONFIRMATION');
     if ((labels.has(Intent.POSITIVE_INTEREST) && (labels.has(Intent.NOT_INTERESTED) || labels.has(Intent.UNSUBSCRIBE))) ||
       (labels.has(Intent.MEETING_REQUEST) && labels.has(Intent.NOT_INTERESTED))) reasons.push('CONTRADICTORY_INTENTS');
     if (input.analysis.intents.some(v => COMMERCIAL_AUTHORITY_INTENTS.has(v.intent)))
@@ -274,11 +278,14 @@ export async function analyzeAndFinalizeReservedTriage(input:{userId:string;
   const blocked = !policyResults.length || policyResults.some(p => p.blockingRules.length);
   const policyConstrained = blocked || policyResults.some(p => !p.allowed);
   const commercialAuthorityUnverified = Boolean(analysis?.intents.some(v => COMMERCIAL_AUTHORITY_INTENTS.has(v.intent)));
-  const suggestedReply = policyConstrained || commercialAuthorityUnverified ? null : analysis?.suggestedReply ?? null;
+  // A text-classified opt-out is not a provider-confirmed suppression record.
+  // Withhold this decision's draft and sales outreach while confirmation is handled.
+  const unsubscribeIntent = fast?.intent === Intent.UNSUBSCRIBE || Boolean(analysis?.intents.some(v => v.intent === Intent.UNSUBSCRIBE));
+  const suggestedReply = unsubscribeIntent || policyConstrained || commercialAuthorityUnverified ? null : analysis?.suggestedReply ?? null;
   const status = reasons.length ? Status.NEEDS_REVIEW : Status.READY;
   const explanation = cap(analysis?.explanation ?? 'Intent could not be safely resolved; human review is required.', 500);
   const policy = policyResults.map((result, index) => ({ action: policyActions[index], ...policySnapshot(result) }));
-  const finalRecommendation = blocked ? 'NO_SALES_OUTREACH' : policyConstrained || commercialAuthorityUnverified ? 'ESCALATE_TO_HUMAN' :
+  const finalRecommendation = unsubscribeIntent || blocked ? 'NO_SALES_OUTREACH' : policyConstrained || commercialAuthorityUnverified ? 'ESCALATE_TO_HUMAN' :
     analysis?.recommendedNextAction ?? 'REVIEW_MANUALLY';
   const packet = { status, source, primaryIntent: analysis?.primaryIntent ?? null,
     secondaryIntents: analysis?.intents.filter(v => v.intent !== analysis?.primaryIntent).map(v => v.intent) ?? [],

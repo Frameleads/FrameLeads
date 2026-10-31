@@ -105,6 +105,7 @@ export function safeTriageOutputDiagnostic(error: unknown): string {
     'Invalid next action': 'INVALID_NEXT_ACTION',
     'Invalid suggested reply': 'INVALID_SUGGESTED_REPLY',
     'Invalid confidence': 'INVALID_CONFIDENCE',
+    'Interest score contradicts rejection or unsubscribe': 'INTEREST_SCORE_CONTRADICTS_REJECTION',
     'Invalid interpretation': 'INVALID_INTERPRETATION',
     'Invalid explanation': 'INVALID_EXPLANATION',
   };
@@ -176,6 +177,11 @@ export function validateTriageOutput(raw: unknown, currentReply: string): Triage
   if (interest !== undefined && interest !== null &&
     (typeof interest !== 'number' || !Number.isInteger(interest) || interest < 0 || interest > 100))
     throw new TypeError('Invalid prospect interest score');
+  // Interest is not model confidence. Reject a high buying score on an explicit
+  // negative intent, including when it appears as a secondary intent.
+  if (typeof interest === 'number' && interest > 19 &&
+    intents.some(item => item.intent === Intent.UNSUBSCRIBE || item.intent === Intent.NOT_INTERESTED))
+    throw new TypeError('Interest score contradicts rejection or unsubscribe');
   return { primaryIntent: raw.primaryIntent as Intent, intents,
     overallConfidence: confidence(raw.overallConfidence),
     prospectInterestScore: interest === undefined ? null : interest as number | null,
