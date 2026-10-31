@@ -1,0 +1,9 @@
+FROM node:24-bookworm
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-15 postgresql-client-15 iproute2 curl ca-certificates && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY . .
+RUN npx --no-install prisma generate && chmod +x qa/run-disposable-pr21.sh
+ENTRYPOINT ["/bin/bash", "qa/run-disposable-pr21.sh"]
