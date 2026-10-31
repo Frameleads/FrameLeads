@@ -18,7 +18,7 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
     steps:
       - name: Checkout QA branch without persistent token
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Assert runner and no application credentials
