@@ -6,6 +6,7 @@ import { decisionStatusPresentation } from '../src/lib/decision/status-presentat
 import { formatIntentTemperature, intentTemperature, isHighPriorityIntent, resolveIntentTemperature } from '../src/lib/intent-temperature';
 import { getDecisionProspectInterestScore } from '../src/lib/decision/intent-confidence';
 import { getSignalChipStyle, getSignalChipTone } from '../src/app/dashboard/inbox-triage/signal-chip-style';
+import { formatInboundReplyForDisplay } from '../src/app/dashboard/inbox-triage/inbound-reply-display';
 
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
@@ -318,4 +319,34 @@ test('mobile draft controls have breathing room and unresolved-policy notice is 
   assert.match(panel, /unresolvedPolicy \? 'Sales Constitution review is required before any reply is approved/);
   assert.match(panel, /legacy send buttons are intentionally unavailable/);
   assert.match(panel, /disabled=\{isGenerating \|\| isDispatching \|\| \(governedDraftMode && !safeGovernedSuggestion\)\}/);
+});
+
+test('Inbox Triage keeps all queue options in one compact desktop filter row', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.ok(panel.includes('xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1.7fr)]'));
+  assert.ok(panel.includes('xl:flex-nowrap xl:gap-0'));
+  for (const view of ['active', 'archived', 'favorites', 'trash']) {
+    assert.ok(panel.includes("handleQueueViewChange('" + view + "')"), 'Queue tab missing: ' + view);
+  }
+  assert.ok(panel.includes('Favorites ({favoritesCount})'));
+  assert.ok(panel.includes('Trash ({trashCount})'));
+});
+
+test('Entity, inbound email and Intent Score outlines use FrameLeads orange with original border weight', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.ok(panel.includes('rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 shadow-2xl'));
+  assert.ok(panel.includes('flex-grow rounded-lg border border-[#FF5A1F] bg-[#121212]'));
+  assert.ok(panel.includes('bg-[#1a1a1a] border border-[#FF5A1F] p-6 rounded-md'));
+});
+
+test('Inbound email view joins hard-wrapped lines without altering words or deliberate paragraph boundaries', () => {
+  const raw = "Thanks for reaching out. This looks relevant to our agency. We’re an\n11-person team running multiple outbound campaigns, and I’m still reviewing\nimportant prospect replies myself.";
+  assert.equal(formatInboundReplyForDisplay(raw),
+    "Thanks for reaching out. This looks relevant to our agency. We’re an 11-person team running multiple outbound campaigns, and I’m still reviewing important prospect replies myself.");
+  assert.equal(formatInboundReplyForDisplay("Hello,\r\nI can talk.\r\n\r\nRegards,\r\nMira"), "Hello, I can talk.\n\nRegards, Mira");
+  assert.equal(formatInboundReplyForDisplay("Unbroken original text."), "Unbroken original text.");
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.ok(panel.includes('{formatInboundReplyForDisplay(inboundSignal)}'));
+  assert.ok(panel.includes('{formatInboundReplyForDisplay(reply)}'));
+  assert.ok(!panel.includes('setInboundSignal(formatInboundReplyForDisplay('));
 });
