@@ -527,6 +527,11 @@ export default function TriageCommandCenter({
   const [inboundSignal, setInboundSignal] = useState(activeLead ? activeLead.inboundSignal : '');
   const [draftText, setDraftText] = useState<any>(activeLead ? activeLead.draftText : '');
   const [pilotDraftOverrides, setPilotDraftOverrides] = useState<Record<string, string>>({});
+  const [manualDraftOverrides, setManualDraftOverrides] = useState<Record<string, string>>({});
+  const [showManualSendConfirm, setShowManualSendConfirm] = useState(false);
+  const [manualApprovalReason, setManualApprovalReason] = useState('');
+  const [manualSendAcknowledged, setManualSendAcknowledged] = useState(false);
+  const [manualSendError, setManualSendError] = useState('');
   const [draftCopied, setDraftCopied] = useState(false);
   const [intentScore, setIntentScore] = useState<number | null>(activeLead?.intentScore ?? null);
   // Score comes from the SAME completed, tenant-owned decision; never from model
@@ -699,6 +704,8 @@ export default function TriageCommandCenter({
           setTemperature(formatIntentTemperature(data.category === 'UNASSESSED' ? null : data.intentScore));
           setSignals(Array.isArray(data.signals) ? data.signals : []);
           setDraftText(typeof data.draftResponse === 'string' ? data.draftResponse : 'Awaiting Triage Draft...');
+          if (activeLead?.id && typeof data.draftResponse === 'string' && data.draftResponse.trim())
+            setManualDraftOverrides(previous => ({ ...previous, [activeLead.id]: data.draftResponse }));
           setLeads((current) => current.map((lead) => lead.id === activeLead?.id
             ? {
                 ...lead,
@@ -727,39 +734,43 @@ export default function TriageCommandCenter({
   };
 
   const handleDispatch = async () => {
-    if (!activeLead) return;
+    if (!activeLead || !manualSendAcknowledged || manualApprovalReason.trim().length < 12) return;
+    const decisionId = activeLead.decisionPacket?.id || activeLead.decisionId;
+    if (!decisionId) {
+      setManualSendError('Analyze this reply first to create an auditable Decision.');
+      return;
+    }
+    const body = liveDraft.trim();
+    if (!body || body.length > 4000) {
+      setManualSendError('Enter a draft between 1 and 4000 characters.');
+      return;
+    }
+    setManualSendError('');
     setIsDispatching(true);
     try {
-      const finalBody = typeof draftText === 'object' && draftText !== null
-        ? (draftText as any).body || ''
-        : String(draftText);
-
-      const payload = {
-        leadId: activeLead.id,
-        replyText: finalBody,
-        leadEmail: activeLead.email
-      };
-
-      const res = await fetch('/api/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+      const res = await fetch('/api/inbox/manual-send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signalId: activeLead.id, decisionId, editedReply: body,
+          overrideReason: manualApprovalReason.trim(),
+          confirmSend: true, requestKey: crypto.randomUUID(),
+        }),
       });
-
-      if (res.ok) {
-        setDispatchSuccess(true);
-        setTimeout(() => setDispatchSuccess(false), 4000);
-        
-        // Remove from local queue
-        const newLeads = leads.filter(l => l.id !== activeLead.id);
-        setLeads(newLeads);
-        selectLeadById(newLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, newLeads);
-      } else {
-        const errData = await res.json().catch(() => null);
-        console.warn("Backend dispatch response non-200:", errData || res.statusText);
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || result.state !== 'EXECUTED') {
+        setManualSendError(result.error || 'Reply not sent. Review the current policy or mailbox restrictions.');
+        return;
       }
-    } catch (err) {
-      console.error("Network transmission error during dispatch:", err);
+      setShowManualSendConfirm(false);
+      setManualApprovalReason('');
+      setManualSendAcknowledged(false);
+      setDispatchSuccess(true);
+      window.setTimeout(() => setDispatchSuccess(false), 4000);
+      const newLeads = leads.filter(l => l.id !== activeLead.id);
+      setLeads(newLeads);
+      selectLeadById(newLeads.find(lead => lead.recordStatus === 'PENDING')?.id || null, newLeads);
+    } catch {
+      setManualSendError('Delivery could not be verified. Do not retry until the send status is checked.');
     } finally {
       setIsDispatching(false);
     }
@@ -786,9 +797,10 @@ export default function TriageCommandCenter({
   const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy &&
     typeof decisionPacket?.suggestedReply === 'string' && decisionPacket.suggestedReply.trim()
     ? decisionPacket.suggestedReply.trim() : '';
-  const liveDraft = governedDraftMode
-    ? safeGovernedSuggestion ? pilotDraftOverrides[decisionPacket?.id ?? ''] ?? safeGovernedSuggestion : ''
-    : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
+  const liveDraft = activeLead && Object.prototype.hasOwnProperty.call(manualDraftOverrides, activeLead.id)
+    ? manualDraftOverrides[activeLead.id] : governedDraftMode
+      ? safeGovernedSuggestion ? pilotDraftOverrides[decisionPacket?.id ?? ''] ?? safeGovernedSuggestion : ''
+      : typeof draftText === 'object' && draftText !== null ? draftText.body || '' : String(draftText || '');
   const governedDraftWithheld = governedDraftMode && !!decisionPacket && !safeGovernedSuggestion;
   const copyPilotDraft = async () => {
     if (!liveDraft.trim()) return;
@@ -1448,7 +1460,7 @@ export default function TriageCommandCenter({
                 <button 
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
-                  disabled={isGenerating || isDispatching || (governedDraftMode && !safeGovernedSuggestion)}
+                  disabled={isGenerating || isDispatching}
                   className="inline-flex min-h-11 shrink-0 items-center justify-center self-start rounded-lg bg-[#1A1A1A] px-4 py-2 text-xs text-white transition-colors hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
                 >
                   {isEditing ? 'Lock Draft' : 'Unlock Edit Mode'}
@@ -1462,7 +1474,7 @@ export default function TriageCommandCenter({
                 readOnly={governedDraftMode && !isEditing}
                 onChange={(e) => {
                   if (governedDraftMode) {
-                    if (decisionPacket?.id && safeGovernedSuggestion) setPilotDraftOverrides(current => ({ ...current, [decisionPacket.id]: e.target.value }));
+                    if (activeLead?.id) setManualDraftOverrides(current => ({ ...current, [activeLead.id]: e.target.value }));
                     setDraftCopied(false);
                   } else if (typeof draftText === 'object' && draftText !== null) {
                     setDraftText({ ...draftText, body: e.target.value });
@@ -1518,26 +1530,48 @@ export default function TriageCommandCenter({
                     <button type="button" onClick={handleArchive} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm text-white/50 hover:text-white transition-colors disabled:opacity-50">
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
-                    {governedDraftMode ? (
-                      <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-xs text-white/60">
-                        <span className="flex items-center gap-2">
-                          <ShieldAlert aria-hidden="true" className="h-4 w-4 shrink-0 text-white/45" />
-                          {unresolvedPolicy ? 'Sending locked until policy review is resolved.' : safeGovernedSuggestion ? 'Governed suggestion ready for human review. No send authorized.' : 'No governed response approved for sending.'}
-                        </span>
-                        <a href="#inbox-decision-packet" className="inline-flex min-h-9 items-center rounded-lg border border-white/[0.12] px-3 py-1.5 font-semibold text-white/80 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]">
-                          Review Decision
-                        </a>
+                    <button type="button" onClick={handleRegenerate}
+                      disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving}
+                      className="w-full rounded-lg bg-[#1A1A1A] py-3 text-sm font-bold text-white hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
+                      {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
+                    </button>
+                    <button type="button" onClick={() => {
+                        setManualSendError('');
+                        setShowManualSendConfirm(true);
+                      }}
+                      disabled={isGenerating || isDispatching || isBooking || isArchiving}
+                      className="w-full rounded-lg bg-[#FF4F00] py-3 text-sm font-bold text-white hover:bg-[#ff6a00] disabled:cursor-not-allowed disabled:opacity-50">
+                      Approve &amp; Send
+                    </button>
+                    {governedDraftMode && <div role="status" className="flex items-center justify-between gap-2 text-xs text-white/55">
+                      <span>{unresolvedPolicy ? 'Decision requires policy review.' : 'Human approval is required before sending.'}</span>
+                      <a className="font-medium text-[#FF5A1F] hover:underline" href="#inbox-decision-packet">Review Decision</a>
+                    </div>}
+                    {manualSendError && <p role="alert" className="text-xs leading-relaxed text-red-400">{manualSendError}</p>}
+                    {showManualSendConfirm && <div role="group" aria-label="Confirm manual send" className="space-y-3 rounded-xl border border-[#FF5A1F]/30 bg-[#201711] p-4">
+                      <h4 className="font-semibold text-white">Confirm manual approval &amp; send</h4>
+                      <p className="text-xs leading-relaxed text-white/70">This can transmit a real email through your connected mailbox. Review the recipient, message, and policy findings. Hard compliance or suppression blocks cannot be overridden.</p>
+                      <p className="text-xs text-white/65">Recipient: {activeLead?.email || 'Unavailable'}</p>
+                      <label className="block text-xs font-medium text-white/80" htmlFor="manual-override-reason">Approval reason (12–500 characters)</label>
+                      <textarea id="manual-override-reason" value={manualApprovalReason} maxLength={500} rows={3}
+                        onChange={e => setManualApprovalReason(e.target.value)}
+                        className="w-full rounded-lg border border-white/20 bg-[#111] p-3 text-sm text-white"
+                        placeholder="Explain why you are approving or overriding a reviewable company rule." />
+                      <label className="flex items-start gap-2 text-xs leading-relaxed text-white/80">
+                        <input type="checkbox" checked={manualSendAcknowledged}
+                          onChange={e => setManualSendAcknowledged(e.target.checked)} className="mt-1 accent-[#FF5A1F]" />
+                        I reviewed the recipient, response, and policy findings. Send the email now.
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void handleDispatch()}
+                          disabled={isDispatching || !manualSendAcknowledged || manualApprovalReason.trim().length < 12 || !liveDraft.trim()}
+                          className="min-h-10 rounded-lg bg-[#FF5A1F] px-4 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                          {isDispatching ? 'Sending...' : 'Confirm & Send'}
+                        </button>
+                        <button type="button" onClick={() => { setShowManualSendConfirm(false); setManualSendError(''); }}
+                          disabled={isDispatching} className="min-h-10 rounded-lg border border-white/20 px-4 text-xs text-white">Cancel</button>
                       </div>
-                    ) : <>
-                      <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
-                        {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
-                      </button>
-                      <button type="button" onClick={() => void handleDispatch()}
-                        disabled={isGenerating || isDispatching || isBooking || isArchiving}
-                        className="w-full py-3 text-sm font-bold bg-[#FF4F00] text-white rounded-lg hover:bg-[#ff6a00]">
-                        {isDispatching ? 'Sending...' : 'Approve & Send'}
-                      </button>
-                    </>}
+                    </div>}
 
                     {isHotLead && (
                       <button type="button" onClick={() => setShowBookingModal(true)} disabled={isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold border border-[#FF4F00] text-[#FF4F00] rounded-lg hover:bg-[#FF4F00]/10 flex items-center justify-center gap-2">
