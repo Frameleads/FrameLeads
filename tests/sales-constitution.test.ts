@@ -431,3 +431,28 @@ test('Micro-Pilot allows one configurable Constitution rule while leaving system
   assert.equal(custom.source, S.USER_ENTERED);
   assert.equal(POLICY_AUTHORITY_ORDER[0], 'HARD_SAFETY_COMPLIANCE');
 });
+
+test('Sales Constitution editing visibly navigates to the editor and all rule actions report feedback', () => {
+  const ui = readFileSync(join(process.cwd(), 'src/app/dashboard/constitution/ConstitutionEditor.tsx'), 'utf8');
+  assert.ok(ui.includes('const editorRef = useRef<HTMLElement>(null);'));
+  assert.ok(ui.includes('function beginEdit(rule: Rule)'));
+  assert.ok(ui.includes('setDraft(fromRule(rule));'));
+  assert.ok(ui.includes("editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });"));
+  assert.ok(ui.includes('editorRef.current?.focus({ preventScroll: true });'));
+  assert.ok(ui.includes('onEdit={() => beginEdit(rule)}'));
+  assert.ok(ui.includes('ref={editorRef} tabIndex={-1}'));
+  assert.ok(ui.includes('aria-label="Sales Constitution rule editor"'));
+  assert.ok(ui.includes('disabled={pending} className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-[#FF5A1F]'));
+  assert.ok(ui.includes("onToggle={() => changeRule(rule, 'toggle')}"));
+  assert.ok(ui.includes("onArchive={() => changeRule(rule, 'archive')}"));
+  assert.ok(ui.includes("draft.id ? 'PATCH' : 'POST'"));
+  assert.ok(ui.includes("action === 'archive' ? 'DELETE' : 'PATCH'"));
+  assert.ok(ui.includes('role="status" aria-live="polite"'));
+  assert.ok(ui.includes("onClick={() => setMessage('')}"));
+  assert.ok(ui.includes("setMessage('Editing cancelled.')"));
+  // Policy rules themselves are not deleted or altered in this UI-only change.
+  const route = readFileSync(join(process.cwd(), 'src/app/api/constitution/rules/[id]/route.ts'), 'utf8');
+  assert.ok(route.includes("export async function PATCH"));
+  assert.ok(route.includes("export async function DELETE"));
+  assert.ok(route.includes("requireFeatureAccess('CONSTITUTION_MANAGEMENT')"));
+});
