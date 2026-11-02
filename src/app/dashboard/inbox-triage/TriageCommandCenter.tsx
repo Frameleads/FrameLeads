@@ -1115,35 +1115,35 @@ export default function TriageCommandCenter({
   const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
   const queueTabs = (
-    <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-1.5 xl:p-2.5">
+    <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-2 xl:p-2.5">
       <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><ArrowDownUp className="h-3 w-3" />Sort by</p>
-        <div className="flex flex-nowrap items-center gap-0.5">
+        <div className="flex flex-nowrap items-center gap-1.5">
           {(isEnterpriseTier ? [{ value: 'received', label: 'Received' }, { value: 'risk', label: 'Revenue priority' }, { value: 'sla', label: 'SLA due' }] : [{ value: 'received', label: 'Received' }]).map(option => <button key={option.value} type="button" aria-pressed={orderBy === option.value} onClick={() => setOrderBy(option.value as typeof orderBy)}
-            className={`min-h-9 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
+            className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
             {option.label}
           </button>)}
         </div>
       </div>
       {isEnterpriseTier && <div role="group" aria-label="SLA urgency" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><Clock3 className="h-3 w-3" />SLA urgency</p>
-        <div className="flex flex-nowrap items-center gap-1">
-          <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
-          <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
+        <div className="flex flex-nowrap items-center gap-1.5">
+          <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
         </div>
       </div>}
       <div role="group" aria-label="Review" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><ShieldCheck className="h-3 w-3" />Review</p>
-        <div className="flex flex-nowrap items-center gap-1">
-          <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
-          <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
+        <div className="flex flex-nowrap items-center gap-1.5">
+          <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
+          <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
         </div>
       </div>
       <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><Layers className="h-3 w-3" />Queue</p>
-        <div className="flex flex-nowrap items-center gap-1">
-          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
-          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
+        <div className="flex flex-nowrap items-center gap-2">
+          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
+          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
         </div>
       </div>
     </div>
@@ -1206,7 +1206,7 @@ export default function TriageCommandCenter({
       </div>
 
       {/* HORIZONTAL QUEUE RIBBON (Top) */}
-      <div aria-label="Inbound reply queue. Scroll horizontally to browse messages." className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-proximity [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div aria-label="Inbound reply queue. Scroll horizontally to browse messages." className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-proximity [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
         {visibleLeads.map(lead => (
           <article key={lead.id} className={`group relative w-[84vw] min-w-[84vw] max-w-[340px] flex-shrink-0 snap-start overflow-hidden rounded-xl border p-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out sm:w-[320px] sm:min-w-[320px] ${lead.id === activeLeadId ? 'border-[#FF5A1F]/80 bg-[#1B1918] shadow-lg shadow-[#FF5A1F]/[0.06]' : 'border-white/[0.09] bg-[#151515] hover:-translate-y-0.5 hover:border-white/[0.18] hover:bg-[#191919] hover:shadow-lg hover:shadow-black/25'}`}>
             <button type="button" aria-pressed={lead.id === activeLeadId} onClick={() => selectLead(lead)} aria-label={`Review message from ${lead.name}`} className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FF5A1F]">

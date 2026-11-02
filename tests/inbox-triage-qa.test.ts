@@ -71,6 +71,10 @@ test('Re-analyze uses the canonical decision endpoint and creates a retry versio
 test('Mobile and desktop layouts keep queues, packet, chips, details, and actions responsive', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   assert.match(panel, /grid[^"\n]*grid-cols-1[^"\n]*sm:grid-cols-2[^"\n]*xl:grid-cols-\[1\.5fr_1fr_1fr_1\.1fr\]/);
+  assert.match(panel, /xl:grid-cols-\[1\.5fr_1fr_1fr_1\.1fr\] xl:gap-2/);
+  assert.match(panel, /text-xs font-semibold transition-colors duration-150/);
+  assert.match(panel, /flex flex-nowrap items-center gap-2/);
+  assert.match(panel, /\[&::\-webkit-scrollbar-thumb\]:bg-\[#FF5A1F\]/);
   assert.match(panel, /overflow-x-auto flex-nowrap/);
   assert.match(panel, /w-\[84vw\].*max-w-\[340px\].*sm:w-\[320px\]/);
   assert.match(panel, /senderInitials\(lead\.name\)/);
