@@ -97,7 +97,32 @@ test('lower controls stay wired to their real handlers without invoking them in 
   assert.match(panel, /onClick=\{\(\) => void handleDispatch\(\)\}/);
   assert.match(panel, /onClick=\{\(\) => setShowBookingModal\(true\)\}/);
   assert.match(panel, /onClick=\{handleArchive\}/);
-  assert.match(panel, /onClick=\{handlePermanentDelete\}/);
+  assert.match(panel, /onClick=\{handleTrashArchived\}/);
+});
+
+test('lead cards show one receipt timestamp and persistent favorite, archive, and soft-trash actions', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const schema = source('prisma/schema.prisma');
+  const favoriteRoute = source('src/app/api/triage/favorite/route.ts');
+  const archiveRoute = source('src/app/api/triage/archive/route.ts');
+  const cardStart = panel.indexOf('<article key={lead.id}');
+  const card = panel.slice(cardStart, panel.indexOf('</article>', cardStart));
+  assert.match(card, /queueIntentCategory\(lead\)/);
+  assert.match(card, /<time dateTime=\{lead\.createdAt/);
+  assert.doesNotMatch(card, />Review</);
+  assert.match(card, /senderInitials\(lead\.name\)/);
+  assert.match(panel, /isFavorite: Boolean\(s\.isFavorite\)/);
+  assert.match(panel, /fetch\('\/api\/triage\/favorite'/);
+  assert.match(panel, /aria-pressed=\{Boolean\(lead\.isFavorite\)\}/);
+  assert.match(panel, /Move to trash; preserve original record/);
+  assert.match(panel, /event\.stopPropagation\(\); void archiveSignal\(lead\.id\)/);
+  assert.match(panel, /event\.stopPropagation\(\); void trashSignal\(lead\.id\)/);
+  assert.match(panel, /event\.stopPropagation\(\); void toggleFavorite\(lead\)/);
+  assert.match(schema, /isFavorite\s+Boolean\s+@default\(false\)/);
+  assert.match(favoriteRoute, /where: \{ id, userId \}/);
+  assert.match(favoriteRoute, /data: \{ isFavorite: payload\.isFavorite \}/);
+  assert.match(archiveRoute, /data: \{ status: "TRASHED" \}/);
+  assert.match(archiveRoute, /decision history remain stored with status TRASHED/);
 });
 
 
