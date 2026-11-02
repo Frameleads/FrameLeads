@@ -30,6 +30,7 @@ model InboundSignal {
   signalAnalysis  String?
   aiDraft         String
   status          String         @default("PENDING")
+  isFavorite      Boolean        @default(false)
   createdAt       DateTime       @default(now())
 
   // ── Phase 4: Signal Ingestion Metadata ─────────────────────────
