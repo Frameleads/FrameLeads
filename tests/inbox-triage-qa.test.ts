@@ -323,8 +323,10 @@ test('mobile draft controls have breathing room and unresolved-policy notice is 
 
 test('Inbox Triage keeps all queue options in one compact desktop filter row', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.ok(panel.includes('xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1.7fr)]'));
-  assert.ok(panel.includes('xl:flex-nowrap xl:gap-0'));
+  assert.ok(panel.includes('xl:grid-cols-[minmax(260px,1.25fr)_minmax(185px,0.9fr)_minmax(158px,0.8fr)_minmax(365px,1.7fr)]'));
+  assert.ok(panel.includes('xl:overflow-x-auto'), 'Smaller desktop widths must scroll horizontally, not stack the four filter groups');
+  assert.ok(panel.includes('flex flex-nowrap items-center gap-1.5'));
+  assert.ok(panel.includes('text-xs font-semibold'), 'Filter choices must use at least 12px labels');
   for (const view of ['active', 'archived', 'favorites', 'trash']) {
     assert.ok(panel.includes("handleQueueViewChange('" + view + "')"), 'Queue tab missing: ' + view);
   }
@@ -408,4 +410,26 @@ test('All three context borders use exact Decision Packet opacity and normal lin
     'bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md',
   ];
   for (const card of matches) assert.ok(panel.includes(card), 'Mismatch in detailed card outline: ' + card);
+});
+
+test('Filter controls retain four queue tabs and orange scrollbar on desktop and mobile', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const start = panel.indexOf('const queueTabs = (');
+  const end = panel.indexOf('const archiveToastElement', start);
+  const filterMarkup = panel.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(filterMarkup, /sm:grid-cols-2/);
+  assert.match(filterMarkup, /xl:grid-cols-\[minmax\(260px,1\.25fr\)_minmax\(185px,0\.9fr\)_minmax\(158px,0\.8fr\)_minmax\(365px,1\.7fr\)\]/);
+  for (const view of ['active', 'archived', 'favorites', 'trash']) {
+    assert.ok(filterMarkup.includes("handleQueueViewChange('" + view + "')"));
+  }
+  assert.ok(filterMarkup.includes('Favorites ({favoritesCount})'));
+  assert.ok(filterMarkup.includes('Trash ({trashCount})'));
+  assert.ok(filterMarkup.includes('xl:overflow-x-auto'));
+  assert.ok(!filterMarkup.includes('text-[10px] font-semibold'));
+  assert.ok(!filterMarkup.includes('text-[11px] font-semibold'));
+  assert.ok(filterMarkup.includes('flex flex-nowrap items-center gap-1.5'));
+  const ribbon = panel.match(/aria-label="Inbound reply queue\.[^\n]*/)?.[0] ?? '';
+  assert.ok(ribbon.includes('[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
+  assert.ok(ribbon.includes('hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
 });
