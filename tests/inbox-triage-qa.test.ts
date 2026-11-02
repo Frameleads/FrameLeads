@@ -231,3 +231,24 @@ test('unresolved policy explains withheld draft without reviving legacy send act
   assert.match(ui, /governanceHeadline/);
   assert.match(ui, /getDecisionProspectInterestScore\(decision\)/);
 });
+
+test('Trash view lists preserved signals and safely restores only owner-matched trashed records', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const page = source('src/app/dashboard/inbox-triage/page.tsx');
+  const restore = source('src/app/api/triage/restore/route.ts');
+  const trash = source('src/app/api/triage/archive/route.ts');
+  assert.match(page, /status: \{ in: \["PENDING", "ARCHIVED", "TRASHED"\] \}/);
+  assert.match(panel, /queueView === 'trash'/);
+  assert.match(panel, /Trash \(\{trashCount\}\)/);
+  assert.match(panel, /Restore to Active/);
+  assert.match(panel, /fetch\('\/api\/triage\/restore'/);
+  assert.match(panel, /recordStatus: 'PENDING'/);
+  assert.match(restore, /requireFeatureAccess\('INBOX_TRIAGE'\)/);
+  assert.match(restore, /verifiedCustomerUser\(\)/);
+  assert.match(restore, /updateMany\(\{/);
+  assert.match(restore, /where: \{ id, userId, status: 'TRASHED' \}/);
+  assert.match(restore, /data: \{ status: 'PENDING' \}/);
+  assert.match(restore, /result\.count !== 1/);
+  assert.match(trash, /data: \{ status: "TRASHED" \}/);
+  assert.doesNotMatch(restore, /\.delete\(/);
+});
