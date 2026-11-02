@@ -193,18 +193,18 @@ test('Micro-Pilot shows a compact real decision allowance and honest interrupted
   assert.match(recoveryRoute, /entitlementError && user\.tier !== 'MICRO_PILOT'/);
 });
 
-test('Micro-Pilot draft displays only the governed saved suggestion; cannot use legacy approve/send route', () => {
+test('All Inbox Triage tiers render manual action controls but Micro-Pilot sends remain protected', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const route = source('src/app/api/inbox/manual-send/route.ts');
   assert.match(panel, /const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy/);
-  assert.match(panel, /typeof decisionPacket\?\.suggestedReply === 'string'/);
-  assert.match(panel, /pilotDraftOverrides/);
-  assert.match(panel, /Governed suggestion for review · not automatically sent/);
-  assert.match(panel, /A governed draft is withheld until the necessary policy review is resolved/);
-  assert.match(panel, /governedDraftMode \? \(/);
-  assert.match(panel, /separately protected Sandbox sending path/);
-  assert.match(panel, /Copy draft/);
+  assert.match(panel, /const liveDraft = activeLead/);
+  assert.match(panel, /manualDraftOverrides/);
+  assert.match(panel, /onClick={handleRegenerate}/);
+  assert.match(panel, /Approve &amp; Send/);
+  assert.match(panel, /Confirm & Send/);
+  assert.match(route, /user.tier === 'MICRO_PILOT'/);
+  assert.match(route, /protected Micro-Pilot Sandbox send flow/);
 });
-
 
 test('Enterprise uses verified 65/100 interest instead of the older 52/100 COLD assessment', () => {
   const validated = { source: 'ANTHROPIC', primaryIntent: 'POSITIVE_INTEREST',
@@ -221,25 +221,18 @@ test('Enterprise uses verified 65/100 interest instead of the older 52/100 COLD 
   assert.match(ui, /Score measures expressed interest, not the likelihood of closing/);
 });
 
-test('unresolved policy explains withheld draft without reviving legacy send actions', () => {
+test('Unresolved governance keeps truthful status while manual actions stay visible', () => {
   const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   assert.match(ui, /const unresolvedPolicy = Boolean\(decisionPacket\?\.reviewReasons\.includes\('POLICY_UNRESOLVED'\)\)/);
   assert.match(ui, /const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy/);
-  assert.match(ui, /safeGovernedSuggestion \? pilotDraftOverrides\[decisionPacket\?\.id \?\? ''\]/);
-  assert.match(ui, /governedDraftMode \? \(/);
-  assert.doesNotMatch(ui, /legacy send buttons are intentionally unavailable/);
-  assert.doesNotMatch(ui, /Sales Constitution review is required before any reply is approved/);
   assert.match(ui, /id="inbox-decision-packet" aria-label="Decision packet"/);
   assert.match(ui, /href="#inbox-decision-packet"/);
-  assert.match(ui, /Sending locked until policy review is resolved/);
+  assert.match(ui, /Decision requires policy review/);
   assert.match(ui, /Review Decision/);
-  assert.match(ui, /safeGovernedSuggestion/);
-  assert.match(ui, /<div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/);
-  assert.match(ui, /disabled=\{!canGenerateLegacyDraft/);
-  assert.match(ui, /governedDraftMode \? \(/);
-  assert.match(ui, /Human review is required before treating any response as governed or approved/);
-  assert.match(ui, /unresolvedRules/);
-  assert.match(ui, /governanceHeadline/);
+  assert.match(ui, /handleRegenerate/);
+  assert.match(ui, /showManualSendConfirm/);
+  assert.match(ui, /manualApprovalReason/);
+  assert.match(ui, /manualSendAcknowledged/);
   assert.match(ui, /getDecisionProspectInterestScore\(decision\)/);
 });
 
@@ -474,17 +467,36 @@ test('All four lower-detail headings have aligned accessible icons and divider i
   assert.ok(!panel.includes('[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
 });
 
-test('An unresolved Decision retains visible review status but never shows the duplicate amber footer', () => {
-  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  const footer = ui.slice(ui.indexOf('/* 5. The Action Buttons (Stacked natively at the bottom) */'));
-  assert.ok(footer.includes('governedDraftMode ? ('));
-  assert.ok(footer.includes('Sending locked until policy review is resolved.'));
-  assert.ok(footer.includes('Review Decision'));
+test('Manual send always requires typed reason, confirmation and backend policy gate', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const route = source('src/app/api/inbox/manual-send/route.ts');
+  const execution = source('src/lib/automation/actions.ts');
+  const legacy = source('src/app/api/dispatch/route.ts');
+  const footer = panel.slice(panel.indexOf('/* 5. The Action Buttons (Stacked natively at the bottom) */'));
+  assert.ok(footer.includes('onClick={handleRegenerate}'));
+  assert.ok(footer.includes('Approve &amp; Send'));
+  assert.ok(footer.includes('Confirm & Send'));
+  assert.ok(footer.includes('showManualSendConfirm'));
+  assert.ok(footer.includes('manualSendAcknowledged'));
   assert.ok(footer.includes('href="#inbox-decision-packet"'));
-  assert.ok(footer.includes('role="status"'));
-  assert.ok(!footer.includes('border-amber-400/30 bg-amber-400'));
-  assert.ok(!footer.includes('legacy send buttons are intentionally unavailable'));
-  assert.ok(footer.includes(') : <>\n                      <button type="button" onClick={handleRegenerate}'));
-  assert.ok(footer.includes('<button type="button" onClick={() => void handleDispatch()}'));
-  assert.ok(ui.includes("const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy &&"));
+  assert.ok(!footer.includes('governedDraftMode ? ('));
+  assert.ok(panel.includes("fetch('/api/inbox/manual-send'"));
+  assert.ok(!panel.includes("fetch('/api/dispatch'"));
+  assert.ok(route.includes("getAuthenticatedEntitlementUser()"));
+  assert.ok(route.includes("origin !== new URL(request.url).origin"));
+  assert.ok(route.includes("featureAccessErrorForTier(user.tier, 'BASE_OUTBOUND')"));
+  assert.ok(route.includes("status: 'PENDING'"));
+  assert.ok(route.includes("inputMessage: { sourceType: 'INBOUND_SIGNAL', sourceId: signal.id }"));
+  assert.ok(route.includes("latestDecision.id !== decisionId"));
+  assert.ok(route.includes("confirmSend !== true"));
+  assert.ok(route.includes("overrideReason.length < 12"));
+  assert.ok(route.includes("action: 'EDIT_AND_SEND'"));
+  assert.ok(execution.includes('function humanOverrideAllowed('));
+  assert.ok(execution.includes('item.blockingRules.length || item.unresolvedRules.length'));
+  assert.ok(execution.includes("evaluation.decision.primaryIntent === 'UNSUBSCRIBE'"));
+  assert.ok(execution.includes('reason: input.overrideReason ?? null'));
+  assert.ok(execution.includes('DecisionExecutionAttempt') || execution.includes('decisionExecutionAttempt.create'));
+  assert.ok(execution.includes('sendNativeEmail'));
+  assert.ok(legacy.includes('status: 410'));
+  assert.ok(!legacy.includes("data: { status: 'APPROVED'"));
 });
