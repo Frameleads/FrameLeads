@@ -9,6 +9,7 @@ import { evaluateAutomationMode, resolveAutomationMode } from './resolve';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export type Sender = typeof sendNativeEmail;
+export type InboundSender = typeof sendNativeInboundEmail;
 export type HumanActionInput = { userId: string; decisionId: string; action: 'APPROVE' | 'EDIT_AND_SEND' | 'REJECT' | 'ESCALATE';
   requestKey: string; editedReply?: string; reason?: string; overrideReason?: string; queue?: DecisionRouteQueue };
 
@@ -59,7 +60,8 @@ function humanOverrideAllowed(
 
 /** One claim per Decision. Claimed/uncertain SMTP attempts are never retried automatically. */
 async function executeReply(input: { userId: string; decisionId: string; actorUserId: string | null;
-  action: Action; requestKey: string; reply: string; overrideReason?: string }, db: PrismaClient, sender: Sender) {
+  action: Action; requestKey: string; reply: string; overrideReason?: string }, db: PrismaClient,
+  sender: Sender, inboundSender: InboundSender) {
   const first = await evaluateAutomationMode({ userId: input.userId, decisionId: input.decisionId, proposedReply: input.reply }, db);
   if (first.execution) return { state: first.state, attempt: first.execution, reused: true };
   if (!humanOverrideAllowed(first, input)) {
@@ -130,7 +132,7 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
     const sent = lead?.id && lead.email
       ? await sender({ userId: input.userId, leadId: lead.id,
           to: lead.email, subject: 'Re: Your message', text: content }, db)
-      : await sendNativeInboundEmail({ userId: input.userId, signalId: current.source.id,
+      : await inboundSender({ userId: input.userId, signalId: current.source.id,
           prospectId: current.decision.prospectId,
           subject: 'Re: Your message', text: content }, db);
     await db.$transaction(async tx => {
@@ -163,7 +165,7 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
   }
 }
 
-export async function actOnDecision(input: HumanActionInput, deps: { db?: PrismaClient; sender?: Sender } = {}) {
+export async function actOnDecision(input: HumanActionInput, deps: { db?: PrismaClient; sender?: Sender; inboundSender?: InboundSender } = {}) {
   validateHumanAction(input);
   const db = deps.db ?? prisma;
   const key = hash(`${input.userId}:${input.decisionId}:${input.requestKey}`);
@@ -199,14 +201,16 @@ export async function actOnDecision(input: HumanActionInput, deps: { db?: Prisma
   if (!reply) return { state: State.HELD, reasons: ['MISSING_SAFE_REPLY'], event: null, reused: false };
   return executeReply({ userId: input.userId, decisionId: input.decisionId, actorUserId: input.userId,
     action: input.action as Action, requestKey: input.requestKey, reply,
-    overrideReason: input.overrideReason?.trim() }, db, deps.sender ?? sendNativeEmail);
+    overrideReason: input.overrideReason?.trim() }, db, deps.sender ?? sendNativeEmail,
+    deps.inboundSender ?? sendNativeInboundEmail);
 }
 
-export async function runAutopilot(input: { userId: string; decisionId: string }, deps: { db?: PrismaClient; sender?: Sender } = {}) {
+export async function runAutopilot(input: { userId: string; decisionId: string }, deps: { db?: PrismaClient; sender?: Sender; inboundSender?: InboundSender } = {}) {
   const db = deps.db ?? prisma;
   const current = await resolveAutomationMode(input, db);
   if (current.resolvedMode !== Mode.AUTOPILOT || current.state !== State.READY || !current.decision.suggestedReply)
     return { state: current.state, reasons: current.reasons, attempt: null, reused: false };
   return executeReply({ ...input, actorUserId: null, action: Action.AUTOPILOT_SEND,
-    requestKey: `autopilot:${input.decisionId}`, reply: current.decision.suggestedReply }, db, deps.sender ?? sendNativeEmail);
+    requestKey: `autopilot:${input.decisionId}`, reply: current.decision.suggestedReply }, db,
+    deps.sender ?? sendNativeEmail, deps.inboundSender ?? sendNativeInboundEmail);
 }
