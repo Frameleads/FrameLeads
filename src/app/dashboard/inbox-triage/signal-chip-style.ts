@@ -16,8 +16,8 @@ export const SIGNAL_CHIP_STYLES: Record<SignalChipTone, string> = {
 export function getSignalChipTone(label: string): SignalChipTone {
   const normalized = label.trim().toLowerCase().replace(/[_-]+/g, ' ');
   if (/meeting|demo|call request|booked|booking|schedul|appointment/.test(normalized)) return 'meeting';
-  if (/negotiat|pric(e|ing)|discount|commercial|contract|objection|fee waiver|cancellation|payment terms/.test(normalized)) return 'commercial';
   if (/risk|delay|not interested|negative|concern|timing objection|low intent|ooto|bounced/.test(normalized)) return 'risk';
+  if (/negotiat|pric(e|ing)|discount|commercial|contract|objection|fee waiver|cancellation|payment terms/.test(normalized)) return 'commercial';
   if (/positive interest|interested|warm interest|buying signal|ready to (buy|move)|strong interest/.test(normalized)) return 'interest';
   if (/question|clarif|information request|info request|requesting resources|how (does|would)|details/.test(normalized)) return 'question';
   return 'neutral';
