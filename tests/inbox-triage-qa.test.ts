@@ -332,11 +332,11 @@ test('Inbox Triage keeps all queue options in one compact desktop filter row', (
   assert.ok(panel.includes('Trash ({trashCount})'));
 });
 
-test('Entity, inbound email and Intent Score outlines use FrameLeads orange with original border weight', () => {
+test('Entity, inbound email and Intent Score outlines use agreed #888888 with original border weight', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.ok(panel.includes('rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 shadow-2xl'));
-  assert.ok(panel.includes('flex-grow rounded-lg border border-[#FF5A1F] bg-[#121212]'));
-  assert.ok(panel.includes('bg-[#1a1a1a] border border-[#FF5A1F] p-6 rounded-md'));
+  assert.ok(panel.includes('rounded-lg border border-[#888888] bg-[#121212] p-5 shadow-2xl'));
+  assert.ok(panel.includes('flex-grow rounded-lg border border-[#888888] bg-[#121212]'));
+  assert.ok(panel.includes('bg-[#1a1a1a] border border-[#888888] p-6 rounded-md'));
 });
 
 test('Inbound email view joins hard-wrapped lines without altering words or deliberate paragraph boundaries', () => {
@@ -347,6 +347,35 @@ test('Inbound email view joins hard-wrapped lines without altering words or deli
   assert.equal(formatInboundReplyForDisplay("Unbroken original text."), "Unbroken original text.");
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   assert.ok(panel.includes('{formatInboundReplyForDisplay(inboundSignal)}'));
-  assert.ok(panel.includes('{formatInboundReplyForDisplay(reply)}'));
+  assert.ok(!panel.includes('{formatInboundReplyForDisplay(reply)}'));
   assert.ok(!panel.includes('setInboundSignal(formatInboundReplyForDisplay('));
+});
+
+test('Decision Packet shows only analysis and review side by side, with no duplicated incoming email', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const packetPanel = panel.slice(panel.indexOf('function DecisionPacketPanel('), panel.indexOf('function SummaryCard('));
+  assert.ok(packetPanel.includes('AI interpretation'));
+  assert.ok(packetPanel.includes('Why human review'));
+  assert.ok(!packetPanel.includes('Incoming reply</p>'));
+  assert.ok(!packetPanel.includes('formatInboundReplyForDisplay(reply)'));
+  assert.ok(!packetPanel.includes('font-heading text-xl font-semibold leading-8'));
+  assert.ok(packetPanel.includes('completedInterpretation ? packet.interpretation'));
+  assert.ok(packetPanel.includes("unverifiedModelOutput ? 'AI response needs evidence verification'"));
+  assert.ok(packetPanel.includes('packet.explanation ?? packet.reviewReasons'));
+  assert.ok(packetPanel.includes("rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5"));
+  assert.ok(packetPanel.includes('break-words text-sm leading-6 text-white/75'));
+  assert.ok(packetPanel.includes("font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]"));
+  assert.ok(!packetPanel.includes('reply: string;'));
+  assert.ok(panel.includes('>Inbound Signal</h2>'));
+  assert.ok(panel.includes('{formatInboundReplyForDisplay(inboundSignal)}'));
+});
+
+test('Decision Packet icon labels remain readable and governance controls remain present', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.ok(panel.includes('font-mono text-[11px] uppercase tracking-[.12em] text-white/60">{label}'));
+  assert.ok(panel.includes('label="Intent"'));
+  assert.ok(panel.includes('label="Governance"'));
+  assert.ok(panel.includes('label="Recommended action"'));
+  assert.ok(panel.includes("packet.reviewReasons.includes('APPROVAL_REQUIRED')"));
+  assert.ok(panel.includes("A relevant Sales Constitution rule could not be resolved from the available facts."));
 });
