@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { AutomationExecutionState as State, AutomationMode as Mode, DecisionHumanAction as Action,
-  DecisionExecutionStatus as AttemptStatus, DecisionRouteQueue, Prisma, type PrismaClient } from '@prisma/client';
+  DecisionExecutionStatus as AttemptStatus, DecisionRouteQueue, Prisma, TriageIntent, type PrismaClient } from '@prisma/client';
 import { prisma } from '../prisma';
 import { MEMORY_EVENT, recordProspectMemoryEvent, recordProspectMemoryEventInTransaction } from '../prospects/memory';
 import { materializeMessageInTransaction } from '../decision/conversation';
@@ -50,8 +50,8 @@ function humanOverrideAllowed(
     item.configurationMissing || item.safeResponseRequirements.length)) return false;
   if (evaluation.reasons.some(reason =>
     /UNSUBSCRIBE|SUPPRESS|HOLD|UNRESOLVED|REJECT|STALE|REANALYSIS|EXECUTION|CONFIGURATION/.test(reason))) return false;
-  if (evaluation.decision.primaryIntent === 'UNSUBSCRIBE' ||
-    evaluation.decision.secondaryIntents.includes('UNSUBSCRIBE')) return false;
+  if (evaluation.decision.primaryIntent === TriageIntent.UNSUBSCRIBE ||
+    evaluation.decision.secondaryIntents.includes(TriageIntent.UNSUBSCRIBE)) return false;
   return evaluation.reasons.some(reason => reason === 'CONSTITUTION_REQUIRES_HUMAN' ||
     reason === 'CONSTITUTION_REQUIRES_APPROVAL' || reason === 'REQUESTED_ESCALATION');
 }
