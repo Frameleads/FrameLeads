@@ -332,11 +332,11 @@ test('Inbox Triage keeps all queue options in one compact desktop filter row', (
   assert.ok(panel.includes('Trash ({trashCount})'));
 });
 
-test('Entity, inbound email and Intent Score outlines use agreed #888888 with original border weight', () => {
+test('Entity, inbound email and Intent Score borders match the subtle Decision Packet outline', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.ok(panel.includes('rounded-lg border border-[#888888] bg-[#121212] p-5 shadow-2xl'));
-  assert.ok(panel.includes('flex-grow rounded-lg border border-[#888888] bg-[#121212]'));
-  assert.ok(panel.includes('bg-[#1a1a1a] border border-[#888888] p-6 rounded-md'));
+  assert.ok(panel.includes('rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl'));
+  assert.ok(panel.includes('flex-grow rounded-lg border border-white/[0.1] bg-[#121212]'));
+  assert.ok(panel.includes('bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md'));
 });
 
 test('Inbound email view joins hard-wrapped lines without altering words or deliberate paragraph boundaries', () => {
@@ -378,4 +378,34 @@ test('Decision Packet icon labels remain readable and governance controls remain
   assert.ok(panel.includes('label="Recommended action"'));
   assert.ok(panel.includes("packet.reviewReasons.includes('APPROVAL_REQUIRED')"));
   assert.ok(panel.includes("A relevant Sales Constitution rule could not be resolved from the available facts."));
+});
+
+test('Decision Packet has a compact full-width insight and responsive balanced review grid', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const packet = panel.slice(panel.indexOf('function DecisionPacketPanel('), panel.indexOf('function SummaryCard('));
+  const interpretationAt = packet.indexOf('AI interpretation');
+  const layoutAt = packet.indexOf('grid items-stretch gap-3 sm:grid-cols-2');
+  const reviewAt = packet.indexOf('Why human review');
+  assert.ok(interpretationAt > -1 && layoutAt > interpretationAt && reviewAt > layoutAt,
+    'Interpretation should be full-width and compact, above the review/details grid');
+  assert.ok(packet.includes("completedInterpretation ? 'sm:col-span-2 xl:col-span-2 xl:row-span-2'"));
+  assert.ok(packet.includes("isReview && !interrupted && completedInterpretation ? 'xl:grid-cols-4' : 'xl:grid-cols-3'"));
+  assert.ok(packet.includes("sm:col-span-2 xl:col-span-2' : 'sm:col-span-2 xl:col-span-1'"));
+  assert.ok(!packet.includes('lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,.8fr)]'));
+  assert.ok(packet.includes('packet.explanation ?? packet.reviewReasons'));
+  assert.ok(packet.includes('completedInterpretation ? packet.interpretation'));
+  assert.ok(packet.includes('label="Intent"') && packet.includes('label="Governance"') && packet.includes('label="Recommended action"'));
+  assert.ok(packet.includes('governanceNeedsReview && <p role="status"'));
+});
+
+test('All three context borders use exact Decision Packet opacity and normal line weight', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.ok(panel.includes('aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1]'));
+  assert.equal((panel.match(/border border-\[#888888\]/g) || []).length, 0);
+  const matches = [
+    'rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl',
+    'flex-grow rounded-lg border border-white/[0.1] bg-[#121212] p-5',
+    'bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md',
+  ];
+  for (const card of matches) assert.ok(panel.includes(card), 'Mismatch in detailed card outline: ' + card);
 });
