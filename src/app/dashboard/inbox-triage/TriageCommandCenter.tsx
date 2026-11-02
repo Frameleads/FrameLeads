@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SetupNotice from '@/components/SetupNotice';
-import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Archive, ArrowDownUp, Layers, Clock3, Handshake, ShieldAlert, ShieldCheck, UserRoundCheck, Sparkles, ChevronRight } from 'lucide-react';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Archive, ArrowDownUp, Layers, Clock3, Handshake, ShieldAlert, ShieldCheck, UserRoundCheck, Sparkles, Star } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
@@ -441,6 +441,7 @@ export default function TriageCommandCenter({
         pipelineValue: `$${(s.pipelineValue || 0).toLocaleString()}`,
         dealStage: s.dealStage || '',
         createdAt: s.createdAt,
+        isFavorite: Boolean(s.isFavorite),
         inboundSignal: s.rawEmail || '',
         intentScore: typeof s.intentScore === 'number' && !['UNASSESSED', 'UNCLASSIFIED'].includes(s.intentType) ? s.intentScore : null,
         status: resolveIntentTemperature(typeof s.intentScore === 'number' && !['UNASSESSED', 'UNCLASSIFIED'].includes(s.intentType) ? s.intentScore : null, s.intentType) || 'UNASSESSED',
@@ -475,7 +476,7 @@ export default function TriageCommandCenter({
   const updateResponseSLA = useCallback((signalId: string, sla: ResponseSLAView | null) => {
     setLeads(current => current.map(lead => lead.id === signalId ? { ...lead, responseSLA: sla } : lead));
   }, []);
-  const [queueView, setQueueView] = useState<'active' | 'archived'>('active');
+  const [queueView, setQueueView] = useState<'active' | 'archived' | 'trash'>('active');
   const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
   const [orderBy, setOrderBy] = useState<'received' | 'risk' | 'sla'>('received');
   const [urgentSLAOnly, setUrgentSLAOnly] = useState(false);
@@ -483,18 +484,18 @@ export default function TriageCommandCenter({
   useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60_000);
     return () => window.clearInterval(timer); }, []);
   const filteredLeads = leads.filter((lead) =>
-    (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING') &&
+    (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : queueView === 'trash' ? lead.recordStatus === 'TRASHED' : lead.recordStatus === 'PENDING') &&
     (!needsReviewOnly || lead.decisionStatus === 'NEEDS_REVIEW') &&
     (!isEnterpriseTier || !urgentSLAOnly || (lead.responseSLA && ['DUE_SOON', 'OVERDUE'].includes(displayResponseSLA({
       status: lead.responseSLA.status, startedAt: new Date(lead.responseSLA.startedAt),
       dueAt: new Date(lead.responseSLA.dueAt), dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state))),
   );
-  const visibleLeads = isEnterpriseTier && orderBy === 'risk' ? sortInboxByRevenueRisk(filteredLeads) :
+  const visibleLeads = queueView === 'trash' ? leads.filter(lead => lead.recordStatus === 'TRASHED') : isEnterpriseTier && orderBy === 'risk' ? sortInboxByRevenueRisk(filteredLeads) :
     isEnterpriseTier && orderBy === 'sla' ? sortInboxByResponseSLA(filteredLeads, new Date(clock), slaDueSoonPercent) : filteredLeads;
   const [activeLeadId, setActiveLeadId] = useState(
     dbLeads.find((lead: any) => lead.recordStatus === 'PENDING')?.id || null,
   );
-  const activeLead = visibleLeads.find(l => l.id === activeLeadId) || visibleLeads[0] || null;
+  const activeLead = queueView === 'trash' ? null : visibleLeads.find(l => l.id === activeLeadId) || visibleLeads[0] || null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -533,6 +534,7 @@ export default function TriageCommandCenter({
   const [mailboxConnectionStatus, setMailboxConnectionStatus] = useState<'loading' | 'connected' | 'disconnected' | 'unavailable'>('loading');
   const [isArchiving, setIsArchiving] = useState(false);
   const [deletingArchivedId, setDeletingArchivedId] = useState<string | null>(null);
+  const [favoriteBusyId, setFavoriteBusyId] = useState<string | null>(null);
   const [archiveToast, setArchiveToast] = useState('');
   const selectedStateLeadId = useRef(activeLead?.id ?? null);
 
@@ -825,33 +827,32 @@ export default function TriageCommandCenter({
     window.setTimeout(() => setArchiveToast(''), 3500);
   };
 
-  const handleQueueViewChange = (view: 'active' | 'archived') => {
+  const handleQueueViewChange = (view: 'active' | 'archived' | 'trash') => {
     setQueueView(view);
     selectLeadById(
-      leads.find((lead) => view === 'archived'
+      (view === 'trash' ? null : leads.find((lead) => view === 'archived'
         ? lead.recordStatus === 'ARCHIVED'
-        : lead.recordStatus === 'PENDING')?.id || null, leads,
+        : lead.recordStatus === 'PENDING')?.id) || null, leads,
     );
   };
 
-  const handleArchive = async () => {
-    if (!activeLead || activeLead.recordStatus !== 'PENDING') return;
+  const archiveSignal = async (signalId: string) => {
     setIsArchiving(true);
 
     try {
       const response = await fetch('/api/triage/archive', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: activeLead.id }),
+        body: JSON.stringify({ id: signalId }),
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || 'Unable to archive this lead.');
 
       const updatedLeads = leads.map((lead) =>
-        lead.id === activeLead.id ? { ...lead, recordStatus: 'ARCHIVED' } : lead,
+        lead.id === signalId ? { ...lead, recordStatus: 'ARCHIVED' } : lead,
       );
       setLeads(updatedLeads);
-      selectLeadById(updatedLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, updatedLeads);
+      if (activeLeadId === signalId) selectLeadById(updatedLeads.find((lead) => lead.recordStatus === 'PENDING')?.id || null, updatedLeads);
       showArchiveToast('Lead archived');
       router.refresh();
     } catch (error) {
@@ -861,29 +862,80 @@ export default function TriageCommandCenter({
     }
   };
 
-  const handlePermanentDelete = async () => {
-    if (!activeLead || activeLead.recordStatus !== 'ARCHIVED') return;
-    if (!window.confirm('Permanently delete this archived lead? This action cannot be undone.')) return;
+  const handleArchive = async () => {
+    if (!activeLead || activeLead.recordStatus !== 'PENDING') return;
+    await archiveSignal(activeLead.id);
+  };
 
-    setDeletingArchivedId(activeLead.id);
+  const trashSignal = async (signalId: string) => {
+    setDeletingArchivedId(signalId);
     try {
       const response = await fetch('/api/triage/archive', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: activeLead.id }),
+        body: JSON.stringify({ id: signalId }),
       });
       const result = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(result?.error || 'Unable to permanently delete this lead.');
+      if (!response.ok) throw new Error(result?.error || 'Unable to move this lead to trash.');
 
-      const remainingLeads = leads.filter((lead) => lead.id !== activeLead.id);
-      setLeads(remainingLeads);
-      selectLeadById(remainingLeads.find((lead) => lead.recordStatus === 'ARCHIVED')?.id || null, remainingLeads);
-      showArchiveToast('Lead permanently deleted');
+      const updatedLeads = leads.map((lead) => lead.id === signalId ? { ...lead, recordStatus: 'TRASHED' } : lead);
+      setLeads(updatedLeads);
+      if (activeLeadId === signalId) {
+        const next = updatedLeads.find((lead) => queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING');
+        selectLeadById(next?.id || null, updatedLeads);
+      }
+      showArchiveToast('Lead moved to trash. Its original record is preserved.');
       router.refresh();
     } catch (error) {
-      showArchiveToast(error instanceof Error ? error.message : 'Unable to permanently delete this lead.');
+      showArchiveToast(error instanceof Error ? error.message : 'Unable to move this lead to trash.');
     } finally {
       setDeletingArchivedId(null);
+    }
+  };
+
+  const handleTrashArchived = async () => {
+    if (!activeLead || activeLead.recordStatus !== 'ARCHIVED') return;
+    await trashSignal(activeLead.id);
+  };
+
+  const [restoreBusyId, setRestoreBusyId] = useState<string | null>(null);
+  const restoreSignal = async (signalId: string) => {
+    if (restoreBusyId) return;
+    setRestoreBusyId(signalId);
+    try {
+      const response = await fetch('/api/triage/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: signalId }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Unable to restore this lead.');
+      setLeads(current => current.map(lead =>
+        lead.id === signalId ? { ...lead, recordStatus: 'PENDING' } : lead));
+      showArchiveToast('Lead restored to Active queue.');
+      router.refresh();
+    } catch (error) {
+      showArchiveToast(error instanceof Error ? error.message : 'Unable to restore this lead.');
+    } finally {
+      setRestoreBusyId(null);
+    }
+  };
+
+  const toggleFavorite = async (lead: any) => {
+    if (favoriteBusyId) return;
+    const nextFavorite = !lead.isFavorite;
+    setFavoriteBusyId(lead.id);
+    try {
+      const response = await fetch('/api/triage/favorite', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: lead.id, isFavorite: nextFavorite }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(result?.error || 'Unable to update favorite.');
+      setLeads(current => current.map(item => item.id === lead.id ? { ...item, isFavorite: nextFavorite } : item));
+    } catch (error) {
+      showArchiveToast(error instanceof Error ? error.message : 'Unable to update favorite.');
+    } finally {
+      setFavoriteBusyId(null);
     }
   };
 
@@ -1084,6 +1136,7 @@ export default function TriageCommandCenter({
 
   const activeCount = leads.filter((lead) => lead.recordStatus === 'PENDING').length;
   const archivedCount = leads.filter((lead) => lead.recordStatus === 'ARCHIVED').length;
+  const trashCount = leads.filter((lead) => lead.recordStatus === 'TRASHED').length;
   const queueTabs = (
     <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-1.5 xl:p-2.5">
       <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
@@ -1114,6 +1167,7 @@ export default function TriageCommandCenter({
         <div className="flex flex-nowrap items-center gap-1">
           <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
           <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
+          <button type="button" aria-pressed={queueView === 'trash'} onClick={() => { setNeedsReviewOnly(false); setUrgentSLAOnly(false); handleQueueViewChange('trash'); }} className={`min-h-9 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'trash' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}><Trash2 className="mr-1 inline-block h-3 w-3" />Trash ({trashCount})</button>
         </div>
       </div>
     </div>
@@ -1131,11 +1185,31 @@ export default function TriageCommandCenter({
           {mailboxSetupNotice && <div className="mb-6">{mailboxSetupNotice}</div>}
           <div className="mb-6 space-y-3">
             <span className="text-xs font-mono text-[#888888] uppercase tracking-widest">
-              {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
+              {queueView === 'trash' ? 'TRASH' : queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
             </span>
             {queueTabs}
           </div>
-          <div className="flex min-h-[55vh] flex-col items-center justify-center text-center p-8">
+          {queueView === 'trash' ? (
+            <section aria-label="Trash and restore" className="min-h-[40vh] space-y-3 py-4">
+              <p className="text-sm text-white/60">Messages remain saved with their decision history. Restore moves a message back to Active.</p>
+              {visibleLeads.length === 0 ? (
+                <p className="rounded-xl border border-white/10 bg-[#151515] p-6 text-white/60">Trash is empty.</p>
+              ) : visibleLeads.map(lead => (
+                <article key={lead.id} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-[#151515] p-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-white">{lead.name}</p>
+                    <p className="mt-1 line-clamp-2 break-words text-xs text-white/60">{lead.inboundSignal || 'Message unavailable'}</p>
+                    <p className="mt-2 text-xs text-white/40">{receivedTime(lead.createdAt, clock).exact}</p>
+                  </div>
+                  <button type="button" onClick={() => void restoreSignal(lead.id)} disabled={restoreBusyId !== null}
+                    aria-label={`Restore message from ${lead.name} to Active`}
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#FF5A1F]/40 px-4 py-2 text-xs font-semibold text-[#FF9A73] hover:bg-[#FF5A1F]/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] disabled:opacity-50">
+                    {restoreBusyId === lead.id ? 'Restoring...' : 'Restore to Active'}
+                  </button>
+                </article>
+              ))}
+            </section>
+          ) : <div className="flex min-h-[55vh] flex-col items-center justify-center text-center p-8">
             <div className="w-16 h-16 border border-[#242424] rounded-2xl flex items-center justify-center mb-6 bg-[#1A1A1A]">
               <Info className="w-6 h-6 text-[#FF5A1F]" />
             </div>
@@ -1144,14 +1218,14 @@ export default function TriageCommandCenter({
             </h2>
             <p className="text-gray-500 max-w-md" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               {needsReviewOnly ? 'No decision packets in this queue currently need review.' : queueView === 'archived'
-                ? 'Rejected inbound signals will remain here until you permanently delete them.'
+                ? 'Archived replies remain here until you move them to trash. Their source records are preserved.'
                 : 'Awaiting campaign deployment and real inbound replies. New signals will appear here for review.'}
             </p>
             <div className="mt-6 flex flex-col items-center gap-3">
               {mailboxConnectionStatus === 'connected' && inboxActions}
               {inboxConnectionMessage && <p role="status" className="break-words text-xs text-[#888888]">{inboxConnectionMessage}</p>}
             </div>
-          </div>
+          </div>}
           {connectInboxModal}
           {inboundSignalToast}
           {archiveToastElement}
@@ -1166,7 +1240,7 @@ export default function TriageCommandCenter({
       <div className="space-y-3 p-4 pb-0 shrink-0">
         <div className="flex items-center gap-3">
         <span className="text-xs font-mono text-muted-foreground uppercase tracking-widest text-[#888888]">
-          {queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
+          {queueView === 'trash' ? 'TRASH' : queueView === 'archived' ? 'ARCHIVE VAULT' : 'ACTIVE QUEUE'}
         </span>
         <span className="bg-[#1A1A1A] border border-[#333] text-[#FF5A1F] font-mono text-[10px] px-2 py-0.5 rounded-sm">
           [ {visibleLeads.length} ]
@@ -1183,38 +1257,26 @@ export default function TriageCommandCenter({
               <div className="flex items-center gap-3">
                 <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.08] text-xs font-semibold tracking-wide text-[#FF9A73]">{senderInitials(lead.name)}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 break-words font-semibold text-sm text-white" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
-                    <span className="shrink-0 pt-0.5 text-[10px] text-white/45" title={receivedTime(lead.createdAt, clock).exact}>{receivedTime(lead.createdAt, clock).relative}</span>
-                  </span>
-                  <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 font-mono text-[9px] tracking-wide ${
+                  <span className="min-w-0 break-words font-semibold text-sm text-white" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
+                </span>
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9px] tracking-wide ${
                 isCoreTier ? 'bg-[#242424] text-gray-400' :
                 queueIntentCategory(lead) === 'HOT' ? 'border-[#FF5A1F]/20 bg-[#FF5A1F]/10 text-[#FF9A73]' :
                 queueIntentCategory(lead) === 'WARM' ? 'border-amber-400/20 bg-amber-400/[0.08] text-amber-300' : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
               }`}>
                 {isCoreTier ? 'REPLY' : queueIntentCategory(lead)}
-                  </span>
                 </span>
               </div>
               <p className="mt-3 line-clamp-2 min-h-10 break-words text-xs leading-5 text-white/60" title={lead.inboundSignal}>{lead.inboundSignal || 'No message preview available.'}</p>
-              <div className="mt-3 flex min-w-0 items-center justify-between gap-2 border-t border-white/[0.07] pt-3">
-                <span className="flex min-w-0 items-center gap-1.5 truncate pr-8 text-[10px] text-white/45"><Clock3 className="h-3 w-3 shrink-0" /><time dateTime={lead.createdAt ? new Date(lead.createdAt).toISOString() : undefined} title={receivedTime(lead.createdAt, clock).exact}>{receivedTime(lead.createdAt, clock).exact}</time></span>
-                <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-[#FF9A73]">Review <ChevronRight className="h-3 w-3" /></span>
-              </div>
             </button>
-            {queueView === 'active' && <button type="button" disabled={isArchiving && activeLead?.id === lead.id} title="Archive message" aria-label={`Archive message from ${lead.name}`} onClick={() => { selectLead(lead); void (async () => {
-              setIsArchiving(true);
-              try {
-                const response = await fetch('/api/triage/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });
-                const result = await response.json().catch(() => null);
-                if (!response.ok) throw new Error(result?.error || 'Unable to archive this lead.');
-                const updated = leads.map(item => item.id === lead.id ? { ...item, recordStatus: 'ARCHIVED' } : item);
-                setLeads(updated);
-                if (lead.id === activeLeadId) selectLeadById(updated.find(item => item.recordStatus === 'PENDING')?.id || null, updated);
-                showArchiveToast('Lead archived'); router.refresh();
-              } catch (error) { showArchiveToast(error instanceof Error ? error.message : 'Unable to archive this lead.'); }
-              finally { setIsArchiving(false); }
-            })(); }} className="absolute bottom-[1.05rem] right-4 flex h-7 w-7 items-center justify-center rounded-md text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] disabled:opacity-50"><Archive className="h-3.5 w-3.5" /></button>}
+            <div className="mt-3 flex min-w-0 items-center justify-between gap-2 border-t border-white/[0.07] pt-3">
+              <span className="flex min-w-0 items-center gap-1.5 truncate text-[10px] text-white/45"><Clock3 className="h-3 w-3 shrink-0" /><time dateTime={lead.createdAt ? new Date(lead.createdAt).toISOString() : undefined} title={receivedTime(lead.createdAt, clock).exact}>{receivedTime(lead.createdAt, clock).exact}</time></span>
+              <div className="flex shrink-0 items-center gap-1">
+                <button type="button" disabled={favoriteBusyId === lead.id} title={lead.isFavorite ? 'Remove favorite' : 'Add favorite'} aria-label={`${lead.isFavorite ? 'Remove' : 'Add'} ${lead.name} ${lead.isFavorite ? 'from' : 'to'} favorites`} aria-pressed={Boolean(lead.isFavorite)} onClick={(event) => { event.stopPropagation(); void toggleFavorite(lead); }} className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] disabled:opacity-50 ${lead.isFavorite ? 'text-[#FF9A36]' : 'text-white/40 hover:bg-white/[0.06] hover:text-white'}`}><Star className={`h-4 w-4 ${lead.isFavorite ? 'fill-current' : ''}`} /></button>
+                {queueView === 'active' && <button type="button" disabled={isArchiving} title="Archive message" aria-label={`Archive message from ${lead.name}`} onClick={(event) => { event.stopPropagation(); void archiveSignal(lead.id); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] disabled:opacity-50"><Archive className="h-4 w-4" /></button>}
+                <button type="button" disabled={deletingArchivedId === lead.id} title="Move to trash; preserve original record" aria-label={`Move ${lead.name} to trash; original record will be preserved`} onClick={(event) => { event.stopPropagation(); void trashSignal(lead.id); }} className="flex h-8 w-8 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-red-500/[0.08] hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            </div>
           </article>
         ))}
       </div>
@@ -1423,14 +1485,14 @@ export default function TriageCommandCenter({
                 ) : (
                   <button
                     type="button"
-                    onClick={handlePermanentDelete}
+                    onClick={handleTrashArchived}
                     disabled={deletingArchivedId === activeLead.id}
                     className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 py-3 text-sm font-bold text-red-400 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {deletingArchivedId === activeLead.id
                       ? <Loader2 className="h-4 w-4 animate-spin" />
                       : <Trash2 className="h-4 w-4" />}
-                    {deletingArchivedId === activeLead.id ? 'Deleting...' : 'Permanently Delete'}
+                    {deletingArchivedId === activeLead.id ? 'Moving to trash...' : 'Move to trash'}
                   </button>
                 ) : (
                   <>

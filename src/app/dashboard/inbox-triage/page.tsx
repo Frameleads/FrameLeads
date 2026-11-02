@@ -37,7 +37,7 @@ async function InboxTriageData() {
   const triageSignals = await prisma.inboundSignal.findMany({
       where: {
         userId: user?.id ?? "__unauthenticated__",
-        status: { in: ["PENDING", "ARCHIVED"] },
+        status: { in: ["PENDING", "ARCHIVED", "TRASHED"] },
       },
       orderBy: [
         { isHighPriority: "desc" },

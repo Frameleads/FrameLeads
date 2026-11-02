@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifiedCustomerUser } from '@/lib/customer-session';
 import { requireFeatureAccess } from "@/lib/auth-guard";
-import { getUserEntitlementTier } from '@/lib/auth-guard';
 
 async function getCurrentUserId() {
   return (await verifiedCustomerUser())?.id || null;
@@ -62,9 +61,6 @@ export async function DELETE(request: Request) {
     if (!userId) {
       return NextResponse.json({ success: false, error: "Unauthorized." }, { status: 401 });
     }
-    if (await getUserEntitlementTier(userId) === 'MICRO_PILOT') return NextResponse.json({ success: false,
-      error: 'Micro-Pilot preserves original customer messages; permanent deletion is unavailable.' }, { status: 403 });
-
     const payload = await request.json().catch(() => null);
     const id = typeof payload?.id === "string" ? payload.id.trim() : "";
     if (!id) {
@@ -75,22 +71,24 @@ export async function DELETE(request: Request) {
     if (!signal) {
       return NextResponse.json({ success: false, error: "Signal not found." }, { status: 404 });
     }
-    if (signal.status !== "ARCHIVED") {
+    if (!['PENDING', 'ARCHIVED'].includes(signal.status)) {
       return NextResponse.json(
-        { success: false, error: "Only archived signals can be permanently deleted." },
+        { success: false, error: "Only active or archived signals can be moved to trash." },
         { status: 409 },
       );
     }
 
+    // Soft remove from the working queues. The original signal and its
+    // decision history remain stored with status TRASHED.
     await prisma.inboundSignal.update({
       where: { id },
       data: { status: "TRASHED" },
     });
-    return NextResponse.json({ success: true, status: "TRASHED" });
+    return NextResponse.json({ success: true, status: "TRASHED", softRemoved: true });
   } catch (error) {
     console.error("[TRIAGE TRASH ERROR]:", error);
     return NextResponse.json(
-      { success: false, error: "Unable to permanently delete this signal." },
+      { success: false, error: "Unable to move this signal to trash." },
       { status: 500 },
     );
   }
