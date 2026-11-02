@@ -4,7 +4,7 @@ import { AutomationExecutionState as State, AutomationMode as Mode, DecisionHuma
 import { prisma } from '../prisma';
 import { MEMORY_EVENT, recordProspectMemoryEvent, recordProspectMemoryEventInTransaction } from '../prospects/memory';
 import { materializeMessageInTransaction } from '../decision/conversation';
-import { sendNativeEmail } from '../outbound/native-mail';
+import { sendNativeEmail, sendNativeInboundEmail } from '../outbound/native-mail';
 import { evaluateAutomationMode, resolveAutomationMode } from './resolve';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -67,7 +67,8 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
   }
   if (input.action === Action.AUTOPILOT_SEND && (first.resolvedMode !== Mode.AUTOPILOT || first.state !== State.READY))
     return { state: first.state, reasons: first.reasons, attempt: null, reused: false };
-  if (!first.integrationAvailable || !first.source.generatedLead?.id || !first.source.generatedLead.email)
+  if (!first.integrationAvailable || (!first.source.generatedLead?.email && !first.source.prospectEmail) ||
+    (input.action === Action.AUTOPILOT_SEND && !first.source.generatedLead?.id))
     return { state: State.HELD, reasons: ['OUTBOUND_INTEGRATION_UNAVAILABLE'], attempt: null, reused: false };
   // Recheck immediately before the irreversible claim. Every branch reads current tenant controls.
   const current = await evaluateAutomationMode({ userId: input.userId, decisionId: input.decisionId, proposedReply: input.reply }, db);
@@ -75,7 +76,8 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
     (input.action === Action.AUTOPILOT_SEND && current.resolvedMode !== Mode.AUTOPILOT))
     return { state: current.state, reasons: current.reasons, attempt: null, reused: false };
   const lead = current.source.generatedLead;
-  if (!current.integrationAvailable || !lead?.id || !lead.email)
+  if (!current.integrationAvailable || (!lead?.email && !current.source.prospectEmail) ||
+    (input.action === Action.AUTOPILOT_SEND && !lead?.id))
     return { state: State.HELD, reasons: ['OUTBOUND_INTEGRATION_UNAVAILABLE'], attempt: null, reused: false };
   const content = input.reply.trim();
   const idempotencyKey = hash(`${input.userId}:${input.decisionId}:reply-send:v1`);
@@ -124,18 +126,26 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
     catch { console.error('[AUTOMATION] Approval memory event could not be recorded'); }
   }
   try {
-    const sent = await sender({ userId: input.userId, leadId: lead.id,
-      to: lead.email, subject: 'Re: Your message', text: content }, db);
+    const sent = lead?.id && lead.email
+      ? await sender({ userId: input.userId, leadId: lead.id,
+          to: lead.email, subject: 'Re: Your message', text: content }, db)
+      : await sendNativeInboundEmail({ userId: input.userId, signalId: current.source.id,
+          prospectId: current.decision.prospectId,
+          subject: 'Re: Your message', text: content }, db);
     await db.$transaction(async tx => {
-      const inbox = await tx.sendingInbox.findFirst({ where: { userId: input.userId,
-        emailAddress: { equals: (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { imapEmail: true } })).imapEmail || '', mode: 'insensitive' } } }) ||
-        await tx.sendingInbox.create({ data: { userId: input.userId,
-          emailAddress: (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { imapEmail: true } })).imapEmail! } });
-      const log = await tx.outboundLog.create({ data: { inboxId: inbox.id, leadId: lead.id,
-        status: 'sent', channel: 'email' } });
-      await materializeMessageInTransaction(tx, { userId: input.userId, prospectId: current.decision.prospectId,
-        sourceType: 'OUTBOUND_LOG', sourceId: log.id, direction: 'OUTBOUND', body: content, occurredAt: log.sentAt,
-        providerId: sent.providerMessageId });
+      // OutboundLog is linked to Scout GeneratedLead. For native inbound-only
+      // records the authoritative DecisionExecutionAttempt is the send receipt.
+      if (lead?.id && lead.email) {
+        const inbox = await tx.sendingInbox.findFirst({ where: { userId: input.userId,
+          emailAddress: { equals: (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { imapEmail: true } })).imapEmail || '', mode: 'insensitive' } } }) ||
+          await tx.sendingInbox.create({ data: { userId: input.userId,
+            emailAddress: (await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { imapEmail: true } })).imapEmail! } });
+        const log = await tx.outboundLog.create({ data: { inboxId: inbox.id, leadId: lead.id,
+          status: 'sent', channel: 'email' } });
+        await materializeMessageInTransaction(tx, { userId: input.userId, prospectId: current.decision.prospectId,
+          sourceType: 'OUTBOUND_LOG', sourceId: log.id, direction: 'OUTBOUND', body: content, occurredAt: log.sentAt,
+          providerId: sent.providerMessageId });
+      }
       await tx.decisionExecutionAttempt.update({ where: { id: attempt.id }, data: { status: AttemptStatus.SENT,
         providerMessageId: sent.providerMessageId, completedAt: new Date() } });
       await recordProspectMemoryEventInTransaction(tx, { userId: input.userId, prospectId: current.decision.prospectId,
