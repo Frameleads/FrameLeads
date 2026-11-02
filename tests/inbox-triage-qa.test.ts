@@ -252,3 +252,24 @@ test('Trash view lists preserved signals and safely restores only owner-matched 
   assert.match(trash, /data: \{ status: "TRASHED" \}/);
   assert.doesNotMatch(restore, /\.delete\(/);
 });
+
+test('Favorites tab provides persistent saved-lead view without altering Active/Archived workflow', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const page = source('src/app/dashboard/inbox-triage/page.tsx');
+  const favoriteRoute = source('src/app/api/triage/favorite/route.ts');
+  assert.match(panel, /'active' \| 'archived' \| 'favorites' \| 'trash'/);
+  assert.match(panel, /queueView === 'favorites' \? Boolean\(lead\.isFavorite\)/);
+  assert.match(panel, /lead\.recordStatus === 'PENDING' \|\| lead\.recordStatus === 'ARCHIVED'/);
+  assert.match(panel, /Favorites \(\{favoritesCount\}\)/);
+  assert.match(panel, /handleQueueViewChange\('favorites'\)/);
+  assert.match(panel, /NO FAVORITES YET/);
+  assert.match(panel, /nextFavorite \? 'Added to Favorites/);
+  assert.match(panel, /queueView === 'favorites' && !nextFavorite && activeLeadId === lead\.id/);
+  assert.match(panel, /lead\.recordStatus === 'PENDING' && <button/);
+  assert.match(panel, /activeLead\.recordStatus === 'ARCHIVED' \? userTier/);
+  assert.match(panel, /fetch\('\/api\/triage\/favorite'/);
+  assert.match(page, /status: \{ in: \["PENDING", "ARCHIVED", "TRASHED"\] \}/);
+  assert.match(favoriteRoute, /where: \{ id, userId \}/);
+  assert.match(favoriteRoute, /data: \{ isFavorite: payload\.isFavorite \}/);
+  assert.doesNotMatch(favoriteRoute, /status: ['"]ARCHIVED['"]|status: ['"]TRASHED['"]/);
+});
