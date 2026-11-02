@@ -126,8 +126,7 @@ type ResponseSLAView = { status: 'ACTIVE' | 'BREACHED' | 'RESOLVED' | 'CANCELLED
   escalationLevel: number; escalationReason: string | null; assignmentId: string | null;
   riskBandAtStart: string | null; resolutionReason: string | null };
 
-function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, isMicroPilot, hasSavedDecision, pilotDecisionsRemaining, canAnalyze, canReanalyze }: { signalId: string;
-  reply: string;
+function DecisionPacketPanel({ signalId, onDecision, onNewPilotDecision, onRisk, onSLA, dueSoonPercent, isEnterpriseTier, isMicroPilot, hasSavedDecision, pilotDecisionsRemaining, canAnalyze, canReanalyze }: { signalId: string;
   onDecision: (signalId: string, status: string, packet?: DecisionPacket) => void;
   onNewPilotDecision: (remaining?: number) => void;
   isMicroPilot: boolean;
@@ -369,22 +368,25 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
     {packet && <div className="pt-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,.8fr)]">
-          <article className="min-w-0 rounded-xl border border-white/[0.08] bg-black/15 p-4 sm:p-5">
-          <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.18em] text-white/50"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]"><Mail className="h-3.5 w-3.5 text-[#FF5A1F]" /></span>Incoming reply</p>
-          <p className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-white/70">“{formatInboundReplyForDisplay(reply)}”</p>
-          <h3 className="mt-5 flex max-w-full items-start gap-3 break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">
-            <span aria-hidden="true" className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]"><Sparkles className="h-4 w-4" /></span>
-            <span className="min-w-0">{completedInterpretation ? packet.interpretation :
-              unverifiedModelOutput ? 'AI response needs evidence verification' :
-              packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}</span>
-          </h3>
-          {unverifiedModelOutput && <p role="status" className="mt-2 max-w-3xl text-xs leading-5 text-white/55">
-            The model returned an unverified result. No governed recommendation was accepted.
-            The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
-          </p>}
-        </article>
+          <article className="flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
+            <div>
+              <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><Sparkles className="h-3.5 w-3.5" /></span>
+                AI interpretation
+              </p>
+              <p className="mt-3 break-words text-sm leading-6 text-white/75">
+                {completedInterpretation ? packet.interpretation :
+                  unverifiedModelOutput ? 'AI response needs evidence verification' :
+                  packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}
+              </p>
+              {unverifiedModelOutput && <p role="status" className="mt-3 text-xs leading-5 text-white/55">
+                The model returned an unverified result. No governed recommendation was accepted.
+                The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
+              </p>}
+            </div>
+          </article>
         {isReview && !interrupted && <aside className="flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
-          <div><p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.18em] text-[#FF9A73]"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><ShieldAlert className="h-3.5 w-3.5" /></span>Why human review</p>
+          <div><p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><ShieldAlert className="h-3.5 w-3.5" /></span>Why human review</p>
             <p className="mt-3 break-words text-sm leading-6 text-white/75">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p></div>
           <span className="w-fit rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF9A73]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
         </aside>}
@@ -409,7 +411,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
 
 function SummaryCard({ icon, label, value, detail, active = false }: { icon: React.ReactNode; label: string; value: string; detail: string; active?: boolean }) {
   return <article className={`min-w-0 rounded-xl border p-4 transition-colors duration-200 ${active ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.035]' : 'border-white/[0.08] bg-black/10'}`}>
-    <div className="flex items-center gap-2"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${active ? 'border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]' : 'border-white/[0.08] bg-white/[0.025] text-white/55'}`}>{icon}</span><p className="font-mono text-[8px] uppercase tracking-[.16em] text-white/45">{label}</p></div>
+    <div className="flex items-center gap-2"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${active ? 'border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]' : 'border-white/[0.08] bg-white/[0.025] text-white/55'}`}>{icon}</span><p className="font-mono text-[11px] uppercase tracking-[.12em] text-white/60">{label}</p></div>
     <p className={`mt-3 break-words text-sm font-semibold uppercase ${active ? 'text-[#FF9A73]' : 'text-white/85'}`} title={value}>{value}</p>
     <p className="mt-1 line-clamp-2 break-words text-[10px] leading-4 text-white/45">{detail}</p>
   </article>;
@@ -1319,7 +1321,7 @@ export default function TriageCommandCenter({
           </div>
         </div>
 
-        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} reply={activeLead.inboundSignal} onDecision={updateDecisionStatus}
+        <DecisionPacketPanel key={activeLead.id} signalId={activeLead.id} onDecision={updateDecisionStatus}
           onNewPilotDecision={(serverRemaining) => setPilotRemaining(remaining => typeof serverRemaining === 'number'
             ? Math.min(3, Math.max(0, serverRemaining)) : Math.max(0, remaining - 1))}
           onRisk={updateRevenueRisk} onSLA={updateResponseSLA} dueSoonPercent={slaDueSoonPercent} isEnterpriseTier={isEnterpriseTier}
@@ -1333,7 +1335,7 @@ export default function TriageCommandCenter({
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
           
           {/* Prospect Identity & Metrics */}
-          <div className="rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 shadow-2xl sm:p-8">
+          <div className="rounded-lg border border-[#888888] bg-[#121212] p-5 shadow-2xl sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
@@ -1353,7 +1355,7 @@ export default function TriageCommandCenter({
           </div>
 
           {/* Inbound Raw Message */}
-          <div className="flex-grow rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 sm:p-8">
+          <div className="flex-grow rounded-lg border border-[#888888] bg-[#121212] p-5 sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
@@ -1375,7 +1377,7 @@ export default function TriageCommandCenter({
             <div className="w-full grid grid-cols-1 gap-6">
               
               {/* Intent Intelligence Widget */}
-              <div className="w-full bg-[#1a1a1a] border border-[#FF5A1F] p-6 rounded-md shadow-md">
+              <div className="w-full bg-[#1a1a1a] border border-[#888888] p-6 rounded-md shadow-md">
                 <div className="flex justify-between items-end mb-4">
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>

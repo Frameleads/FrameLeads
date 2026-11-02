@@ -6,6 +6,6 @@
       "schedule": "0 14 * * 5"
     }
   ],
-  "buildCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|fix/inbox-filter-row-message-flow-20261102|codex/whop-native-checkout-release-20261025) NODE_OPTIONS=--max-old-space-size=4096 npm run build:preview;; *) npm run build;; esac",
-  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|codex/inbox-triage-repair-849bb12|codex/whop-native-checkout-release-20261025|fix/inbox-filter-row-message-flow-20261102) exit 1;; *) exit 0;; esac"
+  "buildCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|feat/inbox-decision-packet-readable-summary-20261102|codex/whop-native-checkout-release-20261025) NODE_OPTIONS=--max-old-space-size=4096 npm run build:preview;; *) npm run build;; esac",
+  "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|codex/inbox-triage-repair-849bb12|codex/whop-native-checkout-release-20261025|feat/inbox-decision-packet-readable-summary-20261102) exit 1;; *) exit 0;; esac"
 }
