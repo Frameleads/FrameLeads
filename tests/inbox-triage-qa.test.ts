@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { decisionStatusPresentation } from '../src/lib/decision/status-presentation';
 import { formatIntentTemperature, intentTemperature, isHighPriorityIntent, resolveIntentTemperature } from '../src/lib/intent-temperature';
 import { getDecisionProspectInterestScore } from '../src/lib/decision/intent-confidence';
+import { getSignalChipStyle, getSignalChipTone } from '../src/app/dashboard/inbox-triage/signal-chip-style';
 
 const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
 
@@ -285,4 +286,36 @@ test('Switching Inbox Triage queue tabs preserves locally saved favorites and se
   assert.match(ui, /Favorites \(\{favoritesCount\}\)/);
   assert.match(ui, /const updatedLeads = leads\.map\(item => item\.id === lead\.id \? \{ \.\.\.item, isFavorite: nextFavorite \} : item\);/);
   assert.match(ui, /setLeads\(updatedLeads\);/);
+});
+
+test('Why Now signal chips use semantic presentation without changing classification logic', () => {
+  assert.equal(getSignalChipTone('Meeting Request'), 'meeting');
+  assert.equal(getSignalChipTone('Demo Request'), 'meeting');
+  assert.equal(getSignalChipTone('Positive Interest'), 'interest');
+  assert.equal(getSignalChipTone('Interested'), 'interest');
+  assert.equal(getSignalChipTone('Question'), 'question');
+  assert.equal(getSignalChipTone('Negotiation'), 'commercial');
+  assert.equal(getSignalChipTone('Pricing Inquiry'), 'commercial');
+  assert.equal(getSignalChipTone('Timing Objection'), 'risk');
+  assert.equal(getSignalChipTone('Unknown evidence'), 'neutral');
+  assert.match(getSignalChipStyle('Meeting Request'), /text-amber-200/);
+  assert.match(getSignalChipStyle('Positive Interest'), /text-emerald-200/);
+  assert.match(getSignalChipStyle('Question'), /text-sky-200/);
+  assert.match(getSignalChipStyle('Negotiation'), /text-orange-200/);
+  assert.match(getSignalChipStyle('Risk'), /text-rose-200/);
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /getSignalChipStyle\(signal\)/);
+  assert.match(panel, /displayedSignals\.map\(\(signal, index\)/);
+});
+
+test('mobile draft controls have breathing room and unresolved-policy notice is gold', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  assert.match(panel, /flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5/);
+  assert.match(panel, /min-w-0 w-full flex-1/);
+  assert.match(panel, /shrink-0 items-center justify-center self-start/);
+  assert.match(panel, /sm:self-auto/);
+  assert.match(panel, /border-amber-400\/30 bg-amber-400\/\[0\.09\] text-amber-100\/90/);
+  assert.match(panel, /unresolvedPolicy \? 'Sales Constitution review is required before any reply is approved/);
+  assert.match(panel, /legacy send buttons are intentionally unavailable/);
+  assert.match(panel, /disabled=\{isGenerating \|\| isDispatching \|\| \(governedDraftMode && !safeGovernedSuggestion\)\}/);
 });

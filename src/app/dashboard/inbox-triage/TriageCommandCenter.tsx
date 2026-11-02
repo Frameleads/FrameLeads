@@ -16,6 +16,7 @@ import { decisionStatusPresentation } from '@/lib/decision/status-presentation';
 import { getDisplayedIntentConfidence, getDecisionProspectInterestScore } from '@/lib/decision/intent-confidence';
 import { formatIntentTemperature, intentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 import { CORE_CHECKOUT_URL } from '@/lib/checkout';
+import { getSignalChipStyle } from './signal-chip-style';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -1408,13 +1409,7 @@ export default function TriageCommandCenter({
                       <p className="text-xs leading-5 text-gray-500">Validated signals appear after the Decision analysis completes.</p>
                     )}
                     {displayedSignals.map((signal, index) => (
-                      <span key={`${activeLead?.id ?? 'lead'}-${signal}-${index}`} className={`rounded-full border px-3 py-1 text-xs ${
-                        signal.toLowerCase() === 'pricing inquiry'
-                          ? 'border-white/[0.12] bg-[#1A1A1A] text-white/80'
-                          : /discount/i.test(signal)
-                            ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] text-[#FF9A73]'
-                            : 'border-white/[0.08] bg-[#1A1A1A] text-[#888888]'
-                      }`}>
+                      <span key={`${activeLead?.id ?? 'lead'}-${signal}-${index}`} className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium leading-5 transition-colors ${getSignalChipStyle(signal)}`}>
                         {signal}
                       </span>
                     ))}
@@ -1428,8 +1423,8 @@ export default function TriageCommandCenter({
               <div className="relative flex h-auto min-h-min w-full flex-col gap-3 overflow-visible">
               
               {/* 1. Header */}
-              <div className="flex items-center justify-between w-full">
-                <div>
+              <div className="flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+                <div className="min-w-0 w-full flex-1">
                   <h3 className="text-[10px] font-bold text-white/50 tracking-widest uppercase">Draft Response</h3>
                   {governedDraftMode && <p className="mt-1 text-xs text-white/55">
                     {unresolvedPolicy ? 'Policy review required · no governed reply has been approved.' :
@@ -1441,7 +1436,7 @@ export default function TriageCommandCenter({
                   type="button" 
                   onClick={() => setIsEditing(!isEditing)}
                   disabled={isGenerating || isDispatching || (governedDraftMode && !safeGovernedSuggestion)}
-                  className="inline-flex min-h-11 items-center px-3 py-2 text-xs bg-[#1A1A1A] text-white rounded hover:bg-[#222]"
+                  className="inline-flex min-h-11 shrink-0 items-center justify-center self-start rounded-lg bg-[#1A1A1A] px-4 py-2 text-xs text-white transition-colors hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
                 >
                   {isEditing ? 'Lock Draft' : 'Unlock Edit Mode'}
                 </button>
@@ -1511,7 +1506,7 @@ export default function TriageCommandCenter({
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
                     {governedDraftMode ? (
-                      <p className="rounded-xl border border-white/10 bg-[#1A1A1A] px-4 py-3 text-xs leading-5 text-white/65">
+                      <p role={unresolvedPolicy ? 'alert' : undefined} className={`rounded-xl border px-4 py-3 text-xs leading-6 ${unresolvedPolicy ? 'border-amber-400/30 bg-amber-400/[0.09] text-amber-100/90' : 'border-white/10 bg-[#1A1A1A] text-white/65'}`}>
                         {unresolvedPolicy ? 'Sales Constitution review is required before any reply is approved. Review the Decision Packet; the legacy send buttons are intentionally unavailable.' :
                           'Decisions can propose a reply for human review, never an automatic send. Use the governed approval workflow or the separately protected Sandbox sending path.'}
                       </p>
