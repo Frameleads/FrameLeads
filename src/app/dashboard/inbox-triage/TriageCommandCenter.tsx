@@ -1276,7 +1276,7 @@ export default function TriageCommandCenter({
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
           
           {/* Prospect Identity & Metrics */}
-          <div className="rounded-lg border border-gray-800 bg-[#121212] p-5 shadow-2xl sm:p-8">
+          <div className="rounded-lg border border-[#888888] bg-[#121212] p-5 shadow-2xl sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
@@ -1296,7 +1296,7 @@ export default function TriageCommandCenter({
           </div>
 
           {/* Inbound Raw Message */}
-          <div className="flex-grow rounded-lg border border-gray-800 bg-[#121212] p-5 sm:p-8">
+          <div className="flex-grow rounded-lg border border-[#888888] bg-[#121212] p-5 sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
@@ -1318,7 +1318,7 @@ export default function TriageCommandCenter({
             <div className="w-full grid grid-cols-1 gap-6">
               
               {/* Intent Intelligence Widget */}
-              <div className="w-full bg-[#1a1a1a] border border-gray-800 p-6 rounded-md shadow-md">
+              <div className="w-full bg-[#1a1a1a] border border-[#888888] p-6 rounded-md shadow-md">
                 <div className="flex justify-between items-end mb-4">
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
