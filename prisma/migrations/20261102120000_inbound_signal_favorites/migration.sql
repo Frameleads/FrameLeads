@@ -1,0 +1,2 @@
+ALTER TABLE "InboundSignal"
+ADD COLUMN "isFavorite" BOOLEAN NOT NULL DEFAULT false;
