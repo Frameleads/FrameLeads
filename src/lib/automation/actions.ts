@@ -42,16 +42,17 @@ function humanOverrideAllowed(
   evaluation: Awaited<ReturnType<typeof evaluateAutomationMode>>,
   input: { actorUserId: string | null; userId: string; action: Action; overrideReason?: string },
 ) {
+  // These are non-overridable even for a normally READY or APPROVAL decision.
+  if (evaluation.evaluations.some(item => item.blockingRules.length || item.unresolvedRules.length ||
+    item.configurationMissing || item.safeResponseRequirements.length)) return false;
+  if (evaluation.reasons.some(reason =>
+    /UNSUBSCRIBE|SUPPRESS|HOLD|UNRESOLVED|REJECT|STALE|REANALYSIS|EXECUTION|CONFIGURATION|CONTEXT_CHANGED/.test(reason))) return false;
+  if (evaluation.decision.primaryIntent === TriageIntent.UNSUBSCRIBE ||
+    evaluation.decision.secondaryIntents.includes(TriageIntent.UNSUBSCRIBE)) return false;
   if (evaluation.state === State.READY || evaluation.state === State.PENDING_APPROVAL) return true;
   if (evaluation.state !== State.ESCALATED) return false;
   if (input.action === Action.AUTOPILOT_SEND || input.actorUserId !== input.userId ||
     !input.overrideReason || input.overrideReason.trim().length < 12) return false;
-  if (evaluation.evaluations.some(item => item.blockingRules.length || item.unresolvedRules.length ||
-    item.configurationMissing || item.safeResponseRequirements.length)) return false;
-  if (evaluation.reasons.some(reason =>
-    /UNSUBSCRIBE|SUPPRESS|HOLD|UNRESOLVED|REJECT|STALE|REANALYSIS|EXECUTION|CONFIGURATION/.test(reason))) return false;
-  if (evaluation.decision.primaryIntent === TriageIntent.UNSUBSCRIBE ||
-    evaluation.decision.secondaryIntents.includes(TriageIntent.UNSUBSCRIBE)) return false;
   return evaluation.reasons.some(reason => reason === 'CONSTITUTION_REQUIRES_HUMAN' ||
     reason === 'CONSTITUTION_REQUIRES_APPROVAL' || reason === 'REQUESTED_ESCALATION');
 }
