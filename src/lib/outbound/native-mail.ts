@@ -47,3 +47,36 @@ export async function sendNativeEmail(input: NativeMailInput, db: PrismaClient =
     return { provider: 'NATIVE_SMTP', providerMessageId: sent.messageId || null };
   } finally { transport.close(); }
 }
+
+/**
+ * Send a manual reply to an explicitly tenant-owned inbound signal. The
+ * recipient is sourced from the stored signal, never from a client field.
+ * This variant supports native inbox records with no GeneratedLead record.
+ */
+export async function sendNativeInboundEmail(input: { userId: string; signalId: string; prospectId: string;
+  subject: string; text: string }, db: PrismaClient = prisma) {
+  if (!input.text.trim() || input.text.length > 4000 || !input.subject.trim() || input.subject.length > 500)
+    throw new TypeError('Invalid inbound reply content');
+  const [signal, user] = await Promise.all([
+    db.inboundSignal.findFirst({ where: { id: input.signalId, userId: input.userId,
+      prospectId: input.prospectId, status: 'PENDING' }, select: { prospectEmail: true } }),
+    db.user.findUnique({ where: { id: input.userId },
+      select: { imapEmail: true, imapPassword: true, imapHost: true } }),
+  ]);
+  const to = signal?.prospectEmail?.trim().toLowerCase() || '';
+  if (!/^\S+@\S+\.\S+$/.test(to)) throw new NativeMailUnavailable('Inbound signal has no verified recipient email');
+  if (!user?.imapEmail || !user.imapPassword || !user.imapHost)
+    throw new NativeMailUnavailable('Native inbox is not connected');
+  const settings = resolveSmtpSettings(user.imapHost);
+  if (!settings) throw new NativeMailUnavailable('Mailbox host has no supported SMTP mapping');
+  const publicHost = await resolvePublicImapHost(settings.host);
+  const transport = nodemailer.createTransport({ host: publicHost.address, port: settings.port,
+    secure: settings.secure, auth: { user: user.imapEmail, pass: decrypt(user.imapPassword) },
+    tls: { servername: publicHost.hostname }, connectionTimeout: 15_000,
+    greetingTimeout: 10_000, socketTimeout: 30_000 });
+  try {
+    const sent = await transport.sendMail({ from: user.imapEmail, to,
+      subject: input.subject.trim(), text: input.text.trim() });
+    return { provider: 'NATIVE_SMTP', providerMessageId: sent.messageId || null };
+  } finally { transport.close(); }
+}
