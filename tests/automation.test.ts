@@ -279,3 +279,41 @@ test('Reject records a bounded reason without any outbound attempt or AI usage',
   assert.equal(f.attempts.length, 0); assert.equal(f.sends(), 0); assert.equal(f.aiCalls(), 0);
   assert.equal(f.memories.filter(x => x.eventType === 'HUMAN_REJECTED').length, 1);
 });
+
+test('Manual human override can execute a review-only rule and records the approval reason exactly once', async () => {
+  const f = fixture();
+  f.setRules([rule(ConstitutionEffect.REQUIRE_HUMAN)]);
+  const base = { userId: tenant, decisionId: 'decision-a', action: 'EDIT_AND_SEND' as const,
+    editedReply: 'Thank you for your reply.', requestKey: 'manual-soft-case' };
+  const denied = await actOnDecision(base, { db: f.db, sender: f.sender });
+  assert.equal(denied.state, 'ESCALATED');
+  assert.equal(f.sends(), 0);
+  const approved = await actOnDecision({ ...base, overrideReason: 'Authorized human reviewed the commercial context.' },
+    { db: f.db, sender: f.sender });
+  assert.equal(approved.state, 'EXECUTED');
+  assert.equal(f.sends(), 1);
+  assert.equal(f.actions[0].reason, 'Authorized human reviewed the commercial context.');
+  await actOnDecision({ ...base, overrideReason: 'Authorized human reviewed the commercial context.',
+    requestKey: 'manual-soft-again' }, { db: f.db, sender: f.sender });
+  assert.equal(f.sends(), 1);
+  assert.equal(f.attempts.length, 1);
+});
+
+test('Manual override cannot bypass BLOCK, suppression, unresolved rules or active prospect holds', async () => {
+  const input = { userId: tenant, decisionId: 'decision-a', action: 'EDIT_AND_SEND' as const,
+    requestKey: 'override-hard-case', editedReply: 'Thank you for your reply.',
+    overrideReason: 'A human approved this exception after review.' };
+  const blocked = fixture(); blocked.setRules([rule(ConstitutionEffect.BLOCK)]);
+  assert.equal((await actOnDecision(input, { db: blocked.db, sender: blocked.sender })).state, 'BLOCKED');
+  assert.equal(blocked.sends(), 0);
+  const suppressed = fixture(); suppressed.setSuppression(true);
+  assert.equal((await actOnDecision(input, { db: suppressed.db, sender: suppressed.sender })).state, 'BLOCKED');
+  assert.equal(suppressed.sends(), 0);
+  const unresolved = fixture();
+  unresolved.setRules([rule(ConstitutionEffect.REQUIRE_APPROVAL, 'CUSTOM_MANUAL')]);
+  assert.equal((await actOnDecision(input, { db: unresolved.db, sender: unresolved.sender })).state, 'ESCALATED');
+  assert.equal(unresolved.sends(), 0);
+  const held = fixture(); held.setHold(true);
+  assert.equal((await actOnDecision(input, { db: held.db, sender: held.sender })).state, 'HELD');
+  assert.equal(held.sends(), 0);
+});
