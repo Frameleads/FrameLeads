@@ -367,36 +367,46 @@ function DecisionPacketPanel({ signalId, onDecision, onNewPilotDecision, onRisk,
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
     {packet && <div className="pt-5">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,.8fr)]">
-          <article className="flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
+      {/* The interpretation is a concise full-width insight, never a stretched half-card. */}
+      <article className="min-w-0 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
+        <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><Sparkles className="h-3.5 w-3.5" /></span>
+          AI interpretation
+        </p>
+        <p className="mt-3 break-words text-sm leading-6 text-white/75">
+          {completedInterpretation ? packet.interpretation :
+            unverifiedModelOutput ? 'AI response needs evidence verification' :
+            packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}
+        </p>
+        {unverifiedModelOutput && <p role="status" className="mt-3 text-xs leading-5 text-white/55">
+          The model returned an unverified result. No governed recommendation was accepted.
+          The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
+        </p>}
+      </article>
+
+      {/* The review rationale occupies half the grid and pairs with the three
+          compact decision cards, eliminating the unequal-height headline gap. */}
+      {((isReview && !interrupted) || completedInterpretation) && (
+        <div className={`mt-4 grid items-stretch gap-3 sm:grid-cols-2 ${isReview && !interrupted && completedInterpretation ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+          {isReview && !interrupted && <aside className={`flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5 ${completedInterpretation ? 'sm:col-span-2 xl:col-span-2 xl:row-span-2' : 'sm:col-span-2 xl:col-span-3'}`}>
             <div>
               <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><Sparkles className="h-3.5 w-3.5" /></span>
-                AI interpretation
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><ShieldAlert className="h-3.5 w-3.5" /></span>
+                Why human review
               </p>
-              <p className="mt-3 break-words text-sm leading-6 text-white/75">
-                {completedInterpretation ? packet.interpretation :
-                  unverifiedModelOutput ? 'AI response needs evidence verification' :
-                  packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}
-              </p>
-              {unverifiedModelOutput && <p role="status" className="mt-3 text-xs leading-5 text-white/55">
-                The model returned an unverified result. No governed recommendation was accepted.
-                The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
-              </p>}
+              <p className="mt-3 break-words text-sm leading-6 text-white/75">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p>
             </div>
-          </article>
-        {isReview && !interrupted && <aside className="flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
-          <div><p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.12em] text-[#FF9A73]"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><ShieldAlert className="h-3.5 w-3.5" /></span>Why human review</p>
-            <p className="mt-3 break-words text-sm leading-6 text-white/75">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p></div>
-          <span className="w-fit rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF9A73]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
-        </aside>}
-      </div>
-
-      {completedInterpretation && <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard icon={<Handshake className="h-4 w-4" />} label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
-        <SummaryCard icon={governanceNeedsReview || blockedChecks > 0 ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />} label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
-        <SummaryCard icon={<UserRoundCheck className="h-4 w-4" />} label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
-      </div>}
+            <span className="w-fit rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF9A73]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
+          </aside>}
+          {completedInterpretation && <>
+            <SummaryCard icon={<Handshake className="h-4 w-4" />} label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
+            <SummaryCard icon={governanceNeedsReview || blockedChecks > 0 ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />} label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
+            <div className={`${isReview && !interrupted ? 'sm:col-span-2 xl:col-span-2' : 'sm:col-span-2 xl:col-span-1'} [&>article]:h-full`}>
+              <SummaryCard icon={<UserRoundCheck className="h-4 w-4" />} label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
+            </div>
+          </>}
+        </div>
+      )}
 
       {completedInterpretation && governanceNeedsReview && <p role="status" className="mt-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.04] px-4 py-3 text-xs leading-5 text-white/70">
         A relevant Sales Constitution rule could not be resolved from the available facts. Human review is required before treating any response as governed or approved. No automatic reply has been authorized.
@@ -1335,7 +1345,7 @@ export default function TriageCommandCenter({
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
           
           {/* Prospect Identity & Metrics */}
-          <div className="rounded-lg border border-[#888888] bg-[#121212] p-5 shadow-2xl sm:p-8">
+          <div className="rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
@@ -1355,7 +1365,7 @@ export default function TriageCommandCenter({
           </div>
 
           {/* Inbound Raw Message */}
-          <div className="flex-grow rounded-lg border border-[#888888] bg-[#121212] p-5 sm:p-8">
+          <div className="flex-grow rounded-lg border border-white/[0.1] bg-[#121212] p-5 sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
@@ -1377,7 +1387,7 @@ export default function TriageCommandCenter({
             <div className="w-full grid grid-cols-1 gap-6">
               
               {/* Intent Intelligence Widget */}
-              <div className="w-full bg-[#1a1a1a] border border-[#888888] p-6 rounded-md shadow-md">
+              <div className="w-full bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md shadow-md">
                 <div className="flex justify-between items-end mb-4">
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
