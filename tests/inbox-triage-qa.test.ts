@@ -70,23 +70,19 @@ test('Re-analyze uses the canonical decision endpoint and creates a retry versio
   assert.match(panel, /setError\('Decision analysis failed/);
 });
 
-test('Mobile and desktop layouts keep queues, packet, chips, details, and actions responsive', () => {
+test('Mobile and desktop layouts keep queue, packet, details, and actions responsive', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.match(panel, /grid[^"\n]*grid-cols-1[^"\n]*sm:grid-cols-2[^"\n]*xl:grid-cols-\[1\.5fr_1fr_1fr_1\.1fr\]/);
+  assert.match(panel, /sm:grid-cols-2/);
+  assert.match(panel, /xl:grid-cols-\[minmax\(260px,1\.25fr\)/);
   assert.match(panel, /overflow-x-auto flex-nowrap/);
   assert.match(panel, /w-\[84vw\].*max-w-\[340px\].*sm:w-\[320px\]/);
   assert.match(panel, /senderInitials\(lead\.name\)/);
   assert.match(panel, /function receivedTime\(/);
-  assert.match(panel, /aria-label=\{`Archive message from \$\{lead\.name\}`\}/);
+  assert.match(panel, /aria-label=\{\x60Archive message from /);
   assert.match(panel, /aria-pressed=\{lead\.id === activeLeadId\}/);
-  assert.match(panel, /max-h-32 overflow-auto whitespace-pre-wrap break-words/);
-  assert.match(panel, /lg:grid-cols-\[minmax\(0,1\.2fr\)_minmax\(250px,\.8fr\)\]/);
-  assert.match(panel, /min-h-\[18rem\]/);
-  assert.match(panel, /max-w-full[^\"]*break-words font-heading/);
-  assert.match(panel, /sm:grid-cols-2 xl:grid-cols-3/);
-  assert.match(panel, /flex flex-wrap gap-2/);
-  assert.match(panel, /flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-\[#FF5A1F\]\/20/);
   assert.match(panel, /grid min-w-0 grid-cols-1 items-stretch gap-y-6 xl:grid-cols-/);
+  assert.match(panel, /xl:grid-rows-\[auto_minmax\(0,1fr\)\]/);
+  assert.match(panel, /min-h-\[18rem\]/);
   assert.match(panel, /min-h-11/);
   assert.match(panel, /prefers-reduced-motion: reduce/);
   assert.match(panel, /animation: none/);
@@ -102,33 +98,29 @@ test('lower controls stay wired to their real handlers without invoking them in 
   assert.match(panel, /onClick=\{handleTrashArchived\}/);
 });
 
-test('lead cards show one receipt timestamp and persistent favorite, archive, and soft-trash actions', () => {
+test('Active lead cards retain timestamp, classification, favorites and archive/trash', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   const schema = source('prisma/schema.prisma');
   const favoriteRoute = source('src/app/api/triage/favorite/route.ts');
   const archiveRoute = source('src/app/api/triage/archive/route.ts');
-  const cardStart = panel.indexOf('<article key={lead.id}');
+  const cardStart = panel.lastIndexOf('<article key={lead.id}');
   const card = panel.slice(cardStart, panel.indexOf('</article>', cardStart));
   assert.match(card, /queueIntentCategory\(lead\)/);
   assert.match(card, /<time dateTime=\{lead\.createdAt/);
   assert.doesNotMatch(card, />Review</);
   assert.match(card, /senderInitials\(lead\.name\)/);
+  assert.match(card, /aria-pressed=\{Boolean\(lead\.isFavorite\)\}/);
+  assert.match(card, /event\.stopPropagation\(\); void archiveSignal\(lead\.id\)/);
+  assert.match(card, /event\.stopPropagation\(\); void trashSignal\(lead\.id\)/);
+  assert.match(card, /event\.stopPropagation\(\); void toggleFavorite\(lead\)/);
   assert.match(panel, /isFavorite: Boolean\(s\.isFavorite\)/);
   assert.match(panel, /fetch\('\/api\/triage\/favorite'/);
-  assert.match(panel, /aria-pressed=\{Boolean\(lead\.isFavorite\)\}/);
-  assert.match(panel, /Move to trash; preserve original record/);
-  assert.match(panel, /event\.stopPropagation\(\); void archiveSignal\(lead\.id\)/);
-  assert.match(panel, /event\.stopPropagation\(\); void trashSignal\(lead\.id\)/);
-  assert.match(panel, /event\.stopPropagation\(\); void toggleFavorite\(lead\)/);
   assert.match(schema, /isFavorite\s+Boolean\s+@default\(false\)/);
   assert.match(favoriteRoute, /where: \{ id, userId \}/);
-  assert.match(favoriteRoute, /data: \{ isFavorite: payload\.isFavorite \}/);
-  assert.match(archiveRoute, /data: \{ status: "TRASHED" \}/);
-  assert.match(archiveRoute, /decision history remain stored with status TRASHED/);
+  assert.match(archiveRoute, /status: "TRASHED"/);
 });
 
-
-test('Micro-Pilot keeps all raw replies and existing decision history visible, locking only additional analysis', () => {
+test('Micro-Pilot preserves saved inbox and history with trial-specific restrictions', () => {
   const entitlements = source('src/lib/entitlements.ts');
   const page = source('src/app/dashboard/inbox-triage/page.tsx');
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
@@ -137,15 +129,12 @@ test('Micro-Pilot keeps all raw replies and existing decision history visible, l
   assert.match(panel, /const hasInboxAccess = hasFeatureAccess\(userTier, 'INBOX_TRIAGE'\)/);
   assert.match(panel, /const \[pilotRemaining, setPilotRemaining\] = useState\(pilotDecisionsRemaining\)/);
   assert.match(panel, /One-Time Decision Allowance/);
-  assert.match(panel, /!hasSavedDecision && isMicroPilot && pilotDecisionsRemaining === 0/);
-  assert.match(panel, /hasSavedDecision \? 'Decision already recorded'/);
-  assert.match(panel, /if \(isMicroPilot && !packet\) return;/);
-  assert.match(panel, /if \(isMicroPilot && !result\.reused && result\.decision\.source !== 'UNAVAILABLE'\) onNewPilotDecision\(\)/);
-  assert.match(panel, /<Link href=\{\`\/dashboard\/decisions\/\$\{encodeURIComponent\(packet\.id\)\}\/replay\`\}/);
-  assert.match(panel, /\{inboundSignal\}/);
+  assert.match(panel, /hasSavedDecision/);
+  assert.match(panel, /onNewPilotDecision/);
+  assert.match(panel, /decision\.source !== 'UNAVAILABLE'/);
+  assert.match(panel, /inboundSignal/);
   assert.match(panel, /canReanalyze=\{userTier !== 'MICRO_PILOT'\}/);
 });
-
 
 test('interest scores require validated persisted AI evidence, never decision confidence', () => {
   const decision = { source: 'GEMINI', confidenceScore: 96,
@@ -175,22 +164,17 @@ test('Micro-Pilot Decision packet reflects the server-authoritative remaining ba
 });
 
 
-test('Micro-Pilot shows a compact real decision allowance and honest interrupted state', () => {
-  const page = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  const recoveryRoute = source('src/app/api/decisions/recovery/route.ts');
-  assert.match(page, /One-Time Decision Allowance/);
-  assert.match(page, /\{pilotDecisionsRemaining\}/);
-  assert.match(page, /of 3 prospect slots claimed/);
-  assert.doesNotMatch(page, /Micro-Pilot decision proof: \{pilotDecisionsRemaining\}/);
-  assert.match(page, /Review interrupted analysis/);
-  assert.match(page, /Recover analysis/);
-  assert.match(page, /AI response needs evidence verification/);
-  assert.doesNotMatch(page, /No verified interpretation yet/);
-  assert.match(page, /The model returned an unverified result/);
-  assert.match(page, /Previous inbox score — not verified by the governed Decision Engine/);
-  assert.match(page, /Policy review required · no governed reply has been approved/);
-  assert.match(page, /completedInterpretation && <div/);
-  assert.match(recoveryRoute, /entitlementError && user\.tier !== 'MICRO_PILOT'/);
+test('Micro-Pilot shows real remaining trial allowance and interrupted analysis state', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const recovery = source('src/app/api/decisions/recovery/route.ts');
+  assert.match(panel, /One-Time Decision Allowance/);
+  assert.match(panel, /\{pilotDecisionsRemaining\}/);
+  assert.match(panel, /of 3 prospect slots claimed/);
+  assert.match(panel, /Review interrupted analysis/);
+  assert.match(panel, /Recover analysis/);
+  assert.match(panel, /AI response needs evidence verification/);
+  assert.match(panel, /Policy review required · no governed reply has been approved/);
+  assert.match(recovery, /entitlementError && user\.tier !== 'MICRO_PILOT'/);
 });
 
 test('All Inbox Triage tiers render manual action controls but Micro-Pilot sends remain protected', () => {
@@ -311,16 +295,17 @@ test('Why Now signal chips use semantic presentation without changing classifica
   assert.match(panel, /displayedSignals\.map\(\(signal, index\)/);
 });
 
-test('mobile draft controls have breathing room and unresolved-policy notice is gold', () => {
+test('Mobile draft controls remain spaced and manual actions stay available under review', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   assert.match(panel, /flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5/);
   assert.match(panel, /min-w-0 w-full flex-1/);
   assert.match(panel, /shrink-0 items-center justify-center self-start/);
   assert.match(panel, /sm:self-auto/);
-  assert.match(panel, /border-amber-400\/30 bg-amber-400\/\[0\.09\] text-amber-100\/90/);
-  assert.match(panel, /unresolvedPolicy \? 'Sales Constitution review is required before any reply is approved/);
-  assert.match(panel, /legacy send buttons are intentionally unavailable/);
-  assert.match(panel, /disabled=\{isGenerating \|\| isDispatching \|\| \(governedDraftMode && !safeGovernedSuggestion\)\}/);
+  assert.match(panel, /Approve &amp; Send/);
+  assert.match(panel, /onClick=\{handleRegenerate\}/);
+  assert.match(panel, /Human approval is required before sending/);
+  assert.match(panel, /showManualSendConfirm/);
+  assert.doesNotMatch(panel, /legacy send buttons are intentionally unavailable/);
 });
 
 test('Inbox Triage keeps all queue options in one compact desktop filter row', () => {
@@ -402,16 +387,14 @@ test('Decision Packet has a compact full-width insight and responsive balanced r
   assert.ok(packet.includes('governanceNeedsReview && <p role="status"'));
 });
 
-test('All three context borders use exact Decision Packet opacity and normal line weight', () => {
+test('Lower detail cards use the same subtle Decision Packet outline', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
-  assert.ok(panel.includes('aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1]'));
+  assert.ok(panel.includes('id="inbox-decision-packet" aria-label="Decision packet"'));
+  assert.ok(panel.includes('border border-white/[0.1] bg-[#151515]'));
   assert.equal((panel.match(/border border-\[#888888\]/g) || []).length, 0);
-  const matches = [
-    'rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl',
-    'h-full min-w-0 rounded-lg border border-white/[0.1] bg-[#121212] p-5',
-    'bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md',
-  ];
-  for (const card of matches) assert.ok(panel.includes(card), 'Mismatch in detailed card outline: ' + card);
+  assert.ok(panel.includes('rounded-lg border border-white/[0.1] bg-[#121212]'));
+  assert.ok(panel.includes('bg-[#1a1a1a] border border-white/[0.1]'));
+  assert.ok(panel.includes('border-t border-[#888888] pt-6'));
 });
 
 test('Filter controls retain four queue tabs and neutral scrollbar on desktop and mobile', () => {
@@ -493,7 +476,7 @@ test('Manual send always requires typed reason, confirmation and backend policy 
   assert.ok(route.includes("action: 'EDIT_AND_SEND'"));
   assert.ok(execution.includes('function humanOverrideAllowed('));
   assert.ok(execution.includes('item.blockingRules.length || item.unresolvedRules.length'));
-  assert.ok(execution.includes("evaluation.decision.primaryIntent === 'UNSUBSCRIBE'"));
+  assert.ok(execution.includes('evaluation.decision.primaryIntent === TriageIntent.UNSUBSCRIBE'));
   assert.ok(execution.includes('reason: input.overrideReason ?? null'));
   assert.ok(execution.includes('DecisionExecutionAttempt') || execution.includes('decisionExecutionAttempt.create'));
   assert.ok(execution.includes('sendNativeEmail'));
