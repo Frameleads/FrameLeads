@@ -33,7 +33,7 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   const reply = input.proposedReply === undefined ? decision.suggestedReply : input.proposedReply;
   const [source, hold, suppression, execution, lastAction, brain, playbook, user] = await Promise.all([
     db.inboundSignal.findFirst({ where: { id: decision.inputMessage.sourceId, userId: input.userId },
-      select: { id: true, generatedLeadId: true, prospectContext: true,
+      select: { id: true, generatedLeadId: true, prospectContext: true, prospectEmail: true,
         generatedLead: { select: { id: true, listId: true, email: true } } } }),
     db.prospectHold.findUnique({ where: { userId_prospectId: { userId: input.userId, prospectId: decision.prospectId } } }),
     db.inboundSignal.findFirst({ where: { userId: input.userId, prospectId: decision.prospectId,
@@ -78,7 +78,8 @@ export async function evaluateAutomationMode(input: { userId: string; decisionId
   const staleContext = Boolean(decision.trace &&
     ((decision.trace.brainRevision != null && brain?.revision !== decision.trace.brainRevision) ||
       (decision.trace.playbookRevision != null && playbook?.revision !== decision.trace.playbookRevision)));
-  const integrationAvailable = Boolean(user?.imapEmail && user.imapPassword && user.imapHost && source.generatedLead?.email);
+  const integrationAvailable = Boolean(user?.imapEmail && user.imapPassword && user.imapHost &&
+    (source.generatedLead?.email || source.prospectEmail));
   const blocked = Boolean(suppression) || has('blockingRules');
   // Recheck even older persisted decisions and secondary intents at execution time.
   // A model-classified unsubscribe is not proof of provider-confirmed suppression.
