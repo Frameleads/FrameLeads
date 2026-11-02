@@ -321,7 +321,7 @@ function DecisionPacketPanel({ signalId, onDecision, onNewPilotDecision, onRisk,
   const actionLabel = packet?.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually';
   const matchedRuleIds = [...new Set(policy.flatMap(item => item.matchedRuleIds ?? []))];
   const isReview = packet?.status === 'NEEDS_REVIEW';
-  return <section aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 shadow-xl shadow-black/15 sm:p-7">
+  return <section id="inbox-decision-packet" aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 scroll-mt-24 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 shadow-xl shadow-black/15 sm:p-7">
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_78%_0%,rgba(255,90,31,.075),transparent_35%)]" />
     {isMicroPilot && <div role="status" aria-label="Micro-Pilot decision allowance" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.07] px-4 py-3 sm:px-5">
       <div className="min-w-0">
@@ -1519,10 +1519,15 @@ export default function TriageCommandCenter({
                       {isArchiving ? 'Archiving...' : 'Reject & Archive'}
                     </button>
                     {governedDraftMode ? (
-                      <p role={unresolvedPolicy ? 'alert' : undefined} className={`rounded-xl border px-4 py-3 text-xs leading-6 ${unresolvedPolicy ? 'border-amber-400/30 bg-amber-400/[0.09] text-amber-100/90' : 'border-white/10 bg-[#1A1A1A] text-white/65'}`}>
-                        {unresolvedPolicy ? 'Sales Constitution review is required before any reply is approved. Review the Decision Packet; the legacy send buttons are intentionally unavailable.' :
-                          'Decisions can propose a reply for human review, never an automatic send. Use the governed approval workflow or the separately protected Sandbox sending path.'}
-                      </p>
+                      <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/[0.08] bg-white/[0.025] px-3 py-2 text-xs text-white/60">
+                        <span className="flex items-center gap-2">
+                          <ShieldAlert aria-hidden="true" className="h-4 w-4 shrink-0 text-white/45" />
+                          {unresolvedPolicy ? 'Sending locked until policy review is resolved.' : safeGovernedSuggestion ? 'Governed suggestion ready for human review. No send authorized.' : 'No governed response approved for sending.'}
+                        </span>
+                        <a href="#inbox-decision-packet" className="inline-flex min-h-9 items-center rounded-lg border border-white/[0.12] px-3 py-1.5 font-semibold text-white/80 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]">
+                          Review Decision
+                        </a>
+                      </div>
                     ) : <>
                       <button type="button" onClick={handleRegenerate} disabled={!canGenerateLegacyDraft || isGenerating || isDispatching || isBooking || isArchiving} className="w-full py-3 text-sm font-bold bg-[#1A1A1A] text-white rounded-lg hover:bg-[#222] disabled:cursor-not-allowed disabled:opacity-50">
                         {isGenerating ? 'Drafting...' : 'Regenerate Draft'}
