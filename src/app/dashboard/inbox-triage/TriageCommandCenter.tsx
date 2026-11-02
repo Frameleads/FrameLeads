@@ -17,6 +17,7 @@ import { getDisplayedIntentConfidence, getDecisionProspectInterestScore } from '
 import { formatIntentTemperature, intentTemperature, resolveIntentTemperature } from '@/lib/intent-temperature';
 import { CORE_CHECKOUT_URL } from '@/lib/checkout';
 import { getSignalChipStyle } from './signal-chip-style';
+import { formatInboundReplyForDisplay } from './inbound-reply-display';
 
 /**
  * Attempt to parse the human-readable slot label returned by the calendar API
@@ -370,7 +371,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,.8fr)]">
           <article className="min-w-0 rounded-xl border border-white/[0.08] bg-black/15 p-4 sm:p-5">
           <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.18em] text-white/50"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]"><Mail className="h-3.5 w-3.5 text-[#FF5A1F]" /></span>Incoming reply</p>
-          <p className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-white/70">“{reply}”</p>
+          <p className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-white/70">“{formatInboundReplyForDisplay(reply)}”</p>
           <h3 className="mt-5 flex max-w-full items-start gap-3 break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">
             <span aria-hidden="true" className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]"><Sparkles className="h-4 w-4" /></span>
             <span className="min-w-0">{completedInterpretation ? packet.interpretation :
@@ -1149,7 +1150,7 @@ export default function TriageCommandCenter({
   const trashCount = leads.filter((lead) => lead.recordStatus === 'TRASHED').length;
   const favoritesCount = leads.filter((lead) => lead.isFavorite && ['PENDING', 'ARCHIVED'].includes(lead.recordStatus)).length;
   const queueTabs = (
-    <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-1.5 xl:p-2.5">
+    <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,1.7fr)] xl:gap-1.5 xl:p-2.5">
       <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><ArrowDownUp className="h-3 w-3" />Sort by</p>
         <div className="flex flex-nowrap items-center gap-0.5">
@@ -1175,11 +1176,11 @@ export default function TriageCommandCenter({
       </div>
       <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
         <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><Layers className="h-3 w-3" />Queue</p>
-        <div className="flex flex-wrap items-center gap-1">
-          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
-          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
-          <button type="button" aria-pressed={queueView === 'favorites'} onClick={() => handleQueueViewChange('favorites')} className={`inline-flex min-h-9 items-center gap-1 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'favorites' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}><Star className="h-3 w-3" />Favorites ({favoritesCount})</button>
-          <button type="button" aria-pressed={queueView === 'trash'} onClick={() => { setNeedsReviewOnly(false); setUrgentSLAOnly(false); handleQueueViewChange('trash'); }} className={`min-h-9 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'trash' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}><Trash2 className="mr-1 inline-block h-3 w-3" />Trash ({trashCount})</button>
+        <div className="flex flex-wrap items-center gap-0.5 xl:flex-nowrap xl:gap-0">
+          <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-1.5 py-2 text-[10px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
+          <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-1.5 py-2 text-[10px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
+          <button type="button" aria-pressed={queueView === 'favorites'} onClick={() => handleQueueViewChange('favorites')} className={`inline-flex min-h-9 items-center gap-0.5 whitespace-nowrap rounded-lg px-1.5 py-2 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'favorites' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}><Star className="h-3 w-3" />Favorites ({favoritesCount})</button>
+          <button type="button" aria-pressed={queueView === 'trash'} onClick={() => { setNeedsReviewOnly(false); setUrgentSLAOnly(false); handleQueueViewChange('trash'); }} className={`min-h-9 whitespace-nowrap rounded-lg px-1.5 py-2 text-[10px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'trash' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}><Trash2 className="mr-1 inline-block h-3 w-3" />Trash ({trashCount})</button>
         </div>
       </div>
     </div>
@@ -1332,7 +1333,7 @@ export default function TriageCommandCenter({
           <div className="w-full xl:w-2/5 flex flex-col space-y-8">
           
           {/* Prospect Identity & Metrics */}
-          <div className="rounded-lg border border-gray-800 bg-[#121212] p-5 shadow-2xl sm:p-8">
+          <div className="rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 shadow-2xl sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
@@ -1352,14 +1353,14 @@ export default function TriageCommandCenter({
           </div>
 
           {/* Inbound Raw Message */}
-          <div className="flex-grow rounded-lg border border-gray-800 bg-[#121212] p-5 sm:p-8">
+          <div className="flex-grow rounded-lg border border-[#FF5A1F] bg-[#121212] p-5 sm:p-8">
             <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
                 Received: {activeLead?.createdAt ? new Date(activeLead.createdAt).toLocaleString() : 'Unknown'}
               </p>
               <div className="whitespace-pre-wrap">
-                {inboundSignal}
+                {formatInboundReplyForDisplay(inboundSignal)}
               </div>
             </div>
           </div>
@@ -1374,7 +1375,7 @@ export default function TriageCommandCenter({
             <div className="w-full grid grid-cols-1 gap-6">
               
               {/* Intent Intelligence Widget */}
-              <div className="w-full bg-[#1a1a1a] border border-gray-800 p-6 rounded-md shadow-md">
+              <div className="w-full bg-[#1a1a1a] border border-[#FF5A1F] p-6 rounded-md shadow-md">
                 <div className="flex justify-between items-end mb-4">
                   <div>
                     <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
