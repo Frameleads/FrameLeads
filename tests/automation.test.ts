@@ -10,7 +10,7 @@ const tenant = 'tenant-a';
 function fixture() {
   let policy: any = null, hold: any = null, override: any = null, suppression = false, tier = 'ENTERPRISE';
   let constitutionRevision = 1, rules: any[] = [], sends = 0, aiCalls = 0;
-  let confidence = 96, status = 'READY', review = false, leadEmail = 'lead@example.com';
+  let confidence = 96, status = 'READY', review = false, leadEmail = 'lead@example.com', inboundOnly = false;
   let priorAutoSends = 0;
   const attempts: any[] = [], actions: any[] = [], resolutions: any[] = [], assignments: any[] = [], memories: any[] = [];
   const decision: any = { id: 'decision-a', userId: tenant, prospectId: 'prospect-a', status,
@@ -25,8 +25,11 @@ function fixture() {
     automationPolicy: { findUnique: async ({ where }: any) => where.userId === tenant ? policy : null },
     decision: { findFirst: async ({ where }: any) => where.userId === tenant && where.id === decision.id ? decision : null },
     inboundSignal: { findFirst: async ({ where }: any) => where.userId !== tenant ? null : where.signalType === 'UNSUBSCRIBE_CONFIRMED' ?
-      (suppression ? { id: 'unsubscribe' } : null) : { id: 'signal-a', generatedLeadId: 'lead-a', prospectContext: null,
-        generatedLead: { id: 'lead-a', listId: 'list-a', email: leadEmail } } },
+      (suppression ? { id: 'unsubscribe' } : null) : inboundOnly
+      ? { id: 'signal-a', generatedLeadId: null, prospectContext: null,
+          prospectEmail: leadEmail, generatedLead: null }
+      : { id: 'signal-a', generatedLeadId: 'lead-a', prospectContext: null,
+          prospectEmail: leadEmail, generatedLead: { id: 'lead-a', listId: 'list-a', email: leadEmail } } },
     prospectHold: { findUnique: async () => hold, upsert: async ({ create, update }: any) => {
       hold = { id: 'hold-a', ...(hold ?? create), ...update }; return hold; } },
     prospect: { findUnique: async ({ where }: any) => where.userId_id.userId === tenant ? { id: 'prospect-a' } : null },
@@ -70,6 +73,7 @@ function fixture() {
     setRules: (value: any[]) => { rules = value; constitutionRevision++; },
     sends: () => sends, aiCalls: () => aiCalls,
     setLeadEmail: (value: string) => { leadEmail = value; },
+    setInboundOnly: (value: boolean) => { inboundOnly = value; },
     setPriorAutoSends: (value: number) => { priorAutoSends = value; },
   };
 }
@@ -316,4 +320,49 @@ test('Manual override cannot bypass BLOCK, suppression, unresolved rules or acti
   const held = fixture(); held.setHold(true);
   assert.equal((await actOnDecision(input, { db: held.db, sender: held.sender })).state, 'HELD');
   assert.equal(held.sends(), 0);
+});
+
+test('Tenant-owned inbound-only manual reply uses real SMTP sender adapter without requiring Scout lead', async () => {
+  const f = fixture(); f.setInboundOnly(true);
+  let nativeCalls = 0;
+  const inboundSender: any = async (input: any) => {
+    nativeCalls++;
+    assert.equal(input.userId, tenant);
+    assert.equal(input.signalId, 'signal-a');
+    assert.equal(input.prospectId, 'prospect-a');
+    return { provider: 'NATIVE_SMTP', providerMessageId: 'mock-inbound-a' };
+  };
+  const input = { userId: tenant, decisionId: 'decision-a', action: 'EDIT_AND_SEND' as const,
+    requestKey: 'manual-inbound-case', editedReply: 'Thanks for replying to our message.',
+    overrideReason: 'I reviewed the recipient and approved this manual response.' };
+  const sent = await actOnDecision(input, { db: f.db, sender: f.sender, inboundSender });
+  assert.equal(sent.state, 'EXECUTED');
+  assert.equal(nativeCalls, 1);
+  assert.equal(f.sends(), 0);
+  assert.equal(f.attempts.length, 1);
+  assert.equal(f.attempts[0].status, 'SENT');
+  assert.equal(f.attempts[0].providerMessageId, 'mock-inbound-a');
+  assert.equal(f.actions[0].reason, input.overrideReason);
+  await actOnDecision({ ...input, requestKey: 'manual-inbound-again' }, { db: f.db, sender: f.sender, inboundSender });
+  assert.equal(nativeCalls, 1);
+});
+
+test('Autopilot never sends an inbound-only record using the manual SMTP fallback', async () => {
+  const f = fixture(); f.setInboundOnly(true);
+  const prior = process.env.AUTOMATION_EXECUTION_ENABLED;
+  process.env.AUTOMATION_EXECUTION_ENABLED = 'true';
+  let nativeCalls = 0;
+  try {
+    f.setPolicy({ defaultMode: 'AUTOPILOT', autopilotEnabled: true, autoExecutionDisabled: false });
+    const result = await runAutopilot({ userId: tenant, decisionId: 'decision-a' }, {
+      db: f.db, sender: f.sender,
+      inboundSender: (async () => { nativeCalls++; throw new Error('Autopilot must never call inbound sender'); }) as any,
+    });
+    assert.notEqual(result.state, 'EXECUTED');
+    assert.equal(nativeCalls, 0);
+    assert.equal(f.sends(), 0);
+  } finally {
+    if (prior === undefined) delete process.env.AUTOMATION_EXECUTION_ENABLED;
+    else process.env.AUTOMATION_EXECUTION_ENABLED = prior;
+  }
 });
