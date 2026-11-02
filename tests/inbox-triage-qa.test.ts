@@ -273,3 +273,16 @@ test('Favorites tab provides persistent saved-lead view without altering Active/
   assert.match(favoriteRoute, /data: \{ isFavorite: payload\.isFavorite \}/);
   assert.doesNotMatch(favoriteRoute, /status: ['"]ARCHIVED['"]|status: ['"]TRASHED['"]/);
 });
+
+test('Switching Inbox Triage queue tabs preserves locally saved favorites and selection', () => {
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  // Only new server data may replace the local list. Queue navigation must
+  // never reset a just-saved favorite to an older initialData snapshot.
+  assert.match(ui, /useEffect\(\(\) => \{\s*setLeads\(dbLeads\);\s*\}, \[dbLeads\]\);/);
+  assert.doesNotMatch(ui, /setLeads\(dbLeads\);[\s\S]{0,500}\}, \[dbLeads, queueView\]\);/);
+  assert.match(ui, /const handleQueueViewChange = \(view: 'active' \| 'archived' \| 'favorites' \| 'trash'\)/);
+  assert.match(ui, /queueView === 'favorites' \? Boolean\(lead\.isFavorite\)/);
+  assert.match(ui, /Favorites \(\{favoritesCount\}\)/);
+  assert.match(ui, /const updatedLeads = leads\.map\(item => item\.id === lead\.id \? \{ \.\.\.item, isFavorite: nextFavorite \} : item\);/);
+  assert.match(ui, /setLeads\(updatedLeads\);/);
+});
