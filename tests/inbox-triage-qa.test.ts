@@ -86,7 +86,7 @@ test('Mobile and desktop layouts keep queues, packet, chips, details, and action
   assert.match(panel, /sm:grid-cols-2 xl:grid-cols-3/);
   assert.match(panel, /flex flex-wrap gap-2/);
   assert.match(panel, /flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-\[#FF5A1F\]\/20/);
-  assert.match(panel, /flex flex-1 flex-col gap-6 xl:flex-row/);
+  assert.match(panel, /grid min-w-0 grid-cols-1 items-stretch gap-y-6 xl:grid-cols-/);
   assert.match(panel, /min-h-11/);
   assert.match(panel, /prefers-reduced-motion: reduce/);
   assert.match(panel, /animation: none/);
@@ -337,7 +337,7 @@ test('Inbox Triage keeps all queue options in one compact desktop filter row', (
 test('Entity, inbound email and Intent Score borders match the subtle Decision Packet outline', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   assert.ok(panel.includes('rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl'));
-  assert.ok(panel.includes('flex-grow rounded-lg border border-white/[0.1] bg-[#121212]'));
+  assert.ok(panel.includes('h-full min-w-0 rounded-lg border border-white/[0.1] bg-[#121212]'));
   assert.ok(panel.includes('bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md'));
 });
 
@@ -406,13 +406,13 @@ test('All three context borders use exact Decision Packet opacity and normal lin
   assert.equal((panel.match(/border border-\[#888888\]/g) || []).length, 0);
   const matches = [
     'rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl',
-    'flex-grow rounded-lg border border-white/[0.1] bg-[#121212] p-5',
+    'h-full min-w-0 rounded-lg border border-white/[0.1] bg-[#121212] p-5',
     'bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md',
   ];
   for (const card of matches) assert.ok(panel.includes(card), 'Mismatch in detailed card outline: ' + card);
 });
 
-test('Filter controls retain four queue tabs and orange scrollbar on desktop and mobile', () => {
+test('Filter controls retain four queue tabs and neutral scrollbar on desktop and mobile', () => {
   const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
   const start = panel.indexOf('const queueTabs = (');
   const end = panel.indexOf('const archiveToastElement', start);
@@ -430,6 +430,37 @@ test('Filter controls retain four queue tabs and orange scrollbar on desktop and
   assert.ok(!filterMarkup.includes('text-[11px] font-semibold'));
   assert.ok(filterMarkup.includes('flex flex-nowrap items-center gap-1.5'));
   const ribbon = panel.match(/aria-label="Inbound reply queue\.[^\n]*/)?.[0] ?? '';
-  assert.ok(ribbon.includes('[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
-  assert.ok(ribbon.includes('hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
+  assert.ok(ribbon.includes('[&::-webkit-scrollbar-thumb]:bg-[#555555]'));
+  assert.ok(ribbon.includes('hover:[&::-webkit-scrollbar-thumb]:bg-[#777777]'));
+});
+
+test('Lower detail sections share a two-column desktop grid with unchanged mobile reading order', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const entity = panel.indexOf('xl:col-start-1 xl:row-start-1');
+  const inbound = panel.indexOf('xl:col-start-1 xl:row-start-2');
+  const intent = panel.indexOf('xl:col-start-2 xl:row-start-1');
+  const draft = panel.indexOf('xl:col-start-2 xl:row-start-2');
+  assert.ok(panel.includes('xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'));
+  assert.ok(panel.includes('xl:grid-rows-[auto_minmax(0,1fr)]'));
+  assert.ok(entity > -1 && inbound > entity && intent > inbound && draft > intent,
+    'Mobile DOM order must remain Entity, Inbound, Intent, Draft');
+  assert.ok(panel.includes('grid min-w-0 grid-cols-1 items-stretch'));
+  // Existing container wrappers must not create competing flex-column heights.
+  const lower = panel.slice(panel.indexOf('/* LEFT PANE: The Context Engine'),draft);
+  assert.ok(!lower.includes('xl:w-2/5 flex flex-col space-y-8'));
+  assert.ok(!lower.includes('xl:w-3/5 flex flex-col'));
+});
+
+test('All four lower-detail headings have aligned accessible icons and divider is #888888', () => {
+  const panel = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  for (const icon of ['Building2', 'Gauge', 'Mail', 'FilePenLine']) {
+    assert.ok(panel.includes('<' + icon + ' aria-hidden="true" className="h-4 w-4 shrink-0 text-[#FF5A1F]" />'),
+      'Missing icon: ' + icon);
+  }
+  for (const label of ['Entity Context', 'Intent Score', 'Inbound Signal', 'Draft Response']) {
+    assert.ok(panel.includes(label), 'Missing lower-detail heading: ' + label);
+  }
+  assert.ok(panel.includes('gap-4 border-t border-[#888888] pt-6'));
+  assert.ok(panel.includes('border border-white/[0.1]'), 'Do not alter card outline style');
+  assert.ok(!panel.includes('[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
 });
