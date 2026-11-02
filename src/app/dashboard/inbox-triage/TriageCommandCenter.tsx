@@ -611,18 +611,13 @@ export default function TriageCommandCenter({
     };
   }, [hasInboxAccess, router]);
 
+  // Refresh the local queue only when the server sends new records.
+  // Switching tabs is a client-side view change: resetting leads here would
+  // discard the just-saved isFavorite state and make Favorites appear empty.
+  // handleQueueViewChange owns selection when the user switches tabs.
   useEffect(() => {
     setLeads(dbLeads);
-    setActiveLeadId((currentId: string | null) =>
-      currentId && dbLeads.some((lead: any) =>
-        lead.id === currentId && (queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING'),
-      )
-        ? currentId
-        : dbLeads.find((lead: any) =>
-            queueView === 'archived' ? lead.recordStatus === 'ARCHIVED' : lead.recordStatus === 'PENDING',
-          )?.id || null,
-    );
-  }, [dbLeads, queueView]);
+  }, [dbLeads]);
 
   useEffect(() => {
     if (activeLead && selectedStateLeadId.current !== activeLead.id) {
