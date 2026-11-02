@@ -48,7 +48,7 @@ function humanOverrideAllowed(
   if (evaluation.reasons.some(reason =>
     /UNSUBSCRIBE|SUPPRESS|HOLD|UNRESOLVED|REJECT|STALE|REANALYSIS|EXECUTION|CONFIGURATION|CONTEXT_CHANGED/.test(reason))) return false;
   if (evaluation.decision.primaryIntent === TriageIntent.UNSUBSCRIBE ||
-    evaluation.decision.secondaryIntents.includes(TriageIntent.UNSUBSCRIBE)) return false;
+    (evaluation.decision.secondaryIntents ?? []).includes(TriageIntent.UNSUBSCRIBE)) return false;
   if (evaluation.state === State.READY || evaluation.state === State.PENDING_APPROVAL) return true;
   if (evaluation.state !== State.ESCALATED) return false;
   if (input.action === Action.AUTOPILOT_SEND || input.actorUserId !== input.userId ||
