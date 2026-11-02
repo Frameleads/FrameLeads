@@ -6,6 +6,6 @@
       "schedule": "0 14 * * 5"
     }
   ],
-  "buildCommand": "if [ \"$VERCEL_GIT_COMMIT_REF\" = \"codex/whop-native-checkout-release-20261025\" ] || [ \"$VERCEL_GIT_COMMIT_REF\" = \"feat/inbox-triage-premium-ui\" ]; then NODE_OPTIONS=--max-old-space-size=4096 npm run build:preview; else npm run build; fi",
+  "buildCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|feat/inbox-triage-premium-ui|codex/whop-native-checkout-release-20261025) NODE_OPTIONS=--max-old-space-size=4096 npm run build:preview;; *) npm run build;; esac",
   "ignoreCommand": "case \"$VERCEL_GIT_COMMIT_REF\" in main|codex/inbox-triage-repair-849bb12|codex/whop-native-checkout-release-20261025|feat/inbox-triage-premium-ui) exit 1;; *) exit 0;; esac"
 }
