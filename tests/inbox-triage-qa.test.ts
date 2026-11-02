@@ -227,7 +227,16 @@ test('unresolved policy explains withheld draft without reviving legacy send act
   assert.match(ui, /const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy/);
   assert.match(ui, /safeGovernedSuggestion \? pilotDraftOverrides\[decisionPacket\?\.id \?\? ''\]/);
   assert.match(ui, /governedDraftMode \? \(/);
-  assert.match(ui, /legacy send buttons are intentionally unavailable/);
+  assert.doesNotMatch(ui, /legacy send buttons are intentionally unavailable/);
+  assert.doesNotMatch(ui, /Sales Constitution review is required before any reply is approved/);
+  assert.match(ui, /id="inbox-decision-packet" aria-label="Decision packet"/);
+  assert.match(ui, /href="#inbox-decision-packet"/);
+  assert.match(ui, /Sending locked until policy review is resolved/);
+  assert.match(ui, /Review Decision/);
+  assert.match(ui, /safeGovernedSuggestion/);
+  assert.match(ui, /<div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/);
+  assert.match(ui, /disabled=\{!canGenerateLegacyDraft/);
+  assert.match(ui, /governedDraftMode \? \(/);
   assert.match(ui, /Human review is required before treating any response as governed or approved/);
   assert.match(ui, /unresolvedRules/);
   assert.match(ui, /governanceHeadline/);
@@ -463,4 +472,19 @@ test('All four lower-detail headings have aligned accessible icons and divider i
   assert.ok(panel.includes('gap-4 border-t border-[#888888] pt-6'));
   assert.ok(panel.includes('border border-white/[0.1]'), 'Do not alter card outline style');
   assert.ok(!panel.includes('[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F]'));
+});
+
+test('An unresolved Decision retains visible review status but never shows the duplicate amber footer', () => {
+  const ui = source('src/app/dashboard/inbox-triage/TriageCommandCenter.tsx');
+  const footer = ui.slice(ui.indexOf('/* 5. The Action Buttons (Stacked natively at the bottom) */'));
+  assert.ok(footer.includes('governedDraftMode ? ('));
+  assert.ok(footer.includes('Sending locked until policy review is resolved.'));
+  assert.ok(footer.includes('Review Decision'));
+  assert.ok(footer.includes('href="#inbox-decision-packet"'));
+  assert.ok(footer.includes('role="status"'));
+  assert.ok(!footer.includes('border-amber-400/30 bg-amber-400'));
+  assert.ok(!footer.includes('legacy send buttons are intentionally unavailable'));
+  assert.ok(footer.includes(') : <>\n                      <button type="button" onClick={handleRegenerate}'));
+  assert.ok(footer.includes('<button type="button" onClick={() => void handleDispatch()}'));
+  assert.ok(ui.includes("const safeGovernedSuggestion = verifiedDecision && !unresolvedPolicy &&"));
 });
