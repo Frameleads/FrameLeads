@@ -10,13 +10,16 @@ import { evaluateAutomationMode, resolveAutomationMode } from './resolve';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 export type Sender = typeof sendNativeEmail;
 export type HumanActionInput = { userId: string; decisionId: string; action: 'APPROVE' | 'EDIT_AND_SEND' | 'REJECT' | 'ESCALATE';
-  requestKey: string; editedReply?: string; reason?: string; queue?: DecisionRouteQueue };
+  requestKey: string; editedReply?: string; reason?: string; overrideReason?: string; queue?: DecisionRouteQueue };
 
 function validateHumanAction(input: HumanActionInput) {
   if (!input.userId || !input.decisionId || !([Action.APPROVE, Action.EDIT_AND_SEND, Action.REJECT, Action.ESCALATE] as string[]).includes(input.action))
     throw new TypeError('Invalid action');
   if (!/^[\w:-]{8,128}$/.test(input.requestKey || '')) throw new TypeError('Idempotency key required');
   if (input.reason != null && (typeof input.reason !== 'string' || input.reason.length > 500)) throw new TypeError('Invalid reason');
+  if (input.overrideReason != null && (typeof input.overrideReason !== 'string' ||
+    input.overrideReason.trim().length < 12 || input.overrideReason.length > 500))
+    throw new TypeError('Manual approval reason must be 12–500 characters');
   if (input.action === Action.EDIT_AND_SEND && (typeof input.editedReply !== 'string' || !input.editedReply.trim() || input.editedReply.length > 4000))
     throw new TypeError('Edited reply must be 1–4000 characters');
   if (input.queue && !Object.values(DecisionRouteQueue).includes(input.queue)) throw new TypeError('Invalid queue');
@@ -30,13 +33,35 @@ async function rememberAction(userId: string, prospectId: string, eventId: strin
       action === Action.ESCALATE ? 'Decision escalated for human handling.' : 'Human approved a governed reply.' }, db);
 }
 
+/**
+ * A human can override a reviewable business judgment, not a suppression,
+ * hard rule, unresolved policy fact, hold, stale decision, or uncertain send.
+ * The authoritative resolver is evaluated again immediately before claiming.
+ */
+function humanOverrideAllowed(
+  evaluation: Awaited<ReturnType<typeof evaluateAutomationMode>>,
+  input: { actorUserId: string | null; userId: string; action: Action; overrideReason?: string },
+) {
+  if (evaluation.state === State.READY || evaluation.state === State.PENDING_APPROVAL) return true;
+  if (evaluation.state !== State.ESCALATED) return false;
+  if (input.action === Action.AUTOPILOT_SEND || input.actorUserId !== input.userId ||
+    !input.overrideReason || input.overrideReason.trim().length < 12) return false;
+  if (evaluation.evaluations.some(item => item.blockingRules.length || item.unresolvedRules.length ||
+    item.configurationMissing || item.safeResponseRequirements.length)) return false;
+  if (evaluation.reasons.some(reason =>
+    /UNSUBSCRIBE|SUPPRESS|HOLD|UNRESOLVED|REJECT|STALE|REANALYSIS|EXECUTION|CONFIGURATION/.test(reason))) return false;
+  if (evaluation.decision.primaryIntent === 'UNSUBSCRIBE' ||
+    evaluation.decision.secondaryIntents.includes('UNSUBSCRIBE')) return false;
+  return evaluation.reasons.some(reason => reason === 'CONSTITUTION_REQUIRES_HUMAN' ||
+    reason === 'CONSTITUTION_REQUIRES_APPROVAL' || reason === 'REQUESTED_ESCALATION');
+}
+
 /** One claim per Decision. Claimed/uncertain SMTP attempts are never retried automatically. */
 async function executeReply(input: { userId: string; decisionId: string; actorUserId: string | null;
-  action: Action; requestKey: string; reply: string }, db: PrismaClient, sender: Sender) {
+  action: Action; requestKey: string; reply: string; overrideReason?: string }, db: PrismaClient, sender: Sender) {
   const first = await evaluateAutomationMode({ userId: input.userId, decisionId: input.decisionId, proposedReply: input.reply }, db);
   if (first.execution) return { state: first.state, attempt: first.execution, reused: true };
-  if (first.state === State.BLOCKED || first.state === State.HELD || first.state === State.ESCALATED ||
-    first.state === State.REJECTED || first.state === State.FAILED_UNCERTAIN) {
+  if (!humanOverrideAllowed(first, input)) {
     await resolveAutomationMode({ userId: input.userId, decisionId: input.decisionId, proposedReply: input.reply }, db);
     return { state: first.state, reasons: first.reasons, attempt: null, reused: false };
   }
@@ -46,7 +71,7 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
     return { state: State.HELD, reasons: ['OUTBOUND_INTEGRATION_UNAVAILABLE'], attempt: null, reused: false };
   // Recheck immediately before the irreversible claim. Every branch reads current tenant controls.
   const current = await evaluateAutomationMode({ userId: input.userId, decisionId: input.decisionId, proposedReply: input.reply }, db);
-  if (([State.BLOCKED, State.HELD, State.ESCALATED, State.REJECTED, State.FAILED_UNCERTAIN] as State[]).includes(current.state) ||
+  if (!humanOverrideAllowed(current, input) ||
     (input.action === Action.AUTOPILOT_SEND && current.resolvedMode !== Mode.AUTOPILOT))
     return { state: current.state, reasons: current.reasons, attempt: null, reused: false };
   const lead = current.source.generatedLead;
@@ -74,6 +99,7 @@ async function executeReply(input: { userId: string; decisionId: string; actorUs
         actorUserId: input.actorUserId, action: input.action,
         idempotencyKey: hash(`${input.userId}:${input.decisionId}:${input.requestKey}`),
         originalDraft: current.decision.suggestedReply, editedDraft: input.action === Action.EDIT_AND_SEND ? content : null,
+        reason: input.overrideReason ?? null,
         resultingState: State.EXECUTING, executionAttemptId: created.id } });
       return { attempt: created, created: true };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
@@ -161,7 +187,8 @@ export async function actOnDecision(input: HumanActionInput, deps: { db?: Prisma
   const reply = input.action === Action.EDIT_AND_SEND ? input.editedReply!.trim() : current.decision.suggestedReply?.trim();
   if (!reply) return { state: State.HELD, reasons: ['MISSING_SAFE_REPLY'], event: null, reused: false };
   return executeReply({ userId: input.userId, decisionId: input.decisionId, actorUserId: input.userId,
-    action: input.action as Action, requestKey: input.requestKey, reply }, db, deps.sender ?? sendNativeEmail);
+    action: input.action as Action, requestKey: input.requestKey, reply,
+    overrideReason: input.overrideReason?.trim() }, db, deps.sender ?? sendNativeEmail);
 }
 
 export async function runAutopilot(input: { userId: string; decisionId: string }, deps: { db?: PrismaClient; sender?: Sender } = {}) {
