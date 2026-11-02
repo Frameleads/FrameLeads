@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SetupNotice from '@/components/SetupNotice';
-import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Archive, ArrowDownUp, Layers, Clock3, Handshake, ShieldAlert, ShieldCheck, UserRoundCheck, Sparkles, Star } from 'lucide-react';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Archive, ArrowDownUp, Layers, Clock3, Handshake, ShieldAlert, ShieldCheck, UserRoundCheck, Sparkles, Star, Building2, Gauge, FilePenLine } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
@@ -1275,7 +1275,7 @@ export default function TriageCommandCenter({
       </div>
 
       {/* HORIZONTAL QUEUE RIBBON (Top) */}
-      <div aria-label="Inbound reply queue. Scroll horizontally to browse messages." className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-proximity [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div aria-label="Inbound reply queue. Scroll horizontally to browse messages." className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-proximity [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#555555] hover:[&::-webkit-scrollbar-thumb]:bg-[#777777] [&::-webkit-scrollbar-thumb]:rounded-full">
         {visibleLeads.map(lead => (
           <article key={lead.id} className={`group relative w-[84vw] min-w-[84vw] max-w-[340px] flex-shrink-0 snap-start overflow-hidden rounded-xl border p-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out sm:w-[320px] sm:min-w-[320px] ${lead.id === activeLeadId ? 'border-[#FF5A1F]/80 bg-[#1B1918] shadow-lg shadow-[#FF5A1F]/[0.06]' : 'border-white/[0.09] bg-[#151515] hover:-translate-y-0.5 hover:border-white/[0.18] hover:bg-[#191919] hover:shadow-lg hover:shadow-black/25'}`}>
             <button type="button" aria-pressed={lead.id === activeLeadId} onClick={() => selectLead(lead)} aria-label={`Review message from ${lead.name}`} className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FF5A1F]">
@@ -1339,20 +1339,20 @@ export default function TriageCommandCenter({
           pilotDecisionsRemaining={pilotRemaining}
           canAnalyze={hasDecisionEngineAccess && !activeLead.decisionId} canReanalyze={userTier !== 'MICRO_PILOT'} />
 
-        <div className="mt-6 flex flex-1 flex-col gap-6 xl:flex-row xl:gap-12">
+        <div className="mt-6 grid min-w-0 grid-cols-1 items-stretch gap-y-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] xl:grid-rows-[auto_minmax(0,1fr)] xl:gap-x-12">
           
           {/* LEFT PANE: The Context Engine (40%) */}
-          <div className="w-full xl:w-2/5 flex flex-col space-y-8">
+          <div className="contents">
           
           {/* Prospect Identity & Metrics */}
-          <div className="rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl sm:p-8">
-            <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Entity Context</h2>
+          <div className="h-full min-w-0 rounded-lg border border-white/[0.1] bg-[#121212] p-5 shadow-2xl sm:p-8 xl:col-start-1 xl:row-start-1">
+            <h2 className="mb-4 flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500" style={{ fontFamily: 'Oxanium, sans-serif' }}><Building2 aria-hidden="true" className="h-4 w-4 shrink-0 text-[#FF5A1F]" />Entity Context</h2>
             <div className="mb-6">
               <h3 className="text-xl font-semibold text-white">{PROSPECT_NAME}</h3>
               <p className="text-gray-400">{PROSPECT_COMPANY}</p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-gray-800 pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-[#888888] pt-6">
               <div>
                 <p className="text-xs text-gray-500 uppercase">Pipeline Value</p>
                 <p className="text-lg font-medium text-white mt-1">{activeLead?.pipelineValue}</p>
@@ -1365,8 +1365,8 @@ export default function TriageCommandCenter({
           </div>
 
           {/* Inbound Raw Message */}
-          <div className="flex-grow rounded-lg border border-white/[0.1] bg-[#121212] p-5 sm:p-8">
-            <h2 className="text-xs text-gray-500 uppercase tracking-widest mb-4" style={{ fontFamily: 'Oxanium, sans-serif' }}>Inbound Signal</h2>
+          <div className="h-full min-w-0 rounded-lg border border-white/[0.1] bg-[#121212] p-5 sm:p-8 xl:col-start-1 xl:row-start-2">
+            <h2 className="mb-4 flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500" style={{ fontFamily: 'Oxanium, sans-serif' }}><Mail aria-hidden="true" className="h-4 w-4 shrink-0 text-[#FF5A1F]" />Inbound Signal</h2>
             <div className="prose prose-invert max-w-none text-gray-300 text-sm leading-relaxed" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>
               <p className="text-gray-500 mb-4">
                 Received: {activeLead?.createdAt ? new Date(activeLead.createdAt).toLocaleString() : 'Unknown'}
@@ -1379,18 +1379,18 @@ export default function TriageCommandCenter({
         </div>
 
         {/* RIGHT PANE: The Cognitive Architecture (60%) */}
-        <div className="w-full xl:w-3/5 flex flex-col">
+        <div className="contents">
           {/* Right Side Main Column */}
-          <div className="w-full flex flex-col gap-6 h-full">
+          <div className="contents">
 
             {/* TOP ROW: Intent & Strategy (Stacked on mobile, Side-by-Side on Desktop) */}
-            <div className="w-full grid grid-cols-1 gap-6">
+            <div className="contents">
               
               {/* Intent Intelligence Widget */}
-              <div className="w-full bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md shadow-md">
+              <div className="h-full min-w-0 w-full bg-[#1a1a1a] border border-white/[0.1] p-6 rounded-md shadow-md xl:col-start-2 xl:row-start-1">
                 <div className="flex justify-between items-end mb-4">
                   <div>
-                    <h4 className="text-xs text-gray-500 uppercase tracking-widest mb-1" style={{ fontFamily: 'Oxanium, sans-serif' }}>Intent Score</h4>
+                    <h4 className="mb-1 flex items-center gap-2 text-xs uppercase tracking-widest text-gray-500" style={{ fontFamily: 'Oxanium, sans-serif' }}><Gauge aria-hidden="true" className="h-4 w-4 shrink-0 text-[#FF5A1F]" />Intent Score</h4>
                     <div className="flex items-baseline gap-2">
                       <span className="text-4xl font-bold text-white">{displayedIntentScore === null ? 'Not assessed' : displayedIntentScore}</span>
                       {displayedIntentScore !== null && <span className="text-sm font-medium text-gray-400">/ 100</span>}
@@ -1433,12 +1433,12 @@ export default function TriageCommandCenter({
             </div>
 
             {/* BOTTOM ROW: Draft Response & Buttons (Full Width) */}
-              <div className="relative flex h-auto min-h-min w-full flex-col gap-3 overflow-visible">
+              <div className="relative flex h-auto min-h-min w-full min-w-0 flex-col gap-3 overflow-visible xl:col-start-2 xl:row-start-2">
               
               {/* 1. Header */}
               <div className="flex w-full flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
                 <div className="min-w-0 w-full flex-1">
-                  <h3 className="text-[10px] font-bold text-white/50 tracking-widest uppercase">Draft Response</h3>
+                  <h3 className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-white/50"><FilePenLine aria-hidden="true" className="h-4 w-4 shrink-0 text-[#FF5A1F]" />Draft Response</h3>
                   {governedDraftMode && <p className="mt-1 text-xs text-white/55">
                     {unresolvedPolicy ? 'Policy review required · no governed reply has been approved.' :
                       safeGovernedSuggestion ? 'Verified Decision suggestion · human approval required before sending.' :
