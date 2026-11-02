@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import type { ConstitutionActionType, ConstitutionCategory, ConstitutionEffect, ConstitutionScope,
   ConstitutionSeverity, Prisma } from '@prisma/client';
@@ -75,7 +75,7 @@ function RuleCard({ rule, pending, onEdit, onToggle, onArchive }: RuleCardProps)
     </dl>
 
     {rule.source === 'USER_ENTERED' && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-3">
-      <button type="button" className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-[#FF5A1F] transition-colors hover:bg-[#FF5A1F]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]" onClick={onEdit}>Edit</button>
+      <button type="button" disabled={pending} className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm font-medium text-[#FF5A1F] disabled:cursor-not-allowed disabled:opacity-40 transition-colors hover:bg-[#FF5A1F]/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F]" onClick={onEdit}>Edit</button>
       <button type="button" disabled={pending} className="inline-flex min-h-10 items-center rounded-lg border border-white/[0.08] px-3 text-sm text-white/70 transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:opacity-40" onClick={onToggle}>{rule.enabled ? 'Disable' : 'Enable'}</button>
       <button type="button" disabled={pending} className="inline-flex min-h-10 items-center rounded-lg px-3 text-sm text-red-300/80 transition-colors hover:bg-red-400/[0.06] hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/60 disabled:opacity-40" onClick={onArchive}>Archive</button>
     </div>}
@@ -156,8 +156,18 @@ function ConditionRow({ leaf, change, remove }: { leaf: Leaf; change: (next: Lea
 }
 export default function ConstitutionEditor({ initial, microPilot = false }: { initial: View; microPilot?: boolean }) {
   const [view, setView] = useState(initial), [draft, setDraft] = useState<Draft>(empty);
+  const editorRef = useRef<HTMLElement>(null);
   const pilotRuleCount = microPilot ? view.rules.filter(rule => rule.source === 'USER_ENTERED').length : 0;
   const [pending, setPending] = useState(false), [message, setMessage] = useState('');
+  function beginEdit(rule: Rule) {
+    if (pending) return;
+    setDraft(fromRule(rule));
+    setMessage(`Editing “${rule.name}”. Review the fields, then save or cancel.`);
+    // The editor is below the rule list. Bring it into view so the Edit
+    // action has an immediate, accessible, observable result.
+    editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    editorRef.current?.focus({ preventScroll: true });
+  }
   const leaves = draft.conditions.reduce((sum, condition) => sum + (condition.kind === 'FACT' ? 1 : condition.conditions.length), 0);
   function updateCondition(index: number, next: EditorCondition | null) {
     setDraft(current => ({ ...current, conditions: next === null ? current.conditions.filter((_, i) => i !== index) :
@@ -217,9 +227,9 @@ export default function ConstitutionEditor({ initial, microPilot = false }: { in
       </li>)}</ul></section>}
     <div className="flex min-w-0 flex-col gap-4"><section className="order-1 w-full rounded-xl border border-white/[0.08] bg-[#111111] p-4 sm:p-5"><h2 className="font-heading text-base font-semibold text-white">Rules <span className="ml-2 font-mono text-[10px] font-normal uppercase tracking-wider text-white/45">{view.rules.length} loaded</span></h2>{microPilot && <p className="mt-2 text-xs text-[#FF5A1F]">Micro-Pilot allows one configurable rule. Mandatory safety and platform rules remain in force.</p>}
       {view.rules.length ? <ul className="mt-4 grid min-w-0 gap-4">{view.rules.map(rule => <RuleCard key={rule.id} rule={rule} pending={pending}
-        onEdit={() => setDraft(fromRule(rule))} onToggle={() => changeRule(rule, 'toggle')} onArchive={() => changeRule(rule, 'archive')} />)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No boundaries configured. Add a rule to define what sales activity must not violate.</p>}
+        onEdit={() => beginEdit(rule)} onToggle={() => changeRule(rule, 'toggle')} onArchive={() => changeRule(rule, 'archive')} />)}</ul> : <p className="mt-3 text-sm text-muted-foreground">No boundaries configured. Add a rule to define what sales activity must not violate.</p>}
       {view.nextCursor && <Button type="button" variant="outline" className="mt-4" disabled={pending} onClick={loadMore}>Load more rules</Button>}
-    </section><section className="order-2 w-full rounded-xl border border-border/60 bg-card/50 p-5"><h2 className="text-sm font-semibold">{draft.id ? 'Edit rule' : 'Add rule'}</h2>{microPilot && <p className="mt-1 text-xs text-muted-foreground">{pilotRuleCount} of 1 configurable rule used.</p>}
+    </section><section ref={editorRef} tabIndex={-1} aria-label="Sales Constitution rule editor" className="order-2 w-full scroll-mt-24 rounded-xl border border-border/60 bg-card/50 p-5 focus:outline-none"><h2 className="text-sm font-semibold">{draft.id ? 'Edit rule' : 'Add rule'}</h2>{microPilot && <p className="mt-1 text-xs text-muted-foreground">{pilotRuleCount} of 1 configurable rule used.</p>}
       <div className="mt-4 space-y-3">
         <label className="block text-sm">Name<Input className="mt-1" maxLength={120} value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} /></label>
         <label className="block text-sm">Hard boundary<textarea className="mt-1 w-full rounded-lg border border-input bg-background px-3 py-2" rows={3} maxLength={3000} value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} /></label>
@@ -259,7 +269,10 @@ export default function ConstitutionEditor({ initial, microPilot = false }: { in
         </fieldset>}
         <p className="text-xs text-muted-foreground">{draft.kind === 'CUSTOM_MANUAL' ? 'Manual review: this rule cannot be proven by the deterministic evaluator.' : 'Machine-evaluable when the future caller supplies the required structured facts. Missing facts require review.'}</p>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} /> Enabled</label>
-        <div className="flex flex-wrap gap-2"><Button type="button" disabled={pending || (!draft.id && microPilot && pilotRuleCount >= 1) || !draft.name.trim() || !draft.description.trim() || !draft.actionTypes.length} onClick={save}>{pending ? 'Saving...' : draft.id ? 'Save changes' : 'Add rule'}</Button>{draft.id && <Button type="button" variant="outline" onClick={() => setDraft(empty)}>Cancel</Button>}</div>
-      </div></section></div>{message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
+        <div className="flex flex-wrap gap-2"><Button type="button" disabled={pending || (!draft.id && microPilot && pilotRuleCount >= 1) || !draft.name.trim() || !draft.description.trim() || !draft.actionTypes.length} onClick={save}>{pending ? 'Saving...' : draft.id ? 'Save changes' : 'Add rule'}</Button>{draft.id && <Button type="button" variant="outline" disabled={pending} onClick={() => { setDraft(empty); setMessage('Editing cancelled.'); }}>Cancel</Button>}</div>
+      </div></section></div>{message && <div role="status" aria-live="polite" className="fixed bottom-5 right-5 z-50 flex max-w-[min(92vw,28rem)] items-start gap-3 rounded-xl border border-[#FF5A1F]/30 bg-[#191919] px-4 py-3 text-sm leading-6 text-white shadow-2xl">
+    <p className="min-w-0 flex-1">{message}</p>
+    <button type="button" aria-label="Dismiss rule notification" onClick={() => setMessage('')} className="shrink-0 rounded-lg px-2 py-0.5 text-xs text-white/60 hover:bg-white/10 hover:text-white">Dismiss</button>
+  </div>}
   </main>;
 }
