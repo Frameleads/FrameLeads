@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SetupNotice from '@/components/SetupNotice';
-import { Loader2, Info, CalendarCheck, Mail, Trash2, X } from 'lucide-react';
+import { Loader2, Info, CalendarCheck, Mail, Trash2, X, Archive, ArrowDownUp, Layers, Clock3, Handshake, ShieldAlert, ShieldCheck, UserRoundCheck, Sparkles, ChevronRight } from 'lucide-react';
 import CalendarPicker from '@/components/CalendarPicker';
 import { playUISound } from '@/lib/audio';
 import { sortInboxByRevenueRisk } from '@/lib/revenue-risk/sort';
@@ -70,6 +70,24 @@ function parseTriageSignals(value: unknown) {
     .map((signal) => signal.trim())
     .filter((signal) => ALLOWED_TRIAGE_SIGNALS.has(signal))
     .slice(0, 3);
+}
+
+function senderInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : (parts[0] ?? '?').slice(0, 2)).toUpperCase();
+}
+
+function receivedTime(dateValue: string | Date | undefined, now: number) {
+  if (!dateValue) return { relative: 'Time unknown', exact: 'Received time unavailable' };
+  const date = new Date(dateValue);
+  const delta = now - date.getTime();
+  if (Number.isNaN(date.getTime())) return { relative: 'Time unknown', exact: 'Received time unavailable' };
+  const exact = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+  if (delta < 60_000) return { relative: 'Just now', exact };
+  if (delta < 60 * 60_000) return { relative: `${Math.floor(delta / 60_000)}m ago`, exact };
+  if (delta < 24 * 60 * 60_000) return { relative: `${Math.floor(delta / 3_600_000)}h ago`, exact };
+  if (delta < 48 * 60 * 60_000) return { relative: 'Yesterday', exact };
+  return { relative: new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date), exact };
 }
 
 function getPersistedSignals(signals: unknown, legacyIntentRisk: unknown) {
@@ -302,7 +320,7 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
   const actionLabel = packet?.recommendedNextAction?.replaceAll('_', ' ') ?? 'Review manually';
   const matchedRuleIds = [...new Set(policy.flatMap(item => item.matchedRuleIds ?? []))];
   const isReview = packet?.status === 'NEEDS_REVIEW';
-  return <section aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 sm:p-7">
+  return <section aria-label="Decision packet" className="relative isolate min-h-[18rem] w-full max-w-full min-w-0 overflow-hidden rounded-2xl border border-white/[0.1] bg-[#151515] p-5 shadow-xl shadow-black/15 sm:p-7">
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_78%_0%,rgba(255,90,31,.075),transparent_35%)]" />
     {isMicroPilot && <div role="status" aria-label="Micro-Pilot decision allowance" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#FF5A1F]/35 bg-[#FF5A1F]/[0.07] px-4 py-3 sm:px-5">
       <div className="min-w-0">
@@ -348,40 +366,37 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
     {running && <p role="status" className="mt-4 text-sm text-gray-400">Analyzing reply…</p>}
     {error && <p role="alert" className="mt-4 text-sm text-amber-400">{error}</p>}
     {packet && <div className="pt-5">
-        <div className="grid gap-5">
-          <div className="min-w-0">
-          <p className="font-mono text-[9px] uppercase tracking-[.18em] text-[#FF5A1F]">Incoming reply</p>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">“{reply}”</p>
-          <h3 className="mt-4 max-w-full break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">
-            {completedInterpretation ? packet.interpretation :
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(250px,.8fr)]">
+          <article className="min-w-0 rounded-xl border border-white/[0.08] bg-black/15 p-4 sm:p-5">
+          <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.18em] text-white/50"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03]"><Mail className="h-3.5 w-3.5 text-[#FF5A1F]" /></span>Incoming reply</p>
+          <p className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-words text-sm leading-6 text-white/70">“{reply}”</p>
+          <h3 className="mt-5 flex max-w-full items-start gap-3 break-words font-heading text-xl font-semibold leading-8 text-white sm:text-2xl">
+            <span aria-hidden="true" className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]"><Sparkles className="h-4 w-4" /></span>
+            <span className="min-w-0">{completedInterpretation ? packet.interpretation :
               unverifiedModelOutput ? 'AI response needs evidence verification' :
-              packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}
+              packet.status === 'PENDING' ? 'Analyzing this reply' : 'Analysis incomplete — review required'}</span>
           </h3>
           {unverifiedModelOutput && <p role="status" className="mt-2 max-w-3xl text-xs leading-5 text-white/55">
             The model returned an unverified result. No governed recommendation was accepted.
             The reply is preserved; select Re-analyze for a fresh, evidence-checked assessment.
           </p>}
-        </div>
+        </article>
+        {isReview && !interrupted && <aside className="flex min-w-0 flex-col justify-between gap-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.035] p-4 sm:p-5">
+          <div><p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.18em] text-[#FF9A73]"><span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07]"><ShieldAlert className="h-3.5 w-3.5" /></span>Why human review</p>
+            <p className="mt-3 break-words text-sm leading-6 text-white/75">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p></div>
+          <span className="w-fit rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.06] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF9A73]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
+        </aside>}
       </div>
 
       {completedInterpretation && <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
-        <SummaryCard label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
-        <SummaryCard label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
+        <SummaryCard icon={<Handshake className="h-4 w-4" />} label="Intent" value={intentLabel} detail={packet.secondaryIntents.length ? `Secondary · ${packet.secondaryIntents.join(', ').replaceAll('_', ' ')}` : 'No secondary intent'} active />
+        <SummaryCard icon={governanceNeedsReview || blockedChecks > 0 ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />} label="Governance" value={governanceHeadline} detail={governanceDetail} active={governanceNeedsReview || blockedChecks > 0} />
+        <SummaryCard icon={<UserRoundCheck className="h-4 w-4" />} label="Recommended action" value={actionLabel} detail={packet.reviewReasons.join(' · ').replaceAll('_', ' ') || (isReview ? 'Human review required' : 'Routine handling')} active={isReview} />
       </div>}
 
       {completedInterpretation && governanceNeedsReview && <p role="status" className="mt-4 rounded-xl border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.04] px-4 py-3 text-xs leading-5 text-white/70">
         A relevant Sales Constitution rule could not be resolved from the available facts. Human review is required before treating any response as governed or approved. No automatic reply has been authorized.
       </p>}
-      {isReview && !interrupted && <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#FF5A1F]/15 bg-[#1A1A1A]/75 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <span aria-hidden="true" className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#FF5A1F]" />
-          <div className="min-w-0"><p className="font-mono text-[8px] uppercase tracking-[.16em] text-[#FF5A1F]">Why human review</p>
-            <p className="mt-1 break-words text-xs leading-5 text-white/75 sm:text-sm">{packet.explanation ?? packet.reviewReasons.join(', ').replaceAll('_', ' ')}</p></div>
-        </div>
-        <span className="ml-5 w-fit shrink-0 rounded-full border border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.05] px-2.5 py-1 font-mono text-[8px] uppercase tracking-wider text-[#FF5A1F]">{packet.reviewReasons.includes('APPROVAL_REQUIRED') ? 'Approval required' : 'Review required'}</span>
-      </div>}
-
       {(risk || sla) && <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 font-mono text-[8px] uppercase tracking-wider text-white/35">
         {risk && <span>Revenue priority · {risk.status === 'APPLICABLE' ? `${risk.score} ${risk.band}` : risk.status.replaceAll('_', ' ')}</span>}
         {sla && <span>Response SLA · {sla.status}</span>}
@@ -390,10 +405,10 @@ function DecisionPacketPanel({ signalId, reply, onDecision, onNewPilotDecision, 
   </section>;
 }
 
-function SummaryCard({ label, value, detail, active = false }: { label: string; value: string; detail: string; active?: boolean }) {
-  return <article className={`min-w-0 rounded-xl border p-4 ${active ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.035]' : 'border-white/[0.08] bg-black/10'}`}>
-    <p className="font-mono text-[8px] uppercase tracking-[.16em] text-white/40">{label}</p>
-    <p className={`mt-2 truncate text-sm font-semibold uppercase ${active ? 'text-[#FF5A1F]' : 'text-white/85'}`} title={value}>{value}</p>
+function SummaryCard({ icon, label, value, detail, active = false }: { icon: React.ReactNode; label: string; value: string; detail: string; active?: boolean }) {
+  return <article className={`min-w-0 rounded-xl border p-4 transition-colors duration-200 ${active ? 'border-[#FF5A1F]/25 bg-[#FF5A1F]/[0.035]' : 'border-white/[0.08] bg-black/10'}`}>
+    <div className="flex items-center gap-2"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${active ? 'border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.07] text-[#FF9A73]' : 'border-white/[0.08] bg-white/[0.025] text-white/55'}`}>{icon}</span><p className="font-mono text-[8px] uppercase tracking-[.16em] text-white/45">{label}</p></div>
+    <p className={`mt-3 break-words text-sm font-semibold uppercase ${active ? 'text-[#FF9A73]' : 'text-white/85'}`} title={value}>{value}</p>
     <p className="mt-1 line-clamp-2 break-words text-[10px] leading-4 text-white/45">{detail}</p>
   </article>;
 }
@@ -1072,7 +1087,7 @@ export default function TriageCommandCenter({
   const queueTabs = (
     <div className="grid w-full min-w-0 grid-cols-1 gap-2 rounded-2xl border border-white/[0.08] bg-[#111111] p-2 sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1.1fr] xl:gap-1.5 xl:p-2.5">
       <div role="group" aria-label="Sort by" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
-        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Sort by</p>
+        <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><ArrowDownUp className="h-3 w-3" />Sort by</p>
         <div className="flex flex-nowrap items-center gap-0.5">
           {(isEnterpriseTier ? [{ value: 'received', label: 'Received' }, { value: 'risk', label: 'Revenue priority' }, { value: 'sla', label: 'SLA due' }] : [{ value: 'received', label: 'Received' }]).map(option => <button key={option.value} type="button" aria-pressed={orderBy === option.value} onClick={() => setOrderBy(option.value as typeof orderBy)}
             className={`min-h-9 whitespace-nowrap rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${orderBy === option.value ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>
@@ -1081,21 +1096,21 @@ export default function TriageCommandCenter({
         </div>
       </div>
       {isEnterpriseTier && <div role="group" aria-label="SLA urgency" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
-        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">SLA urgency</p>
+        <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><Clock3 className="h-3 w-3" />SLA urgency</p>
         <div className="flex flex-nowrap items-center gap-1">
           <button type="button" aria-pressed={!urgentSLAOnly} onClick={() => setUrgentSLAOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!urgentSLAOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
           <button type="button" aria-pressed={urgentSLAOnly} onClick={() => setUrgentSLAOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${urgentSLAOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Due soon / overdue</button>
         </div>
       </div>}
       <div role="group" aria-label="Review" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
-        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Review</p>
+        <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><ShieldCheck className="h-3 w-3" />Review</p>
         <div className="flex flex-nowrap items-center gap-1">
           <button type="button" aria-pressed={!needsReviewOnly} onClick={() => setNeedsReviewOnly(false)} className={`min-h-9 rounded-lg px-3 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${!needsReviewOnly ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>All</button>
           <button type="button" aria-pressed={needsReviewOnly} onClick={() => setNeedsReviewOnly(true)} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${needsReviewOnly ? 'bg-amber-500/10 text-amber-300' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Needs review</button>
         </div>
       </div>
       <div role="group" aria-label="Queue" className="min-w-0 rounded-xl border border-white/[0.06] bg-[#1A1A1A]/70 p-2">
-        <p className="mb-1 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]">Queue</p>
+        <p className="mb-1 flex items-center gap-1.5 px-2 font-mono text-[9px] font-semibold uppercase tracking-[0.16em] text-[#888888]"><Layers className="h-3 w-3" />Queue</p>
         <div className="flex flex-nowrap items-center gap-1">
           <button type="button" aria-pressed={queueView === 'active'} onClick={() => handleQueueViewChange('active')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'active' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Active ({activeCount})</button>
           <button type="button" aria-pressed={queueView === 'archived'} onClick={() => handleQueueViewChange('archived')} className={`min-h-9 whitespace-nowrap rounded-lg px-2.5 py-2 text-[11px] font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] ${queueView === 'archived' ? 'bg-[#FF5A1F]/[0.09] text-[#FF5A1F]' : 'text-[#888888] hover:bg-[#242424] hover:text-white'}`}>Archived ({archivedCount})</button>
@@ -1161,40 +1176,46 @@ export default function TriageCommandCenter({
       </div>
 
       {/* HORIZONTAL QUEUE RIBBON (Top) */}
-      <div className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-mandatory [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div aria-label="Inbound reply queue. Scroll horizontally to browse messages." className="w-full border-b border-[#1A1A1A] p-4 pb-4 flex gap-3 sm:gap-4 overflow-x-auto flex-nowrap shrink-0 snap-x snap-proximity [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-[#0D0D0D] [&::-webkit-scrollbar-thumb]:bg-[#1A1A1A] hover:[&::-webkit-scrollbar-thumb]:bg-[#FF5A1F] [&::-webkit-scrollbar-thumb]:rounded-full">
         {visibleLeads.map(lead => (
-          <button
-            key={lead.id}
-            type="button"
-            aria-pressed={lead.id === activeLeadId}
-            onClick={() => selectLead(lead)}
-            className={`w-[82vw] min-w-[82vw] max-w-[300px] flex-shrink-0 snap-start p-3 text-left border rounded-md cursor-pointer transition-[border-color,background-color] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] sm:w-[300px] sm:min-w-[300px] ${
-              lead.id === activeLeadId ? 'border-[#FF5A1F] bg-[#242424]' : 'border-[#333333] bg-[#242424] hover:border-[#444444]'
-            }`}
-          >
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <span className="min-w-0 break-words font-semibold text-sm" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
-              <span className={`shrink-0 font-mono text-[10px] px-2 py-0.5 rounded-sm ${
+          <article key={lead.id} className={`group relative w-[84vw] min-w-[84vw] max-w-[340px] flex-shrink-0 snap-start overflow-hidden rounded-xl border p-4 text-left transition-[border-color,background-color,transform,box-shadow] duration-200 ease-out sm:w-[320px] sm:min-w-[320px] ${lead.id === activeLeadId ? 'border-[#FF5A1F]/80 bg-[#1B1918] shadow-lg shadow-[#FF5A1F]/[0.06]' : 'border-white/[0.09] bg-[#151515] hover:-translate-y-0.5 hover:border-white/[0.18] hover:bg-[#191919] hover:shadow-lg hover:shadow-black/25'}`}>
+            <button type="button" aria-pressed={lead.id === activeLeadId} onClick={() => selectLead(lead)} aria-label={`Review message from ${lead.name}`} className="block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FF5A1F]">
+              <div className="flex items-center gap-3">
+                <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#FF5A1F]/20 bg-[#FF5A1F]/[0.08] text-xs font-semibold tracking-wide text-[#FF9A73]">{senderInitials(lead.name)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 break-words font-semibold text-sm text-white" style={{ fontFamily: 'Space Grotesk, sans-serif' }}>{lead.name}</span>
+                    <span className="shrink-0 pt-0.5 text-[10px] text-white/45" title={receivedTime(lead.createdAt, clock).exact}>{receivedTime(lead.createdAt, clock).relative}</span>
+                  </span>
+                  <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 font-mono text-[9px] tracking-wide ${
                 isCoreTier ? 'bg-[#242424] text-gray-400' :
-                queueIntentCategory(lead) === 'HOT' ? 'bg-[#FF5A1F]/10 text-[#FF5A1F]' :
-                queueIntentCategory(lead) === 'WARM' ? 'bg-yellow-500/10 text-yellow-500' : 'bg-[#242424] text-gray-400'
+                queueIntentCategory(lead) === 'HOT' ? 'border-[#FF5A1F]/20 bg-[#FF5A1F]/10 text-[#FF9A73]' :
+                queueIntentCategory(lead) === 'WARM' ? 'border-amber-400/20 bg-amber-400/[0.08] text-amber-300' : 'border-white/[0.08] bg-white/[0.03] text-gray-400'
               }`}>
                 {isCoreTier ? 'REPLY' : queueIntentCategory(lead)}
-              </span>
-            </div>
-            <p className="line-clamp-2 break-words text-xs text-muted-foreground" title={lead.inboundSignal}>{lead.inboundSignal}</p>
-            {lead.decisionStatus && <p className="mt-2 text-[10px] font-mono uppercase">
-              <span className="text-gray-500">Decision: </span>
-              <span className={decisionStatusPresentation(lead.decisionStatus).tone}>{decisionStatusPresentation(lead.decisionStatus).label}</span>
-            </p>}
-            {isEnterpriseTier && lead.revenueRisk?.status === 'APPLICABLE' && <p className="mt-1 text-[10px] font-mono text-amber-300">Revenue priority: {lead.revenueRisk.score} · {lead.revenueRisk.band}</p>}
-            {isEnterpriseTier && lead.revenueRisk?.status === 'NOT_APPLICABLE' && <p className="mt-1 text-[10px] text-gray-500">No revenue priority</p>}
-            {isEnterpriseTier && lead.responseSLA && <p className={`mt-1 text-[10px] font-mono ${lead.responseSLA.status === 'BREACHED' || new Date(lead.responseSLA.dueAt).getTime() <= clock ? 'text-red-300' : 'text-gray-400'}`}>
-              SLA: {displayResponseSLA({ status: lead.responseSLA.status,
-                startedAt: new Date(lead.responseSLA.startedAt), dueAt: new Date(lead.responseSLA.dueAt),
-                dueSoonPercent: slaDueSoonPercent }, new Date(clock)).state.replaceAll('_', ' ')}
-            </p>}
-          </button>
+                  </span>
+                </span>
+              </div>
+              <p className="mt-3 line-clamp-2 min-h-10 break-words text-xs leading-5 text-white/60" title={lead.inboundSignal}>{lead.inboundSignal || 'No message preview available.'}</p>
+              <div className="mt-3 flex min-w-0 items-center justify-between gap-2 border-t border-white/[0.07] pt-3">
+                <span className="flex min-w-0 items-center gap-1.5 truncate pr-8 text-[10px] text-white/45"><Clock3 className="h-3 w-3 shrink-0" /><time dateTime={lead.createdAt ? new Date(lead.createdAt).toISOString() : undefined} title={receivedTime(lead.createdAt, clock).exact}>{receivedTime(lead.createdAt, clock).exact}</time></span>
+                <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-[#FF9A73]">Review <ChevronRight className="h-3 w-3" /></span>
+              </div>
+            </button>
+            {queueView === 'active' && <button type="button" disabled={isArchiving && activeLead?.id === lead.id} title="Archive message" aria-label={`Archive message from ${lead.name}`} onClick={() => { selectLead(lead); void (async () => {
+              setIsArchiving(true);
+              try {
+                const response = await fetch('/api/triage/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: lead.id }) });
+                const result = await response.json().catch(() => null);
+                if (!response.ok) throw new Error(result?.error || 'Unable to archive this lead.');
+                const updated = leads.map(item => item.id === lead.id ? { ...item, recordStatus: 'ARCHIVED' } : item);
+                setLeads(updated);
+                if (lead.id === activeLeadId) selectLeadById(updated.find(item => item.recordStatus === 'PENDING')?.id || null, updated);
+                showArchiveToast('Lead archived'); router.refresh();
+              } catch (error) { showArchiveToast(error instanceof Error ? error.message : 'Unable to archive this lead.'); }
+              finally { setIsArchiving(false); }
+            })(); }} className="absolute bottom-[1.05rem] right-4 flex h-7 w-7 items-center justify-center rounded-md text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF5A1F] disabled:opacity-50"><Archive className="h-3.5 w-3.5" /></button>}
+          </article>
         ))}
       </div>
 
