@@ -1,3 +1,4 @@
+import type { VerifiedAllowancePeriod } from './allowance-period';
 import { getWhopApiOrigin } from "./whop-environment";
 import {
   MembershipFilteredOutError,
@@ -13,11 +14,17 @@ type WhopMembership = {
   user?: string | { id?: string } | null;
   company_id?: string;
   company?: string | { id?: string } | null;
+  account?: string | { id?: string } | null;
+  plan_id?: string;
   cancel_at_period_end?: boolean;
+  billing_period_days?: number | null;
+  renewal_period_start?: string | number | null;
   renewal_period_end?: string | number | null;
+  current_period_start?: string | number | null;
+  current_period_end?: string | number | null;
   expires_at?: string | number | null;
   product?: { id?: string; name?: string; title?: string; route?: string; metadata?: unknown };
-  plan?: { id?: string; name?: string; title?: string; metadata?: unknown };
+  plan?: { billing_period?: number | null; id?: string; name?: string; title?: string; metadata?: unknown };
   metadata?: unknown;
 };
 
@@ -65,6 +72,21 @@ function relationId(value: string | { id?: string } | null | undefined): string 
   return typeof value === "string" ? value : value?.id;
 }
 
+/** Normalize both Whop membership response shapes without changing provider values. */
+function normalizeMembership(membership: WhopMembership): WhopMembership {
+  const companyId = membership.company_id || relationId(membership.company) || relationId(membership.account);
+  const planId = membership.plan?.id || membership.plan_id;
+  return {
+    ...membership,
+    ...(companyId ? { company_id: companyId } : {}),
+    ...(planId && !membership.plan?.id
+      ? { plan: { id: planId, billing_period: membership.billing_period_days } }
+      : {}),
+    renewal_period_start: membership.renewal_period_start ?? membership.current_period_start,
+    renewal_period_end: membership.renewal_period_end ?? membership.current_period_end,
+  };
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -73,6 +95,7 @@ export async function verifyWhopSubscription(
   accessToken: string,
   whopUserId: string,
   request: typeof fetch = fetch,
+  allowanceReview?: { planId?: string; planIds?: string[] },
 ): Promise<WhopSubscription> {
   const companyId = process.env.WHOP_COMPANY_ID || DEFAULT_COMPANY_ID;
   const membershipsUrl = new URL(getWhopApiOrigin() + "/api/v1/memberships");
@@ -112,7 +135,7 @@ export async function verifyWhopSubscription(
       throw new Error("Whop membership response was invalid");
     }
     if (!Array.isArray(payload.data)) throw new Error("Whop membership response was malformed");
-    memberships.push(...payload.data);
+    memberships.push(...payload.data.map(normalizeMembership));
 
     if (payload.page_info?.has_next_page !== true) break;
     const next = payload.page_info.end_cursor;
@@ -139,7 +162,51 @@ export async function verifyWhopSubscription(
     .filter((value): value is number => value !== null);
   // Revalidate at the earliest known billing boundary. A cancelled membership
   // remains entitled through that boundary, but no local cache crosses it.
-  return { ...subscription, validUntil: periodEnds.length ? Math.min(...periodEnds) : undefined };
+  // Only enrolled usage requests opt into the additional read. Normal access checks
+  // keep their existing request contract. Never substitute an unreviewed plan.
+  if (allowanceReview) {
+    const selected = currentMemberships.filter(m => {
+      try { return resolveWhopSubscription(m).tier === subscription.tier; } catch { return false; }
+    });
+    if (selected.length === 1 && selected[0].plan?.id && [allowanceReview.planId, ...(allowanceReview.planIds || [])].includes(selected[0].plan.id) &&
+        selected[0].billing_period_days == null && selected[0].plan.billing_period == null) {
+      const reviewedPlanId = selected[0].plan!.id!;
+      const response = await request(getWhopApiOrigin() + '/api/v1/plans/' + encodeURIComponent(reviewedPlanId), {
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(8000),
+      });
+      if (!response.ok) throw new Error('Allowance plan interval could not be verified');
+      const raw = await response.text();
+      if (raw.length > 100000) throw new Error('Allowance plan response exceeded limit');
+      const parsed = JSON.parse(raw), plan = parsed.data || parsed;
+      if (plan.id !== reviewedPlanId) throw new Error('Allowance plan identity mismatch');
+      selected[0].plan = { ...selected[0].plan, billing_period: plan.billing_period };
+    }
+  }
+  const allowancePeriod = selectAllowancePeriod(currentMemberships, subscription.tier, whopUserId, companyId);
+  return { ...subscription, validUntil: periodEnds.length ? Math.min(...periodEnds) : undefined,
+    ...(allowancePeriod ? { allowancePeriod } : {}) };
+}
+
+/** Never mix the selected tier with another membership's period or infer a cadence. */
+export function selectAllowancePeriod(memberships: WhopMembership[], tier: string, subjectId: string,
+  companyId: string, now = Date.now()): VerifiedAllowancePeriod | undefined {
+  if (tier !== 'CORE' && tier !== 'ENTERPRISE') return;
+  const candidates = memberships.filter(m => {
+    if ((m.user_id || relationId(m.user)) !== subjectId || (m.company_id || relationId(m.company)) !== companyId ||
+        !membershipCurrentlyEntitled(m, now)) return false;
+    try { return resolveWhopSubscription(m).tier === tier; } catch { return false; }
+  });
+  // Ambiguous memberships require reviewed transfer/stacking policy, not a new bucket.
+  if (candidates.length !== 1) return;
+  const m = candidates[0];
+  if (!['active', 'canceling'].includes(m.status?.toLowerCase() || '')) return;
+  const start = timestamp(m.renewal_period_start), end = timestamp(m.renewal_period_end);
+  const billingDays = m.billing_period_days ?? m.plan?.billing_period;
+  if (!m.id || !m.plan?.id || start === null || end === null || start > now || end <= now || start >= end || end - start < 27 * 86400000 || end - start > 32 * 86400000 ||
+      !Number.isInteger(billingDays) || billingDays! < 28 || billingDays! > 31) return;
+  return { tier, membershipId: m.id, companyId, subjectId, planId: m.plan.id,
+    billingDays: billingDays!, start, end, verifiedAt: now };
 }
 
 export function membershipSubject(payload: unknown): { whopId?: string; email?: string } {

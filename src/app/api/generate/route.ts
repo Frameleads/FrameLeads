@@ -1,3 +1,6 @@
+import { getAllowanceContext } from '@/lib/allowance-context';
+import { AllowanceError } from '@/lib/allowance-period';
+import { allowanceRequestHash, beginAllowanceOperation, allocateProspectAllowance, finishAllowanceOperation } from '@/lib/prospect-allowance';
 // Force Vercel to never cache this API endpoint at the edge:
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -107,7 +110,16 @@ function sanitizeLeadingEmailSubject(body: unknown, subject: string): string {
 }
 
 export async function POST(req: Request) {
+  let operation: { userId: string; id: string } | null = null;
+  async function respond(body: any, options: { status: number }) {
+    if (operation) {
+      await finishAllowanceOperation(prisma, operation.userId, operation.id, body, options.status);
+      operation = null;
+    }
+    return NextResponse.json(body, options);
+  }
   try {
+    const requestPayload = await req.json();
     let {
       leads, 
       batch_id, 
@@ -121,24 +133,31 @@ export async function POST(req: Request) {
       listId = null,
       overwriteExisting = false,
       context = {}
-    } = await req.json();
+    } = requestPayload;
 
     const senderName = context.sender_name || 'Sender';
     const companyName = context.company_name || 'Our Company';
 
     if (!leads) {
-      return NextResponse.json({ success: false, error: "Missing leads payload" }, { status: 400 });
+      return respond({ success: false, error: "Missing leads payload" }, { status: 400 });
     }
 
     const authenticatedUser = await verifiedCustomerUser();
     const currentUser = authenticatedUser ? await prisma.user.findUnique({
       where: { id: authenticatedUser.id }, select: { id: true, leadsProcessed: true, microPilotOutboundUsed: true },
     }) : null;
-    if (!currentUser) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    if (!currentUser) return respond({ success: false, error: 'Unauthorized' }, { status: 401 });
     const currentUserId = currentUser.id;
     const tier = await getUserEntitlementTier(currentUserId);
     if (!hasFeatureAccess(tier, 'BASE_OUTBOUND'))
-      return NextResponse.json({ error: 'FEATURE_LOCKED', feature: 'BASE_OUTBOUND', requiredTier: 'MICRO_PILOT' }, { status: 403 });
+      return respond({ error: 'FEATURE_LOCKED', feature: 'BASE_OUTBOUND', requiredTier: 'MICRO_PILOT' }, { status: 403 });
+    const activeAllowance = await getAllowanceContext(currentUserId, tier);
+    if (activeAllowance) {
+      const id = req.headers.get('Idempotency-Key') || '';
+      const claim = await beginAllowanceOperation(prisma, currentUserId, activeAllowance.proof, id, allowanceRequestHash(requestPayload));
+      if (claim.replay) return NextResponse.json(claim.response, { status: claim.statusCode, headers: { 'Cache-Control': 'no-store' } });
+      operation = { userId: currentUserId, id };
+    }
     const shouldOverwriteExisting = overwriteExisting === true || regenerate === true || force_regenerate === true;
 
     listId = typeof listId === 'string' ? listId.trim() : null;
@@ -150,12 +169,12 @@ export async function POST(req: Request) {
           })
         : null;
       if (!ownedList) {
-        return NextResponse.json({ success: false, error: "Destination list not found." }, { status: 403 });
+        return respond({ success: false, error: "Destination list not found." }, { status: 403 });
       }
     }
 
     const maxQuota = monthlyLeadQuotaForTier(tier);
-    const remainingQuota = Math.max(0, maxQuota - (tier === 'MICRO_PILOT' ? currentUser.microPilotOutboundUsed : currentUser.leadsProcessed));
+    const remainingQuota = activeAllowance?.snapshot.remaining ?? Math.max(0, maxQuota - (tier === 'MICRO_PILOT' ? currentUser.microPilotOutboundUsed : currentUser.leadsProcessed));
 
     const getLeadLinkedInUrl = (lead: any) => {
       const value = lead.linkedin || lead.linkedInUrl || lead.linkedin_url;
@@ -209,7 +228,7 @@ export async function POST(req: Request) {
         firstName: existing.firstName, lastName: existing.lastName, email: existing.email, linkedInUrl: existing.linkedInUrl,
         companyName: existing.companyName, websiteUrl: existing.websiteUrl }) || '';
       if (tier === 'MICRO_PILOT' && !identityKey)
-        return NextResponse.json({ success: false, error: 'A stable prospect identity is required for the Micro-Pilot allowance.' }, { status: 400 });
+        return respond({ success: false, error: 'A stable prospect identity is required for the Micro-Pilot allowance.' }, { status: 400 });
       if (identityKey && handledProspectKeys.has(identityKey)) continue;
       if (identityKey) handledProspectKeys.add(identityKey);
 
@@ -267,7 +286,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.ANTHROPIC_API_KEY || "";
     let processedLeads: any[] = [...skippedLeads];
 
-    if (allowedLeads.length > 0 && !apiKey) return NextResponse.json({ success: false, error: 'Missing Anthropic API Key' }, { status: 401 });
+    if (allowedLeads.length > 0 && !apiKey) return respond({ success: false, error: 'Missing Anthropic API Key' }, { status: 401 });
     if (allowedLeads.length > 0 && apiKey) {
       const anthropic = new Anthropic({ apiKey });
       const [brain, playbook, constitution, marketProfiles] = await Promise.all([
@@ -283,7 +302,7 @@ export async function POST(req: Request) {
             companyName: lead.company_name, websiteUrl: lead.website_url })!) : [];
       try { if (outboundIdentities.length) await reserveMicroPilotOutbound(currentUserId, outboundIdentities); }
       catch (error) {
-        if (error instanceof MicroPilotLimitError) return NextResponse.json({ success: false,
+        if (error instanceof MicroPilotLimitError) return respond({ success: false,
           error: error.limit === 'OUTBOUND_EXHAUSTED' ? 'MICRO_PILOT_OUTBOUND_LIMIT_REACHED' : 'MICRO_PILOT_PROSPECT_ALREADY_RESERVED', remaining: 0 },
           { status: error.limit === 'OUTBOUND_EXHAUSTED' ? 403 : 409 });
         throw error;
@@ -291,8 +310,10 @@ export async function POST(req: Request) {
       const requestStarted = new Set<string>();
       const completedIdentities = new Set<string>();
 
-      if (tier === 'ENTERPRISE') {
-        const allocated = await reserveEnterpriseProspects(prisma, currentUserId, allowedLeads.length);
+      if (activeAllowance || tier === 'ENTERPRISE') {
+        const allocated = activeAllowance
+          ? await allocateProspectAllowance(prisma, currentUserId, activeAllowance.proof, operation!.id, allowedLeads.length)
+          : await reserveEnterpriseProspects(prisma, currentUserId, allowedLeads.length);
         lockedLeads = [...allowedLeads.slice(allocated), ...lockedLeads];
         allowedLeads = allowedLeads.slice(0, allocated);
       }
@@ -500,7 +521,7 @@ export async function POST(req: Request) {
       for (const result of generationResults) if (result.status === 'fulfilled') generatedLeads.push(result.value);
       processedLeads = [...processedLeads, ...generatedLeads];
     } else if (allowedLeads.length > 0) {
-      return NextResponse.json(
+      return respond(
         { success: false, error: "Missing Anthropic API Key" },
         { status: 401 }
       );
@@ -527,7 +548,7 @@ export async function POST(req: Request) {
 
     processedLeads = [...processedLeads, ...ghostLeads];
 
-    if (allowedLeads.length > 0 && tier !== 'ENTERPRISE') {
+    if (allowedLeads.length > 0 && tier !== 'ENTERPRISE' && !activeAllowance) {
       await prisma.user.update({
         where: { id: currentUserId },
         data: { leadsProcessed: { increment: allowedLeads.length } }
@@ -542,13 +563,13 @@ export async function POST(req: Request) {
       error_message: null
     };
 
-    return NextResponse.json(batchResponse, { status: 200 });
+    return respond(batchResponse, { status: 200 });
 
   } catch (error: any) {
-    console.error("API Generation Failure:", error);
-    return NextResponse.json(
+    if (!(error instanceof AllowanceError)) console.error("API Generation Failure:", error);
+    return respond(
       { success: false, error: error.message || "Catastrophic failure inside the generation pipeline." },
-      { status: 500 }
+      { status: error instanceof AllowanceError ? error.status : 500 }
     );
   }
 }

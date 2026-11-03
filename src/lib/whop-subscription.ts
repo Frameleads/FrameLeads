@@ -4,6 +4,7 @@ import { isWhopSandbox } from "./whop-environment";
 export type WhopSubscription = {
   tier: "MICRO_PILOT" | "CORE" | "ENTERPRISE";
   monthlyQuota: number;
+  allowancePeriod?: import("./allowance-period").VerifiedAllowancePeriod;
   /** Earliest known renewal/expiry boundary for a fresh membership recheck. */
   validUntil?: number;
 };

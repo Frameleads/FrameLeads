@@ -213,6 +213,7 @@ const POLL_INTERVAL_MS = 3_000;
 // ── Component ───────────────────────────────────────────────────────
 
 interface SandboxClientProps {
+  allowanceUnavailable?: boolean;
   userTier: string;
   monthlyQuota: number;
   leadsProcessed: number;
@@ -234,6 +235,7 @@ export default function SandboxClient({
   totalCount,
   initialQuery,
   verifiedSandboxContextCount = null,
+  allowanceUnavailable = false,
 }: SandboxClientProps) {
 
   const quotaUpgrade = userTier === 'MICRO_PILOT'
@@ -660,6 +662,7 @@ useEffect(() => {
 
     try {
       const payload = {
+        operation_id: crypto.randomUUID(),
         batch_id: batchId || `regen_${Date.now()}`,
         leads: [strippedLead], // <-- Send the clean stripped lead, NOT the old completed lead!
         listId: selectedLead.listId || null,
@@ -673,7 +676,7 @@ useEffect(() => {
       
       const res = await fetch(`/api/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": payload.operation_id },
         body: JSON.stringify(payload),
         cache: 'no-store'
       });
@@ -697,6 +700,8 @@ useEffect(() => {
       }
     } catch (e) {
       console.error("Regeneration failed", e);
+    } finally {
+      window.dispatchEvent(new Event("frameleads:usage-changed"));
     }
   };
 
@@ -842,6 +847,7 @@ useEffect(() => {
       {/* Left Panel Column */}
       <div className="flex min-h-[300px] w-full flex-col gap-4 xl:h-full xl:min-h-0 xl:w-1/2">
         
+        {allowanceUnavailable && <p role="alert">Allowance verification is unavailable. Usage shown is the last recorded value. Refresh to retry; existing prospects remain accessible.</p>}
         {/* Tier Quota Header */}
         <div className="rounded-2xl border border-primary/30 bg-primary/10 px-5 py-6 mb-6 md:p-6 md:mb-0 flex items-center justify-between shadow-lg shadow-primary/5 shrink-0">
           <div className="flex items-center gap-3">
@@ -855,7 +861,7 @@ useEffect(() => {
           </div>
           <div className="text-right">
             <p className="text-xl font-bold text-primary font-heading">
-              {Math.max(0, monthlyQuota - leadsProcessed)}
+              {allowanceUnavailable ? 'Verification required' : Math.max(0, monthlyQuota - leadsProcessed)}
             </p>
             <p className="text-[10px] uppercase tracking-wider text-primary/70 font-semibold">REMAINING</p>
           </div>

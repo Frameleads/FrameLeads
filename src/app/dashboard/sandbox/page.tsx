@@ -1,4 +1,6 @@
-import { monthlyLeadQuotaForTier } from '@/lib/entitlements';
+import { getDisplayedUsage } from '@/lib/allowance-context';
+import { getUserEntitlementTier } from '@/lib/auth-guard';
+import AllowanceRefresh from '@/components/AllowanceRefresh';
 export const dynamic = 'force-dynamic';
 
 import { cookies } from "next/headers";
@@ -32,6 +34,13 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
 
   if (!user) {
     return <div>User not found</div>;
+  }
+  let usage;
+  try {
+    const tier = await getUserEntitlementTier(authenticated.id);
+    usage = await getDisplayedUsage(authenticated.id, tier, user);
+  } catch {
+    return <div role="alert" className="p-8">Allowance could not be verified. Please refresh to retry.</div>;
   }
   const verifiedSandboxContextCount = user.tier === 'CORE' || user.tier === 'ENTERPRISE'
     ? await prisma.brainKnowledgeEntry.count({ where: { userId: user.id, archivedAt: null, verification: 'VERIFIED',
@@ -117,16 +126,17 @@ export default async function SandboxPage({ searchParams }: SandboxPageProps) {
   }));
 
   return (
-    <SandboxClient
-      leadsProcessed={user.tier === 'MICRO_PILOT' ? user.microPilotOutboundUsed : user.leadsProcessed}
-      monthlyQuota={monthlyLeadQuotaForTier(user.tier)}
-      userTier={user.tier}
+    <><AllowanceRefresh periodEnd={usage.periodEnd} /><SandboxClient
+      allowanceUnavailable={usage.state === 'verification-required'}
+      leadsProcessed={usage.used}
+      monthlyQuota={usage.limit}
+      userTier={usage.tier}
       initialLeads={initialLeads}
       currentPage={currentPage}
       totalPages={totalPages}
       totalCount={totalCount}
       initialQuery={query}
       verifiedSandboxContextCount={verifiedSandboxContextCount}
-    />
+    /></>
   );
 }

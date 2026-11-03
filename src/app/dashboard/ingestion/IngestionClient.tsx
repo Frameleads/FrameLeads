@@ -112,7 +112,7 @@ const EMPTY_MANUAL_CONTACT: ManualContactForm = {
 
 // ── Component ───────────────────────────────────────────────────────────
 
-export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed }: { userTier: string, monthlyQuota: number, leadsProcessed: number }) {
+export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed, allowanceUnavailable = false }: { userTier: string, monthlyQuota: number, leadsProcessed: number, allowanceUnavailable?: boolean }) {
   const router = useRouter();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -400,6 +400,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     }
 
     const payload: any = {
+      operation_id: crypto.randomUUID(),
       batch_id: `batch_${Date.now()}`,
       status: "processing",
       context: campaignContext,
@@ -417,7 +418,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     try {
       const res = await fetch(`/api/generate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": payload.operation_id },
         body: JSON.stringify(payload),
       });
 
@@ -448,6 +449,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
         err instanceof Error ? err.message : "An unexpected error occurred."
       );
     } finally {
+      window.dispatchEvent(new Event("frameleads:usage-changed"));
       setIsProcessing(false);
     }
   };
@@ -483,6 +485,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     };
 
     const payload = {
+      operation_id: crypto.randomUUID(),
       batch_id: `manual_batch_${Date.now()}`,
       status: "processing",
       context: campaignContext,
@@ -498,7 +501,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     try {
       const response = await fetch("/api/generate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": payload.operation_id },
         body: JSON.stringify(payload),
       });
       const result = await response.json().catch(() => null);
@@ -520,6 +523,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
     } catch (error) {
       setManualFormError(error instanceof Error ? error.message : "Failed to save the contact.");
     } finally {
+      window.dispatchEvent(new Event("frameleads:usage-changed"));
       setIsSavingManualContact(false);
     }
   };
@@ -536,6 +540,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8">
+      {allowanceUnavailable && <p role="alert">Allowance verification is unavailable. Usage shown is the last recorded value. Refresh to retry; existing prospects remain accessible.</p>}
       <div className="mb-10 md:mb-12">
         <h1 className="text-3xl font-bold tracking-tight font-heading sm:text-4xl">
           Data Ingestion
@@ -551,7 +556,7 @@ export default function IngestionClient({ userTier, monthlyQuota, leadsProcessed
               <div className="flex items-center gap-2 text-sm text-muted-foreground font-medium">
                 <span>{leadsGenerated} of {monthlyQuota} {userTier === 'MICRO_PILOT' ? 'outbound prospects used total' : 'leads generated'}</span>
                 <span>•</span>
-                <span>{Math.max(0, monthlyQuota - leadsGenerated)} remaining</span>
+                <span>{allowanceUnavailable ? 'Verification required' : `${Math.max(0, monthlyQuota - leadsGenerated)} remaining`}</span>
               </div>
             </div>
         </div>
